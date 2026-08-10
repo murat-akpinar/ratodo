@@ -97,7 +97,7 @@ fn list(path: &std::path::Path) -> Result<()> {
             overdue += 1;
         }
 
-        let mut line = format!("  {mark} {}", task.title);
+        let mut line = format!("  {mark} {}", plain(&task.title));
         if let Some(due) = task.due {
             line.push_str(&format!(
                 "  {}",
@@ -105,7 +105,7 @@ fn list(path: &std::path::Path) -> Result<()> {
             ));
         }
         for tag in &task.tags {
-            line.push_str(&format!("  #{tag}"));
+            line.push_str(&format!("  #{}", plain(tag)));
         }
         if let Some(p) = task.priority {
             line.push_str(&format!("  {}", p.as_str()));
@@ -123,13 +123,21 @@ fn list(path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
+/// A todo.md can arrive over `git pull`. Control characters in it would be
+/// acted on by the terminal rather than shown.
+fn plain(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_control() { '\u{fffd}' } else { c })
+        .collect()
+}
+
 fn describe(task: &Task, today: NaiveDate) -> String {
-    let mut parts = vec![format!("added: {}", task.title)];
+    let mut parts = vec![format!("added: {}", plain(&task.title))];
     if let Some(due) = task.due {
         parts.push(format!("due {}", relative(due, today)));
     }
     for tag in &task.tags {
-        parts.push(format!("#{tag}"));
+        parts.push(format!("#{}", plain(tag)));
     }
     if let Some(p) = task.priority {
         parts.push(p.as_str().to_string());

@@ -71,7 +71,7 @@ fn resolve_date(s: &str, today: NaiveDate) -> Option<NaiveDate> {
     let n: u64 = chars.as_str().parse().ok()?;
     match unit {
         'd' => today.checked_add_days(Days::new(n)),
-        'w' => today.checked_add_days(Days::new(n * 7)),
+        'w' => today.checked_add_days(Days::new(n.checked_mul(7)?)),
         _ => None,
     }
 }
@@ -161,6 +161,28 @@ mod tests {
         assert_eq!(resolve_date("0d", today()), Some(ymd(2026, 8, 10)));
         assert_eq!(resolve_date("2w", today()), Some(ymd(2026, 8, 24)));
         assert_eq!(resolve_date("30d", today()), Some(ymd(2026, 9, 9)));
+    }
+
+    /// Each of these takes a different route out: the count does not fit a u64,
+    /// the weeks-to-days multiply overflows, and the date lands outside the
+    /// calendar. None of them may panic.
+    #[test]
+    fn absurd_offsets_do_not_panic() {
+        for s in [
+            "99999999999999999999d",
+            "2635249153387078802w",
+            "999999999d",
+        ] {
+            assert_eq!(resolve_date(s, today()), None, "{s}");
+        }
+    }
+
+    #[test]
+    fn a_large_but_real_offset_still_works() {
+        assert_eq!(
+            resolve_date("9999999d", today()),
+            NaiveDate::from_ymd_opt(29405, 9, 4)
+        );
     }
 
     #[test]

@@ -57,33 +57,49 @@ pub fn save(path: &Path, doc: &Doc, read_mtime: Option<SystemTime>) -> Result<()
             .with_context(|| format!("creating the directory {}", dir.display()))?;
     }
 
-    if path.exists() {
-        let backup = backup_path(path);
-        fs::copy(path, &backup)
+    // A dotfiles user's todo.md is usually a symlink into their repo. Renaming
+    // over the link would replace it with a plain file and quietly detach it.
+    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let existing = fs::metadata(&target).ok();
+
+    if existing.is_some() {
+        let backup = backup_path(&target);
+        fs::copy(&target, &backup)
             .with_context(|| format!("writing the backup {}", backup.display()))?;
     }
 
-    let tmp = temp_path(path);
-    let text = render(doc);
-
-    {
-        let mut file = File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
-        file.write_all(text.as_bytes())
-            .with_context(|| format!("writing {}", tmp.display()))?;
-        file.sync_all()
-            .with_context(|| format!("flushing {}", tmp.display()))?;
+    let tmp = temp_path(&target);
+    if let Err(e) = write_temp(&tmp, &render(doc), existing.as_ref()) {
+        let _ = fs::remove_file(&tmp);
+        return Err(e);
     }
 
-    fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))?;
+    fs::rename(&tmp, &target).with_context(|| format!("replacing {}", target.display()))?;
 
     // Without syncing the directory the rename itself can be lost on a crash.
     // Best effort: some filesystems refuse to open a directory.
-    if let Some(dir) = path.parent()
+    if let Some(dir) = target.parent()
         && let Ok(handle) = File::open(dir)
     {
         let _ = handle.sync_all();
     }
 
+    Ok(())
+}
+
+fn write_temp(tmp: &Path, text: &str, existing: Option<&fs::Metadata>) -> Result<()> {
+    let mut file = File::create(tmp).with_context(|| format!("creating {}", tmp.display()))?;
+    file.write_all(text.as_bytes())
+        .with_context(|| format!("writing {}", tmp.display()))?;
+    file.sync_all()
+        .with_context(|| format!("flushing {}", tmp.display()))?;
+    drop(file);
+
+    // A list the user chmodded to 600 must not come back as 644.
+    if let Some(meta) = existing {
+        fs::set_permissions(tmp, meta.permissions())
+            .with_context(|| format!("restoring the mode of {}", tmp.display()))?;
+    }
     Ok(())
 }
 
@@ -267,5 +283,52 @@ mod tests {
         let path = dir.file("todo.md");
         save(&path, &Doc::default(), None).unwrap();
         assert!(!temp_path(&path).exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_symlinked_list_stays_a_symlink() {
+        let dir = TempDir::new("symlink");
+        let real = dir.file("dotfiles-todo.md");
+        let link = dir.file("todo.md");
+        fs::write(&real, "- [ ] original\n").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let loaded = load(&link).unwrap();
+        let mut doc = loaded.doc;
+        doc.push_task(Task::new(false, "second".into(), None, vec![], None));
+        save(&link, &doc, loaded.mtime).unwrap();
+
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the symlink was replaced by a regular file"
+        );
+        assert_eq!(
+            fs::read_to_string(&real).unwrap(),
+            "- [ ] original\n- [ ] second\n",
+            "the write did not reach the file the link points at"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn file_permissions_survive_a_write() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new("mode");
+        let path = dir.file("todo.md");
+        fs::write(&path, "- [ ] private\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        let loaded = load(&path).unwrap();
+        let mut doc = loaded.doc;
+        doc.push_task(Task::new(false, "second".into(), None, vec![], None));
+        save(&path, &doc, loaded.mtime).unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "a 0600 list came back as {mode:o}");
     }
 }
