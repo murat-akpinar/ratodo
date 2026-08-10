@@ -18,6 +18,8 @@ The dumb version from todo.md step 4: the agenda flattened into rows, a border, 
 vim, `git pull` or `ratodo add` in another pane now reaches the open list on its own, which is the promise in docs/architecture.md#concurrent-editing.
 - *(ics)* Export dated tasks as VTODO ([3d3bd22](https://github.com/murat-akpinar/ratodo/commit/3d3bd22204481ef87e676e452e03d0966a193b09))
 `ratodo sync` writes `~/.local/share/ratodo/todo.ics`, and every capture rewrites it so the calendar is never a version behind. Open, dated tasks only; ~90 lines of string formatting and no eighth dependency.
+- *(theme)* Eleven colour roles, six built-ins and a theme.conf ([73ac1aa](https://github.com/murat-akpinar/ratodo/commit/73ac1aa4a5363b98799b3e9c1341d9966f152c42))
+`theme.rs` holds the `Theme` struct, the built-in tables, the parser and the resolver, in one file and with no new dependency — the parser is `split_once` and a hex decode. `--theme`, `ratodo theme list` and `ratodo theme dump` are wired up, and the colours actually reach the screen.
 
 ### 🐛 Bug Fixes
 
