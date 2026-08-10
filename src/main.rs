@@ -1,15 +1,17 @@
 //! Subcommands and terminal setup. See docs/cli.md.
 
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use chrono::Local;
 use clap::{Parser, Subcommand};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 
 use ratodo::model::{Lookup, Priority};
 use ratodo::text;
-use ratodo::{agenda, capture, write};
+use ratodo::{agenda, capture, ui, write};
 
 #[derive(Parser)]
 #[command(name = "ratodo", version, about, long_about = None)]
@@ -77,7 +79,9 @@ fn main() -> Result<ExitCode> {
         Some(Command::Done { text }) => return done(&path, &text.join(" ")),
         Some(Command::List(args)) => list(&path, &args)?,
         Some(Command::Status { json }) => return status(&path, json),
-        // The TUI arrives in step 4; until then the bare command lists.
+        // `ratodo | wc -l` and `ratodo > out.txt` still have to mean something,
+        // and a TUI down a pipe means nothing at all.
+        None if std::io::stdout().is_terminal() => return tui(&path),
         None => list(&path, &ListArgs::default())?,
     }
     Ok(ExitCode::SUCCESS)
@@ -121,6 +125,57 @@ fn add(path: &Path, input: &str) -> Result<()> {
 
     println!("{summary}");
     Ok(())
+}
+
+fn tui(path: &Path) -> Result<ExitCode> {
+    let doc = write::load(path)?.doc;
+    let today = Local::now().date_naive();
+    let tasks: Vec<_> = doc.tasks().cloned().collect();
+    let groups = agenda::agenda(&tasks, today);
+    let counts = agenda::Counts::of(&tasks, today);
+    let mut screen = ui::Screen::new(ui::rows(&groups));
+
+    // `try_init` installs a panic hook that turns raw mode off and leaves the
+    // alternate screen before chaining to the default one, and `Terminal`'s own
+    // Drop puts the cursor back. That is the whole of invariant 5, and it is the
+    // library's, so it cannot drift out of step with the setup it undoes.
+    let mut terminal = ratatui::try_init()?;
+    let result = run(&mut terminal, &mut screen, counts, today);
+    ratatui::restore();
+    result
+}
+
+fn run(
+    terminal: &mut ratatui::DefaultTerminal,
+    screen: &mut ui::Screen,
+    counts: agenda::Counts,
+    today: chrono::NaiveDate,
+) -> Result<ExitCode> {
+    loop {
+        terminal.draw(|frame| ui::draw(frame, screen, counts, today))?;
+
+        // Blocks until something happens: no timeout, no frame rate, 0% CPU in a
+        // pane left open all day. See docs/architecture.md#the-event-loop.
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        // Windows reports a release for every press; without this every key acts twice.
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+
+        match key.code {
+            KeyCode::Char('q') => return Ok(ExitCode::SUCCESS),
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return Ok(ExitCode::SUCCESS);
+            }
+            KeyCode::Char('j') | KeyCode::Down => screen.move_by(1),
+            KeyCode::Char('k') | KeyCode::Up => screen.move_by(-1),
+            KeyCode::Char('g') => screen.top(),
+            KeyCode::Char('G') => screen.bottom(),
+            _ => {}
+        }
+    }
 }
 
 /// Exit 2 — "asked, could not answer" — for both no match and too many, and in

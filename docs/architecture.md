@@ -164,6 +164,16 @@ Deliberately **absent**, and why:
 - **No `icalendar` crate.** VTODO output is ~30 lines of string formatting. Not
   worth a dependency. See [calendar.md](calendar.md).
 
+Two notes on how the two terminal crates are declared, both of which are the kind
+of thing that is invisible until it bites:
+
+- **`ratatui` runs with `default-features = false`.** The defaults bring a
+  calendar widget which brings its own date crate, alongside the `chrono` already
+  here. We take `crossterm` and `layout-cache` and nothing else.
+- **`crossterm` has to stay on the version ratatui re-exports.** A key event from
+  two different crossterm versions is two different types that read identically
+  in a compiler error. `cargo tree -i crossterm` printing one entry is the check.
+
 ## Difficulty is unevenly distributed
 
 This is the first TUI project on this codebase, and the architecture is shaped

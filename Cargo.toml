@@ -18,7 +18,13 @@ categories = ["command-line-utilities"]
 anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 clap = { version = "4", features = ["derive"] }
+# Must stay on the version ratatui re-exports, or key events cross a type
+# boundary that looks identical and is not. `cargo tree -i crossterm` says one.
+crossterm = "0.29"
 directories = "6"
+# No default features: they bring a calendar widget and its own date crate, on
+# top of the chrono we already have. See docs/architecture.md#dependencies.
+ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache"] }
 
 [profile.release]
 strip = true

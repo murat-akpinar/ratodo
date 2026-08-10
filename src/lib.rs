@@ -8,4 +8,5 @@ pub mod capture;
 pub mod model;
 pub mod parse;
 pub mod text;
+pub mod ui;
 pub mod write;

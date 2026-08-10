@@ -76,10 +76,14 @@ the abandonment risk in [docs/risks.md](docs/risks.md).
 
 ## 4 — ratatui (the genuinely new part)
 
-- [ ] **Panic hook on day one** — a TUI that panics in raw mode wrecks the terminal
-- [ ] A dumb list: print the task titles, `↑↓`, quit with `q`
+- [x] **Panic hook on day one** — a TUI that panics in raw mode wrecks the terminal.
+      `ratatui::try_init` installs one that restores raw mode and the alternate
+      screen; `Terminal`'s Drop puts the cursor back
+- [x] A dumb list: print the task titles, `↑↓`, quit with `q`
+- [x] **No fixed FPS** — draw on events, block when idle. Measured: six seconds
+      open, zero seconds of CPU
+- [x] The TUI only opens on a TTY — `ratodo | wc -l` lists instead
 - [ ] Event loop: `crossterm::event::poll` + notify's mpsc channel
-- [ ] **No fixed FPS** — draw on events, block when idle (0% CPU at rest)
 - [ ] inotify: re-read when the file changes from outside
 
 ## 4.5 — ics (was step 3; moved behind the TUI)

@@ -1,0 +1,340 @@
+//! ratatui drawing. See docs/tui.md.
+
+use chrono::NaiveDate;
+use ratatui::Frame;
+use ratatui::style::{Modifier, Style};
+use ratatui::widgets::{Block, List, ListItem, ListState};
+
+use crate::agenda::{Counts, Group};
+use crate::model::Task;
+use crate::text;
+
+/// One line of the list. Only a `Task` can hold the selection; the rest is
+/// scenery the cursor moves over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Row<'a> {
+    Header(&'a str),
+    Task(&'a Task),
+    Spacer,
+}
+
+/// Flattens the agenda into lines. The blank row between groups is half of the
+/// design — see docs/design.md#rules — so it is a row, not a margin.
+pub fn rows<'a>(groups: &'a [Group<'a>]) -> Vec<Row<'a>> {
+    let mut out = Vec::new();
+    for group in groups {
+        if !out.is_empty() {
+            out.push(Row::Spacer);
+        }
+        if let Some(title) = group.kind.title() {
+            out.push(Row::Header(title));
+        }
+        out.extend(group.tasks.iter().map(|t| Row::Task(t)));
+    }
+    out
+}
+
+pub struct Screen<'a> {
+    rows: Vec<Row<'a>>,
+    /// Holds the scroll offset as well as the selection, so the selected row
+    /// stays on screen without this module doing viewport arithmetic.
+    state: ListState,
+}
+
+impl<'a> Screen<'a> {
+    pub fn new(rows: Vec<Row<'a>>) -> Self {
+        let first = (0..rows.len()).find(|&i| matches!(rows[i], Row::Task(_)));
+        Screen {
+            rows,
+            state: ListState::default().with_selected(first),
+        }
+    }
+
+    pub fn selected(&self) -> Option<usize> {
+        self.state.selected()
+    }
+
+    pub fn task(&self) -> Option<&Task> {
+        match self.rows.get(self.state.selected()?) {
+            Some(Row::Task(t)) => Some(t),
+            _ => None,
+        }
+    }
+
+    fn is_task(&self, i: usize) -> bool {
+        matches!(self.rows.get(i), Some(Row::Task(_)))
+    }
+
+    /// Moves `n` task rows, skipping headers and blanks, and **stops at the
+    /// ends rather than wrapping**: a list that wraps costs you your place every
+    /// time you overshoot.
+    pub fn move_by(&mut self, n: isize) {
+        let Some(mut at) = self.state.selected() else {
+            return;
+        };
+        // The sign is read once, outside the loop: `n > 0` inside it is a
+        // condition no test can pin down, because at `n == 0` the loop never runs
+        // and both branches are the same answer.
+        let forward = n.is_positive();
+        for _ in 0..n.unsigned_abs() {
+            let next = if forward {
+                (at + 1..self.rows.len()).find(|&i| self.is_task(i))
+            } else {
+                (0..at).rev().find(|&i| self.is_task(i))
+            };
+            match next {
+                Some(i) => at = i,
+                None => break,
+            }
+        }
+        self.state.select(Some(at));
+    }
+
+    pub fn top(&mut self) {
+        self.jump(0..self.rows.len());
+    }
+
+    pub fn bottom(&mut self) {
+        self.jump((0..self.rows.len()).rev());
+    }
+
+    fn jump(&mut self, mut order: impl Iterator<Item = usize>) {
+        if let Some(i) = order.find(|&i| self.is_task(i)) {
+            self.state.select(Some(i));
+        }
+    }
+}
+
+/// The dumb version: the rows, a border and the counts. The design in
+/// docs/tui.md lands in step 6 — this is the one that proves the loop runs.
+pub fn draw(frame: &mut Frame, screen: &mut Screen, counts: Counts, today: NaiveDate) {
+    let items: Vec<ListItem> = screen
+        .rows
+        .iter()
+        .map(|row| match row {
+            // The CLI's own two-space indent would fight the selection marker.
+            Row::Task(t) => ListItem::new(text::list_line(t, today).trim_start().to_string()),
+            Row::Header(title) => ListItem::new(text::plain(title))
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+            Row::Spacer => ListItem::new(""),
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(Block::bordered().title(format!(" ratodo — {} ", text::status_line(counts))))
+        .highlight_symbol("▌ ");
+
+    frame.render_stateful_widget(list, frame.area(), &mut screen.state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agenda::agenda;
+    use crate::capture::capture;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    fn today() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 8, 10).unwrap()
+    }
+
+    fn tasks(specs: &[&str]) -> Vec<Task> {
+        specs.iter().map(|s| capture(s, today())).collect()
+    }
+
+    fn in_section(specs: &[(&str, &str)]) -> Vec<Task> {
+        specs
+            .iter()
+            .map(|(text, section)| {
+                let mut t = capture(text, today());
+                t.section = Some(section.to_string());
+                t
+            })
+            .collect()
+    }
+
+    fn titles(rows: &[Row]) -> Vec<String> {
+        rows.iter()
+            .map(|r| match r {
+                Row::Header(t) => format!("# {t}"),
+                Row::Task(t) => t.title.clone(),
+                Row::Spacer => String::new(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_groups_flatten_into_headers_tasks_and_one_blank_between() {
+        let tasks = tasks(&["late @2026-08-01", "now @2026-08-10", "also @2026-08-10"]);
+        let groups = agenda(&tasks, today());
+        assert_eq!(
+            titles(&rows(&groups)),
+            ["# OVERDUE", "late", "", "# TODAY", "now", "also"]
+        );
+    }
+
+    /// No leading blank row: a pane that opens with an empty first line looks
+    /// like it failed to draw.
+    #[test]
+    fn the_first_group_gets_no_spacer_above_it() {
+        let tasks = tasks(&["a @2026-08-10"]);
+        assert_eq!(rows(&agenda(&tasks, today()))[0], Row::Header("TODAY"));
+    }
+
+    /// An untitled group is the run of tasks above the file's first heading, and
+    /// it still needs its tasks — just not a header row.
+    #[test]
+    fn an_untitled_group_contributes_only_tasks() {
+        let tasks = tasks(&["a", "b"]);
+        assert_eq!(titles(&rows(&agenda(&tasks, today()))), ["a", "b"]);
+    }
+
+    #[test]
+    fn the_selection_starts_on_the_first_task_not_the_header() {
+        let tasks = tasks(&["a @2026-08-10"]);
+        let groups = agenda(&tasks, today());
+        let screen = Screen::new(rows(&groups));
+        assert_eq!(screen.selected(), Some(1));
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("a"));
+    }
+
+    #[test]
+    fn a_list_with_nothing_in_it_has_no_selection() {
+        let screen = Screen::new(rows(&[]));
+        assert_eq!(screen.selected(), None);
+        assert!(screen.task().is_none());
+    }
+
+    /// The reason `move_by` is not `selected += 1`: between two groups there are
+    /// two rows that cannot hold the cursor.
+    #[test]
+    fn moving_steps_over_the_headers_and_the_blanks() {
+        let tasks = tasks(&["late @2026-08-01", "now @2026-08-10"]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("late"));
+        screen.move_by(1);
+        assert_eq!(
+            screen.task().map(|t| t.title.as_str()),
+            Some("now"),
+            "one press crossed a blank and a header"
+        );
+    }
+
+    #[test]
+    fn moving_stops_at_the_ends_instead_of_wrapping() {
+        let tasks = tasks(&["a @2026-08-10", "b @2026-08-10"]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+
+        screen.move_by(-1);
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("a"));
+        screen.move_by(99);
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("b"));
+        screen.move_by(1);
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("b"));
+    }
+
+    #[test]
+    fn a_half_page_lands_where_that_many_single_steps_would() {
+        let tasks = in_section(&[("a", "S"), ("b", "S"), ("c", "S"), ("d", "S")]);
+        let groups = agenda(&tasks, today());
+
+        let mut jumped = Screen::new(rows(&groups));
+        jumped.move_by(3);
+        let mut stepped = Screen::new(rows(&groups));
+        for _ in 0..3 {
+            stepped.move_by(1);
+        }
+        assert_eq!(jumped.selected(), stepped.selected());
+        assert_eq!(jumped.task().map(|t| t.title.as_str()), Some("d"));
+    }
+
+    #[test]
+    fn top_and_bottom_reach_the_first_and_last_task() {
+        let tasks = tasks(&["late @2026-08-01", "now @2026-08-10", "soon @2026-08-12"]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+
+        screen.bottom();
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("soon"));
+        screen.top();
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("late"));
+    }
+
+    fn rendered(width: u16, height: u16, tasks: &[Task]) -> Vec<String> {
+        let groups = agenda(tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let counts = Counts::of(tasks, today());
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|f| draw(f, &mut screen, counts, today()))
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(width as usize)
+            .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
+            .collect()
+    }
+
+    #[test]
+    fn the_screen_shows_the_counts_the_groups_and_the_marker() {
+        let tasks = tasks(&["late @2026-08-01", "now @2026-08-10"]);
+        let screen = rendered(46, 8, &tasks);
+
+        assert!(
+            screen[0].contains("ratodo — 2 open · 1 overdue"),
+            "{screen:?}"
+        );
+        assert!(screen[1].contains("OVERDUE"), "{screen:?}");
+        assert!(screen[2].contains("▌ [!] late"), "{screen:?}");
+        assert!(screen[4].contains("TODAY"), "{screen:?}");
+        assert!(screen[5].contains("[ ] now"), "{screen:?}");
+        assert!(!screen[5].contains('▌'), "two rows drawn as selected");
+    }
+
+    /// A pane in a tiling layout is routinely shorter than the list. If the
+    /// selection can leave the viewport the tool looks broken at row eleven.
+    #[test]
+    fn the_selection_stays_on_screen_in_a_pane_too_short_for_the_list() {
+        let specs: Vec<String> = (0..30).map(|i| format!("task{i}")).collect();
+        let tasks: Vec<Task> = specs.iter().map(|s| capture(s, today())).collect();
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        screen.bottom();
+
+        let counts = Counts::of(&tasks, today());
+        let mut terminal = Terminal::new(TestBackend::new(30, 6)).unwrap();
+        terminal
+            .draw(|f| draw(f, &mut screen, counts, today()))
+            .unwrap();
+
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(
+            text.contains("task29"),
+            "the last task scrolled off: {text}"
+        );
+        assert!(!text.contains("task0 "), "the view did not scroll at all");
+    }
+
+    /// A title from a file that arrived over `git pull` must not be able to
+    /// drive the terminal it is drawn into.
+    #[test]
+    fn a_control_character_never_reaches_the_buffer() {
+        let mut task = capture("innocent title", today());
+        task.title = "wipe\x1b[2J".into();
+        let screen = rendered(40, 5, &[task]);
+        assert!(screen.iter().all(|r| !r.contains('\x1b')), "{screen:?}");
+        assert!(screen.iter().any(|r| r.contains('\u{fffd}')), "{screen:?}");
+    }
+}
