@@ -12,6 +12,10 @@ The pure core of the product, with no terminal involved: parse, write, capture, 
 `ratodo status` on one line, `--json` in the shape waybar and eww read, and exit 1 when something is overdue so `ratodo status || notify-send "$(ratodo status)"` needs no extra flag. `main` returns `ExitCode` rather than calling `process::exit`, so nothing skips a destructor to carry a number out.
 - *(cli)* Mark a task done from the command line ([3c0f8b4](https://github.com/murat-akpinar/ratodo/commit/3c0f8b49455f91d508c0c1de4403ce58e1c4c067))
 `ratodo done '<text>'`: case-insensitive substring over the **open** tasks, a unique match required. One match ticks one byte; several print the candidates and exit 2 without the file ever being opened for writing; none exits 2 and says so.
+- *(ui)* Draw the list in a terminal ([b044b69](https://github.com/murat-akpinar/ratodo/commit/b044b69de720de28286e6d01fcd54ec1ef916ea2))
+The dumb version from todo.md step 4: the agenda flattened into rows, a border, the counts, `j k` and the arrows, `g G`, `q` and ctrl-c. The design in docs/tui.md arrives in step 6; this is the commit that proves the loop runs and gives it a way to be tested.
+- *(ui)* Follow the file while the screen is open ([b4db638](https://github.com/murat-akpinar/ratodo/commit/b4db638d2c2c5fc3fe1769223f5f4be06212cf49))
+vim, `git pull` or `ratodo add` in another pane now reaches the open list on its own, which is the promise in docs/architecture.md#concurrent-editing.
 
 ### 🐛 Bug Fixes
 
@@ -19,6 +23,8 @@ The pure core of the product, with no terminal involved: parse, write, capture, 
 A review of the write path turned up two defects that would have bitten exactly the audience this tool is for, plus two smaller ones.
 - *(write)* Keep the backup out of the user's dotfiles, and the capture inside their sections ([83fca6d](https://github.com/murat-akpinar/ratodo/commit/83fca6d6e565a30b828ba91c7b979e18963e8c77))
 Four defects that two audience design reviews turned up in code that was already pushed. Each one is small; each one would have been noticed by exactly the person this tool is for.
+- *(cli)* Stop panicking when the reader closes the pipe ([6b8219c](https://github.com/murat-akpinar/ratodo/commit/6b8219c5d7f6429502d6cbea865e4ba8299906a6))
+`ratodo list | head -3` closed the pipe half way through and `println!` turned the next write into a panic — a backtrace and exit 101 for a command that did nothing wrong, and `| head` is the first thing this audience types. Found by running the binary, not by a test.
 
 ### 📚 Documentation
 
