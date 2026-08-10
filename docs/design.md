@@ -53,26 +53,11 @@ change any of them.
   inconsistent and for half the users a completed task becomes unreadable. Dim
   colour plus `✓` is enough.
 
-## Screen sketch
+## Screens
 
-```
-┌─ ratodo ────────────────────────────── 3 open · 1 overdue ─┐
-│                                                            │
-│  OVERDUE                                                   │
-│  ! rotate the backup keys              2 days ago #ops     │
-│                                                            │
-│  TODAY                                                     │
-│  ○ pay the invoice                                #home    │
-│  ○ review the deploy PR                     16:00 #work    │
-│                                                            │
-│  THIS WEEK                                                 │
-│  ○ book a dentist appointment              Aug 20 #health  │
-│  ✓ migrate the server                                      │
-│                                                            │
-├────────────────────────────────────────────────────────────┤
-│ ↑↓ move   ⏎ toggle   a add   d del   e $EDITOR   q quit    │
-└────────────────────────────────────────────────────────────┘
-```
+Every screen, every interaction state and the full keymap live in
+[tui.md](tui.md) — one canonical set of sketches, so there is never a second
+drawing to disagree with the first.
 
 Quick capture, without opening the TUI at all:
 

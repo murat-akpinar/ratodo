@@ -27,23 +27,30 @@ added: pay the invoice  ·  due tomorrow (2026-08-11)  ·  #home
 Then, when you want the overview, `ratodo` opens the agenda:
 
 ```
-┌─ ratodo ────────────────────────────── 3 open · 1 overdue ─┐
+┌─ ratodo ────────────────────────────── 5 open · 1 overdue ─┐
 │                                                            │
-│  OVERDUE                                                   │
-│  ! rotate the backup keys              2 days ago #ops     │
+│ OVERDUE ─────────────────────────────────────────────────  │
+│   ! rotate the backup keys                   2d ago  #ops  │
 │                                                            │
-│  TODAY                                                     │
-│  ○ pay the invoice                                #home    │
-│  ○ review the deploy PR                     16:00 #work    │
+│ TODAY ───────────────────────────────────────────────────  │
+│ ▌ ○ pay the invoice                                 #home  │
+│   ○ review the deploy PR                     16:00  #work  │
 │                                                            │
-│  THIS WEEK                                                 │
-│  ○ book a dentist appointment              Aug 20 #health  │
-│  ✓ migrate the server                                      │
+│ THIS WEEK ───────────────────────────────────────────────  │
+│   ○ book a dentist appointment         Thu 09:30  #health  │
+│   ✓ migrate the server                                     │
 │                                                            │
-├────────────────────────────────────────────────────────────┤
-│ ↑↓ move   ⏎ toggle   a add   d del   e $EDITOR   q quit    │
+│ LATER (3) ──────────────────────────────────────────── l   │
+│                                                            │
 └────────────────────────────────────────────────────────────┘
+
+ j k move   spc done   a add   ⏎ edit   d del   e $EDITOR   ? keys   q quit
 ```
+
+Vim keys, no vim modes: `j` `k` `g` `G` `ctrl-d` to move, one key per action, and
+`?` for the rest. Nothing pops over the list, deleting is undoable with `u`
+instead of asking you to confirm, and it degrades to a 34-column pane in a tiling
+layout. Every screen: [`docs/tui.md`](docs/tui.md).
 
 ## Why
 
@@ -169,6 +176,7 @@ $ cargo install ratodo
 | [docs/format.md](docs/format.md) | the file format, in full |
 | [docs/architecture.md](docs/architecture.md) | data flow, modules, dependencies |
 | [docs/design.md](docs/design.md) | palette, layout, agenda rules |
+| [docs/tui.md](docs/tui.md) | every screen, the keymap, narrow-width behaviour |
 | [docs/theming.md](docs/theming.md) | `theme.conf`, colour keys, built-in themes |
 | [docs/cli.md](docs/cli.md) | commands and keybindings |
 | [docs/calendar.md](docs/calendar.md) | `.ics` export and client support |

@@ -41,14 +41,21 @@ Accepted shorthand: `@today @tomorrow @mon`…`@sun @3d @2w`. Full syntax in
 
 ## Keys (TUI, v1)
 
+Vim-flavoured, but **not modal** — there is no normal/insert distinction to think
+about. Full keymap, the reasoning, and the keys left deliberately unbound are in
+[tui.md](tui.md#keys).
+
 | Key | Action |
 |---|---|
-| `↑` `↓` / `k` `j` | Move the selection |
-| `⏎` | Toggle done |
-| `a` | Add a task (inline input line) |
-| `d` | Delete the selected task |
+| `j` `k` / `↓` `↑` | Move the selection |
+| `g` / `G` | Top / bottom |
+| `spc` | Toggle done |
+| `a` / `o` | Add a task (inline input on the bottom line) |
+| `⏎` | Edit the selected task |
+| `d` / `u` | Delete / undo |
+| `l` / `z` | Fold LATER / fold the group under the cursor |
 | `e` | Open `$EDITOR` on the file, re-read on exit |
-| `l` | Expand/collapse the LATER group |
+| `?` | Key help |
 | `q` / `Ctrl-C` | Quit |
 
 `e` is the escape hatch: whatever the tool cannot do, the user can still do in

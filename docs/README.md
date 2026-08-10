@@ -14,6 +14,7 @@ and *what was given up*.
 | [format.md](format.md) | What does the file look like, where does it live, what does the tool touch |
 | [architecture.md](architecture.md) | How does data flow, which modules exist, how are concurrent edits handled, which crates and why |
 | [design.md](design.md) | Palette, layout, agenda grouping rules, symbols |
+| [tui.md](tui.md) | Every screen and interaction state, the keymap, narrow-width behaviour |
 | [theming.md](theming.md) | `theme.conf`, the 11 colour keys, built-in themes |
 | [cli.md](cli.md) | Commands, flags, keybindings, output shapes |
 | [calendar.md](calendar.md) | `.ics` export, VTODO, which calendar clients actually work |

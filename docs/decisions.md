@@ -24,6 +24,22 @@ Three lists: what is settled, what was rejected, and what is still open.
 - ✅ **`e` → `$EDITOR`.** An escape hatch, ten lines, exactly right for the audience.
 - ✅ **One view mode (agenda).** Two modes means state management, key conflicts
   and two drawing paths.
+- ✅ **Vim keys, not vim modes.** `j k g G ctrl-d o z`, but no normal/insert
+  distinction, no command mode, no pending-operator state. The whole state
+  machine is list mode plus an input mode that only exists while adding or
+  editing. See [tui.md](tui.md).
+- ✅ **One multiplexed bottom line** carrying hints, the input field, results and
+  warnings. No dialog ever covers the list — the help overlay (`?`) is the single
+  exception, and it is one you asked for.
+- ✅ **Delete is immediate, with `u` to undo.** No confirmation prompt: a prompt
+  taxes every delete to protect against the rare wrong one.
+- ✅ **`spc` toggles done, `⏎` edits.** *(Changed from "`⏎` toggles" — see below.)*
+- ✅ **Narrow width is the normal case**, not an edge case. Degradation order:
+  spacing → tags → priority → date → truncate the title, never below 12
+  characters. Under 34 columns the frame is dropped entirely.
+- ✅ **The selection survives a reload**, tracked by task identity rather than row
+  index, and a toggled task does not jump position until the next reload. A list
+  that moves under you is unusable as a side pane.
 - ✅ **No `tokio`, no `serde`, no `regex`, no `icalendar`.** Reasons in
   [architecture.md](architecture.md#dependencies).
 - ✅ **Palette: Catppuccin Mocha, accent mauve** — as the *default*.
@@ -85,6 +101,20 @@ It also retired an open risk for free: the built-in `terminal` theme uses only
 ANSI 0–15, which is the answer to "no truecolor on a bare TTY".
 
 Full spec: [theming.md](theming.md).
+
+### `⏎` toggles → `spc` toggles, `⏎` edits (2026-08-10)
+
+**Was:** `⏎` marks a task done, and there is no inline edit.
+
+**Now:** `spc` marks done, `⏎` opens the task for editing.
+
+**Why:** two reasons, and the second is the real one.
+
+1. Space-to-toggle and Enter-to-open are the conventions people arrive with from
+   every other list UI they use.
+2. `⏎` is also the accept key in the add/edit input. Having one key mean both
+   "accept this text" and "toggle this task" a moment apart is exactly the class
+   of mistake that makes someone stop trusting a tool with their file.
 
 ## Open questions
 
