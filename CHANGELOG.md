@@ -16,6 +16,8 @@ A review of the write path turned up two defects that would have bitten exactly 
 Split the single 25 KB decision record into eleven focused documents under docs/, one question per file, and translate everything to English.
 - *(ui)* Design every screen and settle the keymap ([4e6bef8](https://github.com/murat-akpinar/ratodo/commit/4e6bef82ab8479a27072dbb1ae284bf76a89503a))
 The design record had one screen sketch and a seven-key table. Neither covered what the tool actually has to do while someone works next to it.
+- Record what two audience design reviews found ([96d0a2c](https://github.com/murat-akpinar/ratodo/commit/96d0a2cdb9d64dcfe5a665061cced58ecc226454))
+Two reviews were run against the design, one from each profile this tool claims to be for: a tiling-WM ricer and a terminal-bound developer. They ran separately and reached the same objection, which is why it is worth recording rather than arguing with.
 
 ### 🧪 Testing
 
