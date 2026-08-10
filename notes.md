@@ -1,12 +1,15 @@
-# Çalışma defteri
+# Working notebook
 
-> `claude.md` **kararların** kaydı — orası oturmuş şeyler.
-> Bu dosya **ham düşünce**: açık uçlar, yapılacaklar, reddedilenler, riskler.
-> Bir madde burada kararlaşırsa `claude.md`'ye taşınır ve buradan silinir.
+> [docs/](docs/README.md) is the record of **decisions** — settled things.
+> This file is **raw thinking**: loose ends, hunches, the idea graveyard.
+> When something settles here it moves into `docs/` and gets deleted from here.
 
 ---
 
-## Başlangıç fikri (2026-08-10, ham hali — silinmedi)
+## The seed idea (2026-08-10)
+
+Kept verbatim, in the original Turkish, because it is the historical record of
+where this came from:
 
 > - CLI rust ile Ratatui kütüphanesi ile bir todo, planlayıcı araç düşünüyorum.
 > - Bir çok kişi vim açıp yazıp txt veya md kaydediyor düşüncem şu bu araç linux
@@ -21,199 +24,67 @@
 >   edebilir.
 > - linux ortamında ki takvime entegre olabilmesi lazım
 
-Bu altı madde **tasarımın anayasası.** Bir özellik tartışılırken sorulacak soru:
-*bu maddelerden hangisine hizmet ediyor?* Hiçbirine hizmet etmiyorsa v1'de yok.
+In English, and these six points are **the constitution of the design**. When a
+feature is up for debate the question is: *which of these does it serve?* If none,
+it is not in v1.
 
-### Maddeler nereye oturdu
-
-| # | Ham madde | Karar |
+| # | The raw point | Where it landed |
 |---|---|---|
-| 1 | Rust + ratatui todo/planlayıcı | Temel. Tek binary, çevrimdışı |
-| 2 | i3 / Hyprland / sway kullanıcıları | Hedef kitle. Palet (Catppuccin), tuş haritası ve v4'teki waybar modülü buradan geliyor |
-| 3 | Komutla hızlı giriş, akışı bölmeden | `ratodo add "..."` → yazar, çıkar, TUI açılmaz. Ürünün varlık sebebi |
-| 4 | `.config/proje-ismi/` | `~/.config/ratodo/todo.md`. XDG'den bilinçli sapma — gerekçesi `claude.md`'de |
-| 5 | Tek dosya, dotfiles, GitHub, çoklu PC | Tek Markdown dosyası. **Senkron aracın işi değil** — kullanıcının git'i |
-| 6 | Linux takvimine entegrasyon | Tek yönlü `todo.ics` (VTODO). Dosyayı üretiyoruz, abone etmek kullanıcının işi |
+| 1 | A todo/planner in Rust + ratatui | The foundation. One binary, offline |
+| 2 | For i3 / Hyprland / sway users | The audience. The palette, the keymap and the v4 waybar module all come from here |
+| 3 | Fast entry by command, without breaking flow | `ratodo add "..."` → writes, exits, no TUI. The reason the product exists |
+| 4 | `.config/project-name/` | `~/.config/ratodo/todo.md`. A deliberate XDG deviation |
+| 5 | One file, dotfiles, GitHub, several machines | A single Markdown file. **Sync is not the tool's job** — it is the user's git |
+| 6 | Integrate with the Linux calendar | One-way `todo.ics` (VTODO). We make the file; subscribing is the user's job |
 
-**4 ile 5 çelişiyordu**, 5 kazandı: XDG'ye göre kullanıcı verisi
-`~/.local/share/`'a ait, ama kimse orayı dotfiles'a koymuyor.
-
----
-
-## Reddedilenler ve nedenleri
-
-Bunlar "sonra bakarız" değil, **bakıldı ve hayır denildi**. Yeniden tartışmaya
-açmak için yeni bir bilgi gerekiyor.
-
-| Ne | Neden hayır |
-|---|---|
-| TOML / JSON depolama | Parse'ı bedava ama elle düzenlenmiyor, `git diff` gürültülü. Madde 2'yi öldürüyor |
-| SQLite depolama | Hızlı ama binary — `git diff` yok, vim'le açılmıyor. Madde 5'i öldürüyor |
-| todo.txt standardı | Ekosistemi var ama tarih/tekrar desteği zayıf, takvim çıkışı için yetmiyor. Madde 6'yı öldürüyor |
-| CalDAV çift yönlü senkron | ETag, çakışma çözümü, offline kuyruk, auth saklama. Tek başına bir alt-proje |
-| Kanban / board görünümü | taskell zaten yapıyor ve iyi yapıyor |
-| Bulut senkron / hesap | "Veri yerinde kalıyor" ürünün en güçlü cümlesi, geri alınmaz |
-| `tokio` | Async'e ihtiyaç yok — tek yerel dosya, blocking IO yeterli |
-| Tema yükleyici (TOML + hot reload) | YAGNI. 11 sabit bir `theme.rs` yeterli |
-| İki görünüm kipi (ajanda / dosya) | İki kip = durum yönetimi + tuş çakışması + iki çizim yolu. Tek kip: ajanda |
-| Strikethrough ile tamamlanmış görev | Terminal desteği tutarsız, yarı kullanıcıda okunmaz oluyor |
+**Points 4 and 5 were in conflict**, and 5 won: by XDG, user data belongs in
+`~/.local/share/`, but nobody puts that in their dotfiles.
 
 ---
 
-## Açık sorular
+## Hunches on the open questions
 
-- [ ] **`ratodo` müsait mi?** İsim karara bağlandı (ratatui + todo), ama
-      müsaitlik kontrol edilmedi. Çakışma çıkarsa yedek: `tuido`.
-      - [ ] crates.io'da müsait mi?
-      - [ ] GitHub'da aynı isimde belirgin bir proje var mı?
-      - [ ] `command -v ratodo` — yaygın dağıtımlarda çakışıyor mu?
-- [ ] **README'nin ilk cümlesi:** *"A todo TUI, built **with** ratatui"* —
-      `for` değil. İsim akrabalığı ratatui eklentisi sanılma riski taşıyor,
-      ilk cümle bunu kapatmalı.
-- [ ] Tamamlanan görev yerinde mi kalsın, `## Done`'a mı taşınsın?
-      Yerinde kalırsa dosya şişiyor; taşınırsa her tamamlamada `git diff`
-      iki satır oynatıyor. *Sezgi: v1'de yerinde kalsın, v2'de `ratodo archive`.*
-- [ ] Çoklu liste için `--file` yetiyor mu, isimli liste kavramı mı lazım?
-      *Önce `--file` ile yaşayıp görelim.*
-- [ ] `ratodo add` her çağrıldığında `.ics` yenilensin mi, yoksa sadece TUI
-      kapanışında mı? *Sezgi: her `add`'de — basit, ve dosya küçük.*
-- [ ] `- [ ]` dışında `* [ ]` ve `+ [ ]` de tanınsın mı? (Markdown hepsini
-      liste sayıyor.) *Sezgi: okurken tanı, yazarken hep `- [ ]` kullan.*
+The questions themselves live in
+[docs/decisions.md](docs/decisions.md#open-questions). These are the leanings,
+which are not decisions:
+
+- Completed tasks: **stay in place** in v1, `ratodo archive` in v2.
+- Multiple lists: live with `--file` first and see whether it hurts.
+- `.ics` regeneration: on every `add`. Simple, and the file is tiny.
+- `* [ ]` and `+ [ ]`: recognise them when reading, always write `- [ ]`.
 
 ---
 
-## Yapılacaklar — v1
+## Idea graveyard
 
-Sıralama kasıtlı: **2. adım biterse elinde çalışan bir CLI todo var** (çirkin ama
-işleyen). 4. adım tıkanırsa proje ölmüyor.
+Not in v1, but not thrown away either. Written down here so they stop circling
+in my head and inflating v1.
 
-### 0 — Kurulum
-- [ ] Rust (rustup) — Linux / WSL
-- [ ] `git init` (bu klasör henüz depo değil)
-- [ ] Truecolor terminal doğrula: `printf "\x1b[38;2;203;166;247mmauve\x1b[0m\n"`
-- [ ] khal veya Thunderbird (`.ics` doğrulaması için)
-- [ ] `ratodo` müsaitliğini doğrula (aşağıdaki açık soru), sonra
-      `cargo init --name ratodo`
-
-### 1 — Fixture'lar (terminal gerekmiyor)
-- [ ] `tests/fixtures/simple.md` — düzgün, sıradan bir liste
-- [ ] `tests/fixtures/gnarly.md` — kasten zor olan (taslak aşağıda)
-- [ ] Her fixture için beklenen `Vec<Task>` çıktısını yaz
-
-### 2 — parse + write (terminal gerekmiyor) ← ürünün kalbi
-- [ ] `model.rs`: `Task { raw: String, line_no: usize, done, title, due, tags, priority, dirty: bool }`
-- [ ] `parse.rs`: satır → `Task`. **Ham satır her zaman saklanır**
-- [ ] `write.rs`: `dirty == false` ise ham satırı olduğu gibi yaz
-- [ ] Atomik yazma: temp dosya → `fsync` → `rename`, öncesinde `.bak`
-- [ ] mtime kontrolü — okuduğumuzdan beri değiştiyse yazma, uyar
-- [ ] **Round-trip testi:** `parse(write(parse(x))) == parse(x)`
-- [ ] **Sadakat testi:** dokunulmamış her satır byte-byte aynı
-- [ ] `ratodo list` → `println!`. Burada ürün çalışıyor olacak
-
-### 3 — agenda + ics (terminal gerekmiyor)
-- [ ] `agenda(&[Task], today) -> Vec<Group>` — `today` **parametre**,
-      `Local::now()` fonksiyonun içinde değil (yoksa test edilemez)
-- [ ] Grup testleri: gecikmiş / bugün / bu hafta / sonra / tarihsiz
-- [ ] Sınır testleri: tam bugün 00:00, tam +7 gün, geçmiş yıl, geçersiz tarih
-- [ ] `ics.rs`: VTODO çıktısı (~30 satır string biçimlendirme, crate yok)
-- [ ] Snapshot testi + **gerçek doğrulama:** çıktıyı khal'e ver, okunuyor mu
-
-### 4 — ratatui (asıl yeni olan kısım)
-- [ ] **Panic hook ilk gün yazılsın** — ham modda panikleyen TUI kullanıcının
-      terminalini bozuk bırakır
-- [ ] Aptal liste: görev başlıklarını bas, `↑↓`, `q` ile çık
-- [ ] Olay döngüsü: `crossterm::event::poll` + `notify` mpsc kanalı
-- [ ] **Sabit FPS yok** — olay geldiğinde çiz, boştayken blokla (idle'da %0 CPU)
-- [ ] inotify: dosya dışarıdan değişince yeniden oku
-
-### 5 — Birleştir + tasarımı uygula
-- [ ] `theme.rs` (11 sabit)
-- [ ] Gruplu ajanda çizimi, `○ ✓ !` sembolleri
-- [ ] ASCII fallback: `[ ]` `[x]` `[!]`
-- [ ] `a` ekle · `⏎` işaretle · `d` sil · `e` `$EDITOR` · `q` çık
-- [ ] `clap`: `ratodo` · `ratodo add` · `ratodo list` · `ratodo done` · `ratodo sync`
-- [ ] README: khal ve Thunderbird için `.ics` abone olma adımları
+- `ratodo status --json` → **a waybar / eww module.** "3 open · 1 overdue" in the
+  bar. Probably the single biggest win for this audience. v4.
+- Overdue notifications via `notify-send`. v4.
+- `ratodo done "invoice"` — fuzzy match, mark done without opening the TUI.
+  *(Made it into v1's command list.)*
+- `ratodo log` — "what did I finish today". For people who write weekly reports.
+- `ratodo undo` — restore the last change from `.bak`.
+- Automatic git commit (a `--commit` flag). Tempting, but touching the user's git
+  is dangerous even opt-in.
+- A tmux popup / Hyprland scratchpad binding — an example config for the README.
+- Picking tasks with fzf (`ratodo done $(ratodo list | fzf)`). Needs a
+  `--porcelain` output format.
+- `~2026-09-01` defer syntax (hide until this date). v3.
+- Sharing themes as separate files under `~/.config/ratodo/themes/`. Wait until
+  someone actually asks.
+- An encrypted list — **no.** The file stays plain text; that is the whole logic
+  of the product.
 
 ---
 
-## Fixture taslakları
+## Things to watch while building
 
-### `tests/fixtures/gnarly.md` — kasten zor olan
-
-Parser'ın **hiçbirini bozmaması** gereken şeyler. Her satır ayrı bir tuzak:
-
-```markdown
-# Benim listem
-
-Bu bir paragraf. Görev değil, dokunulmayacak.
-
-## İş
-- [ ] deploy planını yaz @2026-08-12 #ops !high
-- [X] eski PR'ları kapat          <- büyük X
-* [ ] yıldızlı liste öğesi        <- - yerine *
-  - [ ] girintili alt görev       <- girinti korunmalı
-- [ ]    üç boşluklu başlık       <- fazladan boşluk korunmalı
-- [ ] geçersiz tarih @2026-13-45  <- ayrıştırılamamalı, satır bozulmamalı
-- [ ] üç etiket #a #b #c @2026-09-01
-- [ ] çöp @ ve # tek başına
-- [ ] Türkçe karakter: şğüöçİI ✓ emoji 🚀
-
-> Alıntı satırı. Dokunma.
-
-| tablo | var |
-|-------|-----|
-| bunu  | da  |
-
-## Kişisel
-- [ ] tarihsiz görev
-- [x] bitmiş görev
-
----
-Son satırdan sonra newline var mı yok mu — ikisi de korunmalı.
-```
-
-Beklenen davranış:
-- Görev sayılanlar: `- [ ]`, `- [x]`, `- [X]`, `* [ ]`, girintili olan
-- **Değişmeden kalanlar:** başlık, paragraf, alıntı, tablo, `---`, boş satırlar
-- `@2026-13-45` → `due = None`, ama satır aynen yazılır
-- Kullanıcı sadece bir görevi tamamlarsa, dosyadaki **diğer 20 satır byte-byte aynı**
-
-### `tests/fixtures/simple.md`
-
-Kök dizindeki `todo.md` bunun kendisi — format örneği ve ilk fixture aynı dosya.
-
----
-
-## Bilinen riskler
-
-| Risk | Etki | Ne yapıyoruz |
-|---|---|---|
-| **Round-trip sadakati bozulursa** | Kullanıcının el yazması dosyası bozulur → güven biter, araç silinir. **En kritik risk** | Ham satır saklama + byte-byte test + `.bak` + atomik yazma |
-| Truecolor yok (TTY, eski `screen`) | Renkler bozuk | Şikâyet gelirse `COLORTERM` bakıp 16 renge düş (~5 satır) |
-| GNOME Takvim yerel `.ics` okumuyor | Madde 6 yarım kalmış hissi | README'de dürüst ol: khal ✅ Thunderbird ✅ GNOME ⚠️ Google ❌ |
-| Google Calendar VTODO'yu yok sayıyor | "Takvimimde görünmüyor" şikâyeti | v2'de `--as-events` bayrağı |
-| İsim ratatui'nin alt-projesi sanılır | Bağımsız ürün olarak görülmez, "ratatui eklentisi" diye geçer | README'nin ilk cümlesi: *"built **with** ratatui"*. Logo fare değil, **checklist tutan fare** |
-| `ratodo` müsait değilse | İsim baştan alınır, `~/.config/` yolu ve paket adı değişir | Kod yazılmadan önce kontrol. Yedek hazır: `tuido` |
-| `ratodo` 6 harf, günde 20 kez yazılıyor | Sürtünme — `jot`'un 3 harfi buydu | `alias r=ratodo` README'de örnek olarak verilecek |
-| Kapsam kayması | **Projeyi öldüren asıl şey** | `claude.md`'deki "Kapsam dışı" listesi. Her yeni fikir önce oraya bakacak |
-
----
-
-## Fikir çöplüğü
-
-v1'de **yok** ama atılmadı. Buraya yazılıyor ki kafanın içinde dolaşıp
-v1'i şişirmesin.
-
-- `ratodo status --json` → **waybar / eww modülü.** Bar'da "3 open · 1 overdue".
-  Hedef kitle için muhtemelen en büyük tek kazanç. v4.
-- `notify-send` ile gecikmiş görev bildirimi. v4.
-- `ratodo done "fatura"` — bulanık eşleme ile TUI açmadan işaretle.
-- `ratodo log` — "bugün ne bitirdim". Haftalık rapor yazanlar için.
-- `ratodo undo` — son değişikliği `.bak`'tan geri al.
-- Otomatik git commit (`--commit` bayrağı). Cazip ama kullanıcının git'ine
-  karışmak tehlikeli; opt-in bile olsa dikkatli.
-- tmux popup / Hyprland scratchpad binding örneği — README'ye örnek config.
-- fzf ile görev seçme (`ratodo done $(ratodo list | fzf)`). `--porcelain` çıktı
-  formatı gerektirir.
-- `~2026-09-01` erteleme sözdizimi (bu tarihe kadar gizle). v3.
-- Şifreli liste — **hayır.** Dosya düz metin kalmalı, ürünün tüm mantığı bu.
+- Column alignment with wide characters. `şğüöçİI` and 🚀 are in the fixtures on
+  purpose — a TUI that counts bytes instead of display width will look broken.
+- The first `git diff` after a real day of use. If completing one task moves more
+  than one line, round-trip fidelity is already broken.
+- Whether `ratodo add` really feels like two seconds. If it doesn't, the product
+  has no reason to exist. Time it honestly.
