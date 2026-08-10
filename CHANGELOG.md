@@ -12,5 +12,3 @@
 ### ⚙️ Miscellaneous Tasks
 
 - Add agent working rules and a Rust gitignore
-- *(changelog)* Update
-- *(changelog)* Update
