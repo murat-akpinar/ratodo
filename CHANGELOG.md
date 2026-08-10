@@ -16,6 +16,8 @@ The pure core of the product, with no terminal involved: parse, write, capture, 
 The dumb version from todo.md step 4: the agenda flattened into rows, a border, the counts, `j k` and the arrows, `g G`, `q` and ctrl-c. The design in docs/tui.md arrives in step 6; this is the commit that proves the loop runs and gives it a way to be tested.
 - *(ui)* Follow the file while the screen is open ([b4db638](https://github.com/murat-akpinar/ratodo/commit/b4db638d2c2c5fc3fe1769223f5f4be06212cf49))
 vim, `git pull` or `ratodo add` in another pane now reaches the open list on its own, which is the promise in docs/architecture.md#concurrent-editing.
+- *(ics)* Export dated tasks as VTODO ([3d3bd22](https://github.com/murat-akpinar/ratodo/commit/3d3bd22204481ef87e676e452e03d0966a193b09))
+`ratodo sync` writes `~/.local/share/ratodo/todo.ics`, and every capture rewrites it so the calendar is never a version behind. Open, dated tasks only; ~90 lines of string formatting and no eighth dependency.
 
 ### 🐛 Bug Fixes
 
