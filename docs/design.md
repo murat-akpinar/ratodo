@@ -62,7 +62,7 @@ drawing to disagree with the first.
 Quick capture, without opening the TUI at all:
 
 ```
-$ ratodo add "pay the invoice @tomorrow #home"
+$ ratodo add 'pay the invoice @tomorrow #home'
 added: pay the invoice  ·  due tomorrow (2026-08-11)  ·  #home
 $
 ```

@@ -15,7 +15,7 @@
 > reasoning in [`docs/`](docs/README.md).
 >
 > ```console
-> $ cargo run -- --file ./todo-test.md add "try ratodo @tomorrow #test"
+> $ cargo run -- --file ./todo-test.md add 'try ratodo @tomorrow #test'
 > ```
 
 ## What it is
@@ -25,7 +25,7 @@ task pops into your head. You type one command, it lands in a Markdown file that
 is already in your dotfiles, and you go back to what you were doing.
 
 ```console
-$ ratodo add "pay the invoice @tomorrow #home"
+$ ratodo add 'pay the invoice @tomorrow #home'
 added: pay the invoice  ·  due tomorrow (2026-08-11)  ·  #home
 ```
 
@@ -109,13 +109,21 @@ leaves the machine.
 | | |
 |---|---|
 | `ratodo` | open the TUI |
-| `ratodo add "<text>"` | capture a task and exit |
+| `ratodo add '<text>'` | capture a task and exit |
 | `ratodo list` | print the agenda |
-| `ratodo done "<text>"` | mark a task done |
+| `ratodo list --tag ops` | just the `#ops` ones — also `--prio high` |
+| `ratodo list --porcelain` | one tab-separated line per task, for `fzf` and `grep` |
+| `ratodo done '<text>'` | mark a task done |
+| `ratodo status` | `3 open · 1 overdue`, for your bar — also `--json` |
 | `ratodo sync` | regenerate `todo.ics` |
 | `ratodo theme list` / `dump` | list built-in themes / print the active one |
-| `--file <path>` | use a different list |
+| `--file <path>` | use a different list — or set `$RATODO_FILE` |
 | `--theme <name>` | run with a different theme |
+
+**Use `'single quotes'`, not `"double"`.** In bash and zsh, `!high` inside double
+quotes is history expansion: you get `bash: !high: event not found` and nothing
+is added. fish does not have this problem, but single quotes are right in all
+three.
 
 It gets typed a lot, so alias it:
 
@@ -124,6 +132,12 @@ alias r=ratodo          # bash / zsh
 ```
 ```fish
 alias r ratodo          # fish
+```
+
+In your bar, it is one line:
+
+```json
+"custom/todo": { "exec": "ratodo status --json", "return-type": "json", "interval": 60 }
 ```
 
 ## Theming

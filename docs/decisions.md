@@ -19,8 +19,24 @@ Three lists: what is settled, what was rejected, and what is still open.
 - ✅ **On a concurrent edit, warn — do not merge.** A wrong merge loses data
   silently.
 - ✅ **Calendar: one-way `.ics`, VTODO.** We generate the file; subscribing is the
-  user's job.
-- ✅ **v1 scope: capture and check off.** Filter and search go to v2.
+  user's job. It is built **after** the TUI, not before — *(changed 2026-08-10,
+  see below)*.
+- ✅ **v1 scope: capture, check off, and narrow down.** `/` search and
+  `ratodo archive` go to v2; `list --tag` / `--prio` stayed in v1.
+  *(Changed from "filter and search go to v2" — see below.)*
+- ✅ **The tool is scriptable, not just interactive.** `ratodo status` for a bar,
+  `list --porcelain` for `fzf` and `grep`. A tool this audience cannot pipe is a
+  tool that stays outside their setup. See [cli.md](cli.md).
+- ✅ **Only `todo.md` lives in the user's directory.** `.bak` is derived and goes
+  to `~/.local/state/ratodo/` — writing it next to the list leaves an untracked
+  file inside somebody's dotfiles repo after every capture.
+- ✅ **`$RATODO_FILE` overrides the default path**, below `--file`. Two lines, and
+  `direnv` then gives per-repository lists for free.
+- ✅ **Built-in themes default to `background = none`.** Transparency survives
+  unless the user asks for a painted background, not the other way round.
+- ✅ **`ratodo done "<text>"` requires a unique match.** On an ambiguous one it
+  prints the candidates, exits non-zero and writes nothing. Silently ticking the
+  wrong task is the exact trust break round-trip fidelity exists to prevent.
 - ✅ **`e` → `$EDITOR`.** An escape hatch, ten lines, exactly right for the audience.
 - ✅ **One view mode (agenda).** Two modes means state management, key conflicts
   and two drawing paths.
@@ -116,13 +132,67 @@ Full spec: [theming.md](theming.md).
    "accept this text" and "toggle this task" a moment apart is exactly the class
    of mistake that makes someone stop trusting a tool with their file.
 
+### `.ics` before the TUI → after it (2026-08-10)
+
+**Was:** the build order was fixtures → parse/write → **agenda + `.ics`** → TUI,
+and `ratodo status --json` (the waybar/eww module) sat in v4.
+
+**Now:** `status` and `list --porcelain` are v1 and get built with the agenda;
+`.ics` moves behind the TUI.
+
+**Why:** two independent design reviews, run from the two user profiles this
+tool is aimed at — a tiling-WM ricer and a terminal-bound developer — arrived at
+the same objection without seeing each other's notes. `.ics` serves seed point 6
+(calendar integration), but the people it actually reaches are Thunderbird and
+GNOME Calendar users. That is not the audience in seed point 2. A khal user does
+not want a loose `.ics` either; they want a vdirsyncer collection, which is v5.
+Meanwhile [notes.md](../notes.md) had already written down that a bar module is
+"probably the single biggest win for this audience" — and then filed it three
+versions away.
+
+The ordering was upside down: the feature aimed at the audience was last, and
+the feature aimed at somebody else was first.
+
+**What did not change:** `.ics` is still in v1 and still one-way. Seed point 6
+stands; only its position in the queue moved.
+
+### Filter in v2 → `list --tag` / `--prio` in v1 (2026-08-10)
+
+**Was:** "v1 scope: capture and check off. Filter and search go to v2."
+
+**Now:** `ratodo list` takes `--tag` and `--prio` in v1. Interactive filtering
+and `/` search stay in v2.
+
+**Why:** the agenda groups by date, and a developer's list is mostly undated.
+Per [design.md](design.md#agenda-grouping-rules-v1) undated tasks fall below
+LATER, in file order — so on a realistic list the majority of the file gets no
+structure from the one screen that was supposed to provide it. Someone who has
+captured forty things and dated six of them opens the tool in week three, sees
+thirty-four undifferentiated rows, and goes back to `rg TODO`.
+
+The v1/v2 line was drawn to stop scope creep, and that instinct was right. This
+reversal is deliberately the narrowest version of it: two flags over an already
+parsed `Task`, on a command that already exists. No filter state, no UI, nothing
+to undo.
+
+**What the old decision still buys us:** `/` search, interactive filters, saved
+views and `ratodo archive` are all still v2.
+
 ## Open questions
 
 - [ ] Does a completed task stay where it is, or move to a `## Done` section?
       Staying in place bloats the file; moving means every completion shifts two
       lines in `git diff`. *Leaning: stay in place in v1, `ratodo archive` in v2.*
-- [ ] Is `--file` enough for multiple lists (work / personal), or is a named-list
-      concept needed? *Leaning: live with `--file` first and find out.*
+- [ ] Is `--file` plus `$RATODO_FILE` enough for multiple lists, or does a
+      developer with one list per repository need `ratodo` to walk up the tree
+      looking for a `TODO.md`? *Leaning: the env var buys most of it — `direnv`
+      already solves per-directory. Ship that, then find out.*
+- [ ] Where does a captured task go in a file that ends with a table, a rule or a
+      paragraph? Appending at EOF puts it outside every `##` section.
+      *Leaning: insert after the last recognised task, fall back to EOF.*
+- [ ] Do the docs promise dotfiles integration in a way that misleads `chezmoi`
+      users, whose `apply` will overwrite a live `todo.md` from a stale source
+      copy? *Leaning: a README paragraph, not code.*
 - [ ] Should `.ics` be regenerated on every `ratodo add`, or only when the TUI
       closes? *Leaning: on every add — it is simple, and the file is small.*
 - [ ] Besides `- [ ]`, should `* [ ]` and `+ [ ]` be recognised? (Markdown treats

@@ -49,7 +49,7 @@ portable:
 
 | Key | What it colours | Default (Catppuccin Mocha) |
 |---|---|---|
-| `background` | the screen behind everything | `#1e1e2e` |
+| `background` | the screen behind everything | `none` — see below |
 | `foreground` | task titles, primary text | `#cdd6f4` |
 | `dim` | dates, tags, secondary text | `#a6adc8` |
 | `border` | frame and separators | `#6c7086` |
@@ -78,6 +78,14 @@ those rules in their own theme — that is their business.
 `background = none` matters more than it looks: a lot of this audience runs a
 translucent terminal, and a tool that paints an opaque background ruins it.
 
+**Which is why every built-in theme ships `background = none`, including the
+default.** The Catppuccin Mocha value `#1e1e2e` is the one you would set if you
+wanted a painted background, and it is written down here for that purpose — but
+opting *in* to opacity is the right way round. Someone on a translucent foot or
+kitty who opens ratodo for the first time and sees a solid dark rectangle sitting
+in their setup does not go looking for a config key; they close it. The other ten
+keys are unaffected: only the background is `none` by default.
+
 ## Built-in themes
 
 `theme = <name>` picks one; individual keys then override it.
@@ -89,7 +97,7 @@ translucent terminal, and a tool that paints an opaque background ruins it.
 | `gruvbox-dark` | |
 | `nord` | |
 | `dracula` | |
-| `terminal` | Uses only ANSI 0–15 — every colour comes from the user's own terminal palette |
+| `terminal` | Uses only ANSI 0–15 — every colour comes from the user's own terminal palette. **The answer for anyone running pywal, wallust or base16:** "use my palette and get out of the way", with no twelfth colour file to keep in sync. Set it once and ratodo re-themes itself whenever the wallpaper does |
 
 `terminal` does double duty: it is also the answer to "no truecolor" on a bare
 TTY or inside old `screen`, which used to be an open risk. See

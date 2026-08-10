@@ -21,10 +21,15 @@ So there are exactly two modes:
 | Mode | When | How you leave |
 |---|---|---|
 | **list** | Always, by default | `q` |
-| **input** | Only while adding or editing a task | `⏎` saves, `esc` cancels |
+| **input** | Only while adding or editing a task | `⏎` saves, `esc` cancels, `ctrl-c` cancels |
 
 You can never be in a mode you did not explicitly open, and `esc` always gets you
 back. There is no command mode, no visual mode, no pending-operator state.
+
+`ctrl-c` deserves its own line, because it means two different things in the two
+modes: in list mode it quits, in input mode it **cancels the input and returns to
+the list** — it does not quit. Someone half-way through typing a task who reaches
+for the universal "stop that" key should lose the sentence, not the session.
 
 **Vim keys, not vim modes.** That is the line — the same one lazygit, k9s, aerc
 and ranger draw, and it is the right one for an audience that has vim muscle
@@ -223,8 +228,8 @@ reading.
 | `⏎` | edit the selected task | |
 | `d` | delete | Immediate, with `u` to undo |
 | `u` | undo the last change | |
-| `l` | fold / unfold LATER | |
-| `z` | fold the group under the cursor | `z` is the vim fold prefix |
+| `h` / `l` | fold / unfold the group under the cursor | Not "fold LATER". In `lf`, `ranger` and `yazi` — which this audience uses daily — `h` and `l` collapse and expand *what is under the cursor*, and that muscle memory arrives with them |
+| `z` | the same, as one toggle | `z` is the vim fold prefix |
 | `e` | open `$EDITOR` | The escape hatch — a settled decision, see [product.md](product.md#product-decisions) |
 | `r` | re-read the file | Rarely needed; inotify does it |
 | `?` | key help | |

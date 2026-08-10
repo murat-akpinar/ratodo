@@ -53,7 +53,7 @@ from it — see [architecture.md](architecture.md) for the technical form it tak
 
   ```
   ratodo                              → opens the TUI
-  ratodo add "pay the invoice @tomorrow"   → writes and exits, TUI never opens
+  ratodo add 'pay the invoice @tomorrow'   → writes and exits, TUI never opens
   ```
 
   The second one is the reason this product exists: getting the thing that just

@@ -60,21 +60,27 @@ which are not decisions:
 Not in v1, but not thrown away either. Written down here so they stop circling
 in my head and inflating v1.
 
-- `ratodo status --json` → **a waybar / eww module.** "3 open · 1 overdue" in the
-  bar. Probably the single biggest win for this audience. v4.
 - Overdue notifications via `notify-send`. v4.
-- `ratodo done "invoice"` — fuzzy match, mark done without opening the TUI.
+- `ratodo done "invoice"` — mark done without opening the TUI.
   *(Made it into v1's command list.)*
 - `ratodo log` — "what did I finish today". For people who write weekly reports.
 - `ratodo undo` — restore the last change from `.bak`.
 - Automatic git commit (a `--commit` flag). Tempting, but touching the user's git
   is dangerous even opt-in.
 - A tmux popup / Hyprland scratchpad binding — an example config for the README.
-- Picking tasks with fzf (`ratodo done $(ratodo list | fzf)`). Needs a
-  `--porcelain` output format.
 - `~2026-09-01` defer syntax (hide until this date). v3.
-- Sharing themes as separate files under `~/.config/ratodo/themes/`. Wait until
-  someone actually asks.
+- Walking up the directory tree looking for a `TODO.md`, git-style. `$RATODO_FILE`
+  plus `direnv` covers most of it; wait and see whether the rest is missed.
+- A `--file` that takes more than one path, so a repo list and the global one can
+  be read together. Genuinely optional.
+- Sharing themes as separate files under `~/.config/ratodo/themes/`.
+
+**Left the graveyard on 2026-08-10:** `ratodo status --json` and
+`list --porcelain` (the fzf entry) are v1 now — see
+[docs/decisions.md](docs/decisions.md#reversed). The note above them used to say
+status was "probably the single biggest win for this audience" while the roadmap
+had it three versions out, which is the kind of contradiction this file exists to
+surface.
 - An encrypted list — **no.** The file stays plain text; that is the whole logic
   of the product.
 
@@ -88,3 +94,20 @@ in my head and inflating v1.
   than one line, round-trip fidelity is already broken.
 - Whether `ratodo add` really feels like two seconds. If it doesn't, the product
   has no reason to exist. Time it honestly.
+- **Startup time.** Not budgeted anywhere, and the `$mod+t` scratchpad binding
+  turns it into a spec: a floating terminal that takes a beat to paint feels
+  broken in a way the same delay in a long-lived window does not. Aim under
+  50 ms cold, and measure rather than assume.
+- **Where a captured task lands.** `push_task` appends at EOF, so in a file that
+  ends with a table, a `---` or a paragraph the new task goes below all of it,
+  outside every `##`. Also means two machines adding tasks always conflict on the
+  same last line.
+- **chezmoi.** `chezmoi apply` will overwrite a live `todo.md` from its stale
+  source copy. stow and bare-git symlinks are fine. This needs a README
+  paragraph, not code — but it needs one, because the docs promise dotfiles
+  integration and currently say nothing about it.
+- **nvim clobbering ratodo, not the other way round.**
+  [docs/architecture.md](docs/architecture.md#concurrent-editing) covers inotify
+  telling ratodo about an outside edit. The reverse — their nvim is already open
+  on the file in another pane, ratodo writes, then they `:w` — is not covered.
+  `set autoread` in the README is probably the whole answer.

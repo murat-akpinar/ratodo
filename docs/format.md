@@ -26,9 +26,9 @@ things we do not understand; all of it stays exactly where it is.
 When writing, shorthand is allowed. What lands in the file is always an ISO date:
 
 ```
-ratodo add "pay the invoice @tomorrow"  →  - [ ] pay the invoice @2026-08-11
-ratodo add "report @mon !high"          →  - [ ] report @2026-08-17 !high
-ratodo add "run a backup @3d"           →  - [ ] run a backup @2026-08-13
+ratodo add 'pay the invoice @tomorrow'  →  - [ ] pay the invoice @2026-08-11
+ratodo add 'report @mon !high'          →  - [ ] report @2026-08-17 !high
+ratodo add 'run a backup @3d'           →  - [ ] run a backup @2026-08-13
 ```
 
 Accepted shorthand: `@today @tomorrow @mon`…`@sun @3d @2w`.
@@ -61,7 +61,7 @@ Following the standard would break the product's main promise, so we don't:
 |---|---|---|
 | `todo.md` | `~/.config/ratodo/todo.md` | **The user's.** Goes into dotfiles, hand-edited, versioned in git. This is the XDG deviation, and it is on purpose |
 | `todo.ics` | `~/.local/share/ratodo/todo.ics` | **Derived.** Pointless to back up, regenerated if deleted. XDG is right here |
-| `todo.md.bak` | next to `todo.md` | Written before every write. Cheap insurance |
+| `todo.md.bak` | `~/.local/state/ratodo/todo.md.bak` | **Derived.** Written before every write, cheap insurance — but *not* next to the list. `todo.md` is usually symlinked into a dotfiles repo, and a `.bak` beside it means `git status` reports an untracked file after every single capture |
 | `theme.conf` | `~/.config/ratodo/theme.conf` | **The user's.** Optional — colours fall back to the built-in default. See [theming.md](theming.md) |
 | `config.toml` | `~/.config/ratodo/config.toml` | v2. There is **no** general config file in v1 (`theme.conf` is separate and deliberately not TOML) |
 
