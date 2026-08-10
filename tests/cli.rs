@@ -329,6 +329,46 @@ fn porcelain_honours_the_filters_too() {
     assert!(out.lines().all(|l| l.split('\t').count() == 5), "{out:?}");
 }
 
+/// `ratodo list | head -3` is an ordinary thing to type. Rust's `println!`
+/// panics when the reader goes away, so without a deliberate answer the user
+/// gets a backtrace and exit 101 for doing nothing wrong.
+#[test]
+fn a_reader_that_stops_early_is_not_an_error() {
+    let dir = TempDir::new("pipe");
+    let path = dir.file("todo.md");
+    let many: String = (0..500)
+        .map(|i| format!("- [ ] task number {i}\n"))
+        .collect();
+    fs::write(&path, many).unwrap();
+
+    for args in [vec!["list"], vec!["list", "--porcelain"], vec!["status"]] {
+        let mut full = vec!["--file", path.to_str().unwrap()];
+        full.extend_from_slice(&args);
+
+        let mut child = Command::new(BIN)
+            .args(&full)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawning");
+        // Closing the pipe unread is what `head` does once it has enough.
+        drop(child.stdout.take());
+        let out = child.wait_with_output().expect("waiting");
+
+        assert!(
+            out.status.success(),
+            "{args:?} exited {:?}: {}",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            !String::from_utf8_lossy(&out.stderr).contains("panicked"),
+            "{args:?} panicked: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
 #[test]
 fn done_ticks_the_one_match_and_changes_exactly_that_byte() {
     let dir = TempDir::new("done");
@@ -615,6 +655,70 @@ fn add_with_no_text_is_an_error() {
 
     assert!(!out.status.success(), "empty add should fail");
     assert!(!path.exists(), "a failed add must not create the file");
+}
+
+/// Not every failure is a broken pipe. If the answer to "could not read the
+/// list" were also a quiet exit 0, a cron job would report success forever.
+#[test]
+fn a_list_that_cannot_be_read_fails_loudly() {
+    let dir = TempDir::new("unreadable");
+    let out = run(&["--file", dir.0.to_str().unwrap(), "list"]);
+
+    assert!(!out.status.success(), "a directory is not a list");
+    assert!(
+        !String::from_utf8_lossy(&out.stderr).is_empty(),
+        "it failed without saying why"
+    );
+}
+
+/// The one branch that only exists on a terminal, so it takes a terminal to
+/// test: `script` lends us a pty. What is asserted is the alternate screen being
+/// entered **and left** — the second half is invariant 5, and a TUI that forgets
+/// it hands back a wrecked shell.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_bare_command_opens_a_screen_on_a_terminal_and_gives_it_back() {
+    let dir = TempDir::new("pty");
+    let path = dir.file("todo.md");
+    fs::write(&path, "- [ ] pay the invoice\n").unwrap();
+
+    // `timeout` so a TUI that stops answering `q` fails the suite instead of
+    // hanging it.
+    let out = Command::new("timeout")
+        .args([
+            "10",
+            "script",
+            "-qec",
+            &format!("stty rows 20 cols 60; {BIN} --file {}", path.display()),
+            "/dev/null",
+        ])
+        .env("XDG_STATE_HOME", dir.file("state"))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().expect("stdin").write_all(b"q")?;
+            child.wait_with_output()
+        })
+        .expect("script(1) is needed for this test — it is in util-linux");
+
+    assert!(out.status.success(), "the TUI did not exit cleanly");
+    let screen = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        screen.contains("\x1b[?1049h"),
+        "no alternate screen was entered, so no TUI opened: {screen:?}"
+    );
+    assert!(
+        screen.contains("\x1b[?1049l"),
+        "the alternate screen was never left: {screen:?}"
+    );
+    // One word, not the phrase: ratatui writes each run of cells with a cursor
+    // move between them, so "pay the invoice" never appears contiguously.
+    assert!(
+        screen.contains("invoice"),
+        "the list never reached the screen: {screen:?}"
+    );
 }
 
 #[test]

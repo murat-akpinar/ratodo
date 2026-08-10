@@ -1,13 +1,13 @@
 //! Subcommands and terminal setup. See docs/cli.md.
 
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use chrono::Local;
 use clap::{Parser, Subcommand};
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event};
 
 use ratodo::model::{Lookup, Priority};
 use ratodo::text;
@@ -68,6 +68,23 @@ fn priority(name: &str) -> Result<Priority, String> {
 }
 
 fn main() -> Result<ExitCode> {
+    match dispatch() {
+        // `ratodo list | head -3` closes the pipe under us, and Rust turns the
+        // write that follows into a panic. Piping into `head` is an ordinary
+        // thing to type; a backtrace is not an ordinary thing to get back.
+        Err(e) if is_broken_pipe(&e) => Ok(ExitCode::SUCCESS),
+        other => other,
+    }
+}
+
+fn is_broken_pipe(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .filter_map(|e| e.downcast_ref::<std::io::Error>())
+        .any(|e| e.kind() == std::io::ErrorKind::BrokenPipe)
+}
+
+fn dispatch() -> Result<ExitCode> {
     let cli = Cli::parse();
     let path = match cli.file {
         Some(p) => p,
@@ -123,7 +140,7 @@ fn add(path: &Path, input: &str) -> Result<()> {
     doc.push_task(task);
     write::save(path, &doc, loaded.mtime, &backup_dir()?)?;
 
-    println!("{summary}");
+    writeln!(std::io::stdout(), "{summary}")?;
     Ok(())
 }
 
@@ -157,23 +174,18 @@ fn run(
         // Blocks until something happens: no timeout, no frame rate, 0% CPU in a
         // pane left open all day. See docs/architecture.md#the-event-loop.
         let Event::Key(key) = event::read()? else {
+            // Anything else — a resize, say — still falls through to a redraw.
             continue;
         };
-        // Windows reports a release for every press; without this every key acts twice.
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
 
-        match key.code {
-            KeyCode::Char('q') => return Ok(ExitCode::SUCCESS),
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                return Ok(ExitCode::SUCCESS);
-            }
-            KeyCode::Char('j') | KeyCode::Down => screen.move_by(1),
-            KeyCode::Char('k') | KeyCode::Up => screen.move_by(-1),
-            KeyCode::Char('g') => screen.top(),
-            KeyCode::Char('G') => screen.bottom(),
-            _ => {}
+        // What the key means lives in `ui`, where it can be tested; this loop
+        // only knows how to read one and how to obey.
+        match ui::action(key) {
+            ui::Action::Quit => return Ok(ExitCode::SUCCESS),
+            ui::Action::Move(n) => screen.move_by(n),
+            ui::Action::Top => screen.top(),
+            ui::Action::Bottom => screen.bottom(),
+            ui::Action::Ignore => {}
         }
     }
 }
@@ -207,7 +219,7 @@ fn done(path: &Path, input: &str) -> Result<ExitCode> {
     let summary = text::marked_done(task);
 
     write::save(path, &doc, loaded.mtime, &backup_dir()?)?;
-    println!("{summary}");
+    writeln!(std::io::stdout(), "{summary}")?;
     Ok(ExitCode::SUCCESS)
 }
 
@@ -224,11 +236,15 @@ fn list(path: &Path, args: &ListArgs) -> Result<()> {
     let tasks: Vec<_> = doc.tasks().filter(|t| filter.matches(t)).cloned().collect();
     let groups = agenda::agenda(&tasks, today);
 
+    // Locked once. Every write can fail — the reader may be a `head` that has
+    // already seen enough — and `main` turns that into a quiet exit.
+    let mut out = std::io::stdout().lock();
+
     if args.porcelain {
         // Nothing on stderr either: a machine is reading, and an empty result is
         // already the answer.
         for task in groups.iter().flat_map(|g| &g.tasks) {
-            println!("{}", text::porcelain_line(task));
+            writeln!(out, "{}", text::porcelain_line(task))?;
         }
         return Ok(());
     }
@@ -246,16 +262,20 @@ fn list(path: &Path, args: &ListArgs) -> Result<()> {
 
     for group in &groups {
         if let Some(title) = group.kind.title() {
-            println!("\n{}", text::plain(title));
+            writeln!(out, "\n{}", text::plain(title))?;
         }
         for task in &group.tasks {
-            println!("{}", text::list_line(task, today));
+            writeln!(out, "{}", text::list_line(task, today))?;
         }
     }
 
     // Counted over what was shown, not over the file: a summary that disagrees
     // with the list above it is worse than no summary.
-    println!("\n{}", text::status_line(agenda::Counts::of(&tasks, today)));
+    writeln!(
+        out,
+        "\n{}",
+        text::status_line(agenda::Counts::of(&tasks, today))
+    )?;
 
     Ok(())
 }
@@ -268,14 +288,15 @@ fn status(path: &Path, json: bool) -> Result<ExitCode> {
     let tasks: Vec<_> = doc.tasks().cloned().collect();
     let counts = agenda::Counts::of(&tasks, today);
 
-    println!(
+    writeln!(
+        std::io::stdout(),
         "{}",
         if json {
             text::status_json(counts)
         } else {
             text::status_line(counts)
         }
-    );
+    )?;
 
     Ok(if counts.overdue > 0 {
         ExitCode::FAILURE

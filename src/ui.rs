@@ -1,6 +1,7 @@
 //! ratatui drawing. See docs/tui.md.
 
 use chrono::NaiveDate;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, List, ListItem, ListState};
@@ -8,6 +9,41 @@ use ratatui::widgets::{Block, List, ListItem, ListState};
 use crate::agenda::{Counts, Group};
 use crate::model::Task;
 use crate::text;
+
+/// What a keypress means. Separated from reading events so the keymap — the
+/// most user-visible surface in the tool — can be tested without a terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    Quit,
+    Move(isize),
+    Top,
+    Bottom,
+    Ignore,
+}
+
+/// The list-mode keys from docs/tui.md#keys. Note what is deliberately absent:
+/// `esc` is `Ignore`, never `Quit` — someone pressing it out of habit must not
+/// lose the pane.
+pub fn action(key: KeyEvent) -> Action {
+    // Windows reports a release for every press; without this every key acts
+    // twice. A `Repeat` is a key held down and has to keep scrolling, so the
+    // test is against `Release` alone rather than for `Press`.
+    if key.kind == KeyEventKind::Release {
+        return Action::Ignore;
+    }
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+
+    match key.code {
+        KeyCode::Char('c') if ctrl => Action::Quit,
+        // Only the bare letter: ctrl-q is a terminal flow-control key on some setups.
+        KeyCode::Char('q') if !ctrl => Action::Quit,
+        KeyCode::Char('j') | KeyCode::Down => Action::Move(1),
+        KeyCode::Char('k') | KeyCode::Up => Action::Move(-1),
+        KeyCode::Char('g') => Action::Top,
+        KeyCode::Char('G') => Action::Bottom,
+        _ => Action::Ignore,
+    }
+}
 
 /// One line of the list. Only a `Task` can hold the selection; the rest is
 /// scenery the cursor moves over.
@@ -162,6 +198,69 @@ mod tests {
                 Row::Spacer => String::new(),
             })
             .collect()
+    }
+
+    fn press(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn every_key_the_dumb_list_answers_to() {
+        let cases = [
+            (KeyCode::Char('q'), Action::Quit),
+            (KeyCode::Char('j'), Action::Move(1)),
+            (KeyCode::Down, Action::Move(1)),
+            (KeyCode::Char('k'), Action::Move(-1)),
+            (KeyCode::Up, Action::Move(-1)),
+            (KeyCode::Char('g'), Action::Top),
+            (KeyCode::Char('G'), Action::Bottom),
+        ];
+        for (code, want) in cases {
+            assert_eq!(action(press(code)), want, "{code:?}");
+        }
+        assert_eq!(
+            action(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            Action::Quit
+        );
+    }
+
+    /// The modifier is the whole of the difference. A bare `c` quitting would
+    /// close the pane on a typo, and `ctrl-q` is flow control on some terminals
+    /// rather than a keystroke we should claim.
+    #[test]
+    fn the_control_key_is_not_optional_and_not_ignorable() {
+        assert_eq!(action(press(KeyCode::Char('c'))), Action::Ignore);
+        assert_eq!(
+            action(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)),
+            Action::Ignore
+        );
+    }
+
+    /// The keys docs/tui.md leaves unbound on purpose. `esc` is the one that
+    /// matters: pressed out of habit, it must not take the pane down with it.
+    #[test]
+    fn the_deliberately_unbound_keys_do_nothing() {
+        for code in [
+            KeyCode::Esc,
+            KeyCode::Char('x'),
+            KeyCode::Char(':'),
+            KeyCode::Char('/'),
+            KeyCode::Char('Q'),
+        ] {
+            assert_eq!(action(press(code)), Action::Ignore, "{code:?}");
+        }
+    }
+
+    /// Windows sends a release for every press. Acting on both moves the cursor
+    /// two rows for one keystroke.
+    #[test]
+    fn a_key_being_let_go_is_not_a_second_press() {
+        let mut key = press(KeyCode::Char('j'));
+        assert_eq!(action(key), Action::Move(1));
+        key.kind = KeyEventKind::Release;
+        assert_eq!(action(key), Action::Ignore);
+        key.kind = KeyEventKind::Repeat;
+        assert_eq!(action(key), Action::Move(1), "held down still scrolls");
     }
 
     #[test]

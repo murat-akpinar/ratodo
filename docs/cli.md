@@ -48,6 +48,16 @@ not have to be retrofitted:
   nothing else.
 - **Exit codes mean something.** `0` success, `1` an error, `2` a request that
   could not be answered — no match, or an ambiguous one.
+- **A reader that stops early is not an error.** `ratodo list | head -3` closes
+  the pipe half way through the output. Rust's `println!` turns the next write
+  into a *panic*, so the default behaviour here is a backtrace and exit 101 for
+  a command that did nothing wrong. Every write to stdout goes through
+  `writeln!` instead, and `main` turns `BrokenPipe` — and only `BrokenPipe` —
+  into a silent exit `0`.
+- **The TUI only opens on a terminal.** `ratodo` with stdout on a pipe or a file
+  prints the list instead. Testing that branch takes an actual pty, so the suite
+  borrows one from `script(1)` and asserts the alternate screen is both entered
+  and left.
 
 ### `list --porcelain`
 
