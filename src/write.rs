@@ -47,7 +47,15 @@ pub fn load(path: &Path) -> Result<Loaded> {
 
 /// Refuses if the file changed since `load` reported `read_mtime`: someone else
 /// has written to it and overwriting would throw that away.
-pub fn save(path: &Path, doc: &Doc, read_mtime: Option<SystemTime>) -> Result<()> {
+///
+/// `backup_dir` is where the `.bak` goes — never beside the list. See
+/// docs/format.md.
+pub fn save(
+    path: &Path,
+    doc: &Doc,
+    read_mtime: Option<SystemTime>,
+    backup_dir: &Path,
+) -> Result<()> {
     check_unchanged(path, read_mtime)?;
 
     if let Some(dir) = path.parent()
@@ -63,7 +71,9 @@ pub fn save(path: &Path, doc: &Doc, read_mtime: Option<SystemTime>) -> Result<()
     let existing = fs::metadata(&target).ok();
 
     if existing.is_some() {
-        let backup = backup_path(&target);
+        let backup = backup_path(backup_dir, &target);
+        fs::create_dir_all(backup_dir)
+            .with_context(|| format!("creating the directory {}", backup_dir.display()))?;
         fs::copy(&target, &backup)
             .with_context(|| format!("writing the backup {}", backup.display()))?;
     }
@@ -115,10 +125,15 @@ fn check_unchanged(path: &Path, read_mtime: Option<SystemTime>) -> Result<()> {
     Ok(())
 }
 
-fn backup_path(path: &Path) -> PathBuf {
-    let mut name = path.as_os_str().to_os_string();
-    name.push(".bak");
-    PathBuf::from(name)
+/// The full target path, flattened into one file name. A single `todo.md.bak`
+/// slot would mean the backup of one `--file` list quietly replacing another's.
+fn backup_path(dir: &Path, target: &Path) -> PathBuf {
+    let slug: String = target
+        .to_string_lossy()
+        .chars()
+        .map(|c| if std::path::is_separator(c) { '-' } else { c })
+        .collect();
+    dir.join(format!("{}.bak", slug.trim_start_matches('-')))
 }
 
 /// Next to the target so the rename stays on one filesystem; the pid keeps two
@@ -235,7 +250,7 @@ mod tests {
         let mut doc = Doc::default();
         doc.push_task(Task::new(false, "first".into(), None, vec![], None));
 
-        save(&path, &doc, None).unwrap();
+        save(&path, &doc, None, &dir.file("bak")).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "- [ ] first\n");
         assert!(!path.with_extension("md.bak").exists());
     }
@@ -244,21 +259,71 @@ mod tests {
     fn a_backup_is_taken_before_overwriting() {
         let dir = TempDir::new("backup");
         let path = dir.file("todo.md");
+        let bak = dir.file("bak");
         fs::write(&path, "- [ ] original\n").unwrap();
 
         let loaded = load(&path).unwrap();
         let mut doc = loaded.doc;
         doc.push_task(Task::new(false, "second".into(), None, vec![], None));
-        save(&path, &doc, loaded.mtime).unwrap();
+        save(&path, &doc, loaded.mtime, &bak).unwrap();
 
         assert_eq!(
             fs::read_to_string(&path).unwrap(),
             "- [ ] original\n- [ ] second\n"
         );
         assert_eq!(
-            fs::read_to_string(backup_path(&path)).unwrap(),
+            fs::read_to_string(backup_path(&bak, &fs::canonicalize(&path).unwrap())).unwrap(),
             "- [ ] original\n"
         );
+    }
+
+    /// The list is usually symlinked into a dotfiles repo; a `.bak` beside it
+    /// leaves `git status` dirty after every single capture.
+    #[test]
+    fn no_backup_is_ever_written_beside_the_list() {
+        let dir = TempDir::new("bak-elsewhere");
+        let path = dir.file("todo.md");
+        fs::write(&path, "- [ ] original\n").unwrap();
+
+        let loaded = load(&path).unwrap();
+        let mut doc = loaded.doc;
+        doc.push_task(Task::new(false, "second".into(), None, vec![], None));
+        save(&path, &doc, loaded.mtime, &dir.file("bak")).unwrap();
+
+        let beside: Vec<_> = fs::read_dir(&dir.0)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains(".bak"))
+            .collect();
+        assert!(beside.is_empty(), "found {beside:?} next to the list");
+    }
+
+    /// Two lists reached through `--file` must not share one backup slot, or the
+    /// second capture of the day silently destroys the first list's insurance.
+    #[test]
+    fn two_lists_get_two_backups() {
+        let dir = TempDir::new("two-lists");
+        let bak = dir.file("bak");
+        let work = dir.file("work/todo.md");
+        let home = dir.file("home/todo.md");
+
+        for (path, body) in [(&work, "- [ ] at work\n"), (&home, "- [ ] at home\n")] {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, body).unwrap();
+            let loaded = load(path).unwrap();
+            let mut doc = loaded.doc;
+            doc.push_task(Task::new(false, "second".into(), None, vec![], None));
+            save(path, &doc, loaded.mtime, &bak).unwrap();
+        }
+
+        let mut backups: Vec<String> = fs::read_dir(&bak)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| fs::read_to_string(e.path()).unwrap())
+            .collect();
+        backups.sort();
+        assert_eq!(backups, ["- [ ] at home\n", "- [ ] at work\n"]);
     }
 
     #[test]
@@ -272,7 +337,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         fs::write(&path, "- [ ] theirs\n").unwrap();
 
-        let err = save(&path, &loaded.doc, loaded.mtime).unwrap_err();
+        let err = save(&path, &loaded.doc, loaded.mtime, &dir.file("bak")).unwrap_err();
         assert!(err.to_string().contains("changed on disk"), "{err}");
         assert_eq!(fs::read_to_string(&path).unwrap(), "- [ ] theirs\n");
     }
@@ -281,7 +346,7 @@ mod tests {
     fn no_temp_file_is_left_behind() {
         let dir = TempDir::new("tmp");
         let path = dir.file("todo.md");
-        save(&path, &Doc::default(), None).unwrap();
+        save(&path, &Doc::default(), None, &dir.file("bak")).unwrap();
         assert!(!temp_path(&path).exists());
     }
 
@@ -297,7 +362,7 @@ mod tests {
         let loaded = load(&link).unwrap();
         let mut doc = loaded.doc;
         doc.push_task(Task::new(false, "second".into(), None, vec![], None));
-        save(&link, &doc, loaded.mtime).unwrap();
+        save(&link, &doc, loaded.mtime, &dir.file("bak")).unwrap();
 
         assert!(
             fs::symlink_metadata(&link)
@@ -326,7 +391,7 @@ mod tests {
         let loaded = load(&path).unwrap();
         let mut doc = loaded.doc;
         doc.push_task(Task::new(false, "second".into(), None, vec![], None));
-        save(&path, &doc, loaded.mtime).unwrap();
+        save(&path, &doc, loaded.mtime, &dir.file("bak")).unwrap();
 
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "a 0600 list came back as {mode:o}");

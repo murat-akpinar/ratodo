@@ -200,6 +200,117 @@ mod task_tests {
     }
 }
 
+#[cfg(test)]
+mod push_tests {
+    use super::*;
+
+    fn task(title: &str) -> Task {
+        Task::new(false, title.into(), None, vec![], None)
+    }
+
+    fn text(s: &str) -> Line {
+        Line {
+            item: Item::Text(s.to_string()),
+            ending: Ending::Lf,
+        }
+    }
+
+    fn rendered(doc: &Doc) -> Vec<String> {
+        doc.lines.iter().map(|l| l.text()).collect()
+    }
+
+    /// The reason this is not a plain append: a hand-written list very often ends
+    /// with something that is not a task, and a captured task must not land under it.
+    #[test]
+    fn a_task_lands_above_the_trailing_prose() {
+        let mut doc = Doc {
+            lines: vec![
+                text("## Work"),
+                Line {
+                    item: Item::Task(task("first")),
+                    ending: Ending::Lf,
+                },
+                text(""),
+                text("---"),
+                text("a closing note"),
+            ],
+        };
+        doc.push_task(task("second"));
+
+        assert_eq!(
+            rendered(&doc),
+            [
+                "## Work",
+                "- [ ] first",
+                "- [ ] second",
+                "",
+                "---",
+                "a closing note"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_with_no_tasks_at_all_appends_at_the_end() {
+        let mut doc = Doc {
+            lines: vec![text("# My list"), text("just a paragraph")],
+        };
+        doc.push_task(task("first"));
+        assert_eq!(
+            rendered(&doc),
+            ["# My list", "just a paragraph", "- [ ] first"]
+        );
+    }
+
+    #[test]
+    fn the_missing_final_newline_is_supplied_only_when_appending_past_the_end() {
+        let mut doc = Doc {
+            lines: vec![Line {
+                item: Item::Text("no trailing newline".into()),
+                ending: Ending::None,
+            }],
+        };
+        doc.push_task(task("first"));
+        assert_eq!(doc.lines[0].ending, Ending::Lf);
+        assert_eq!(doc.lines[1].ending, Ending::Lf);
+    }
+
+    /// Inserting in the middle must not give the file a trailing newline it did
+    /// not have.
+    #[test]
+    fn a_file_without_a_final_newline_keeps_not_having_one() {
+        let mut doc = Doc {
+            lines: vec![
+                Line {
+                    item: Item::Task(task("first")),
+                    ending: Ending::Lf,
+                },
+                Line {
+                    item: Item::Text("closing note".into()),
+                    ending: Ending::None,
+                },
+            ],
+        };
+        doc.push_task(task("second"));
+        assert_eq!(doc.lines.last().unwrap().ending, Ending::None);
+    }
+
+    #[test]
+    fn nothing_that_was_already_there_moves_relative_to_anything_else() {
+        let before = vec![text("## A"), text("> quote"), text("| table |")];
+        let mut doc = Doc {
+            lines: before.clone(),
+        };
+        doc.push_task(task("new"));
+
+        let after: Vec<String> = rendered(&doc)
+            .into_iter()
+            .filter(|l| l != "- [ ] new")
+            .collect();
+        assert_eq!(after, rendered(&Doc { lines: before }));
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
     Task(Task),
@@ -245,17 +356,32 @@ impl Doc {
         self.tasks().count()
     }
 
-    /// Appends at the end of the file: the one position that never reorders
-    /// anything. Open question in notes.md.
+    /// Inserts after the last task rather than at the end of the file. A list
+    /// that ends with a table, a `---` or a paragraph would otherwise collect
+    /// captured tasks below all of it, outside every `##` section.
+    ///
+    /// Nothing already in the file moves, so this still never reorders. It does
+    /// invalidate `line_no` for the lines it pushes down — see notes.md.
     pub fn push_task(&mut self, task: Task) {
-        if let Some(last) = self.lines.last_mut()
-            && last.ending == Ending::None
+        let at = self
+            .lines
+            .iter()
+            .rposition(|l| matches!(l.item, Item::Task(_)))
+            .map_or(self.lines.len(), |i| i + 1);
+
+        // Only the final line can lack an ending, and appending after it needs one.
+        if let Some(prev) = at.checked_sub(1).and_then(|i| self.lines.get_mut(i))
+            && prev.ending == Ending::None
         {
-            last.ending = Ending::Lf;
+            prev.ending = Ending::Lf;
         }
-        self.lines.push(Line {
-            item: Item::Task(task),
-            ending: Ending::Lf,
-        });
+
+        self.lines.insert(
+            at,
+            Line {
+                item: Item::Task(task),
+                ending: Ending::Lf,
+            },
+        );
     }
 }

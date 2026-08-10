@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let path = match cli.file {
         Some(p) => p,
-        None => default_path()?,
+        None => env_path().map_or_else(default_path, Ok)?,
     };
 
     match cli.command {
@@ -46,10 +46,30 @@ fn main() -> Result<()> {
     }
 }
 
+fn dirs() -> Result<directories::ProjectDirs> {
+    directories::ProjectDirs::from("", "", "ratodo")
+        .context("could not work out where ~/.config is")
+}
+
+/// Below `--file`, above the default: `direnv` can then give a repository its
+/// own list without an alias per checkout.
+fn env_path() -> Option<PathBuf> {
+    let raw = std::env::var_os("RATODO_FILE")?;
+    (!raw.is_empty()).then(|| PathBuf::from(raw))
+}
+
 fn default_path() -> Result<PathBuf> {
-    let dirs = directories::ProjectDirs::from("", "", "ratodo")
-        .context("could not work out where ~/.config is")?;
-    Ok(dirs.config_dir().join("todo.md"))
+    Ok(dirs()?.config_dir().join("todo.md"))
+}
+
+/// Derived, so it never lands in the user's dotfiles. `state_dir` is `None` off
+/// Linux, where the cache directory is the closest equivalent.
+fn backup_dir() -> Result<PathBuf> {
+    let dirs = dirs()?;
+    Ok(dirs
+        .state_dir()
+        .unwrap_or_else(|| dirs.cache_dir())
+        .to_path_buf())
 }
 
 fn add(path: &Path, input: &str) -> Result<()> {
@@ -60,7 +80,7 @@ fn add(path: &Path, input: &str) -> Result<()> {
     let loaded = write::load(path)?;
     let mut doc = loaded.doc;
     doc.push_task(task);
-    write::save(path, &doc, loaded.mtime)?;
+    write::save(path, &doc, loaded.mtime, &backup_dir()?)?;
 
     println!("{summary}");
     Ok(())
@@ -70,9 +90,10 @@ fn list(path: &Path) -> Result<()> {
     let doc = write::load(path)?.doc;
     let today = Local::now().date_naive();
 
+    // stderr, not stdout: `ratodo list | wc -l` has to count tasks and nothing else.
     if doc.task_count() == 0 {
-        println!("nothing here yet — try: ratodo add \"buy milk @tomorrow #home\"");
-        println!("file: {}", path.display());
+        eprintln!("nothing here yet — try: ratodo add 'buy milk @tomorrow #home'");
+        eprintln!("file: {}", path.display());
         return Ok(());
     }
 

@@ -45,16 +45,20 @@ Cheap fixes to things already built, plus the decisions that came out of the
 2026-08-10 reviews. Details in [docs/decisions.md](docs/decisions.md#reversed),
 the abandonment risk in [docs/risks.md](docs/risks.md).
 
-- [ ] `write.rs`: `.bak` goes to `~/.local/state/ratodo/`, not next to the list —
-      a `.bak` in a dotfiles repo means `git status` is dirty after every capture
-- [ ] `model.rs`: `push_task` inserts after the last task, not at EOF. In a file
-      ending with a table or `---` the captured task currently lands outside
-      every `##` section
-- [ ] `main.rs`: the empty-list message goes to **stderr**, so `list | wc -l` is honest
-- [ ] `main.rs`: `$RATODO_FILE` between `--file` and the XDG default (2 lines)
-- [ ] Colour off when stdout is not a TTY — `std::io::IsTerminal`, stdlib
-- [ ] Single-quote every shell example in the README and docs: `!high` inside
+- [x] `write.rs`: `.bak` goes to `~/.local/state/ratodo/`, not next to the list —
+      a `.bak` in a dotfiles repo means `git status` is dirty after every capture.
+      The backup directory is a **parameter**; `write.rs` reads no environment
+- [x] `write.rs`: the backup is named after the whole target path, so two `--file`
+      lists cannot overwrite each other's insurance
+- [x] `model.rs`: `push_task` inserts after the last task, not at EOF. In a file
+      ending with a table or `---` the captured task landed outside every `##`
+- [x] `main.rs`: the empty-list message goes to **stderr**, so `list | wc -l` is honest
+- [x] `main.rs`: `$RATODO_FILE` between `--file` and the XDG default
+- [x] Single-quote every shell example in the README and docs: `!high` inside
       `"…"` is history expansion in bash and zsh, and the add never happens
+- [ ] Colour off when stdout is not a TTY — `std::io::IsTerminal`, stdlib.
+      **Nothing to gate yet:** the CLI prints no colour at all until step 6, so
+      this is written down in [docs/cli.md](docs/cli.md) and implemented there
 
 ## 3 — agenda + the scriptable surface (no terminal needed)
 

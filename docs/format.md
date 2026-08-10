@@ -61,7 +61,7 @@ Following the standard would break the product's main promise, so we don't:
 |---|---|---|
 | `todo.md` | `~/.config/ratodo/todo.md` | **The user's.** Goes into dotfiles, hand-edited, versioned in git. This is the XDG deviation, and it is on purpose |
 | `todo.ics` | `~/.local/share/ratodo/todo.ics` | **Derived.** Pointless to back up, regenerated if deleted. XDG is right here |
-| `todo.md.bak` | `~/.local/state/ratodo/todo.md.bak` | **Derived.** Written before every write, cheap insurance — but *not* next to the list. `todo.md` is usually symlinked into a dotfiles repo, and a `.bak` beside it means `git status` reports an untracked file after every single capture |
+| the `.bak` | `~/.local/state/ratodo/` | **Derived.** Written before every write, cheap insurance — but *not* next to the list. `todo.md` is usually symlinked into a dotfiles repo, and a `.bak` beside it means `git status` reports an untracked file after every single capture. The file is named after the whole target path with the separators flattened (`-home-you-.config-ratodo-todo.md.bak`), so two `--file` lists cannot overwrite each other's backup |
 | `theme.conf` | `~/.config/ratodo/theme.conf` | **The user's.** Optional — colours fall back to the built-in default. See [theming.md](theming.md) |
 | `config.toml` | `~/.config/ratodo/config.toml` | v2. There is **no** general config file in v1 (`theme.conf` is separate and deliberately not TOML) |
 

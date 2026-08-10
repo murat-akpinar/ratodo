@@ -98,10 +98,12 @@ surface.
   turns it into a spec: a floating terminal that takes a beat to paint feels
   broken in a way the same delay in a long-lived window does not. Aim under
   50 ms cold, and measure rather than assume.
-- **Where a captured task lands.** `push_task` appends at EOF, so in a file that
-  ends with a table, a `---` or a paragraph the new task goes below all of it,
-  outside every `##`. Also means two machines adding tasks always conflict on the
-  same last line.
+- **`line_no` goes stale after `push_task`.** Now that a captured task is
+  inserted after the last task rather than at EOF, every line below it keeps the
+  number it had at parse time. Nothing reads `line_no` after a mutation today —
+  `add` pushes, saves and exits — but the TUI in step 6 tracks selection by task
+  identity, and this is exactly the kind of thing that quietly becomes that
+  identity. Either renumber on insert or never let `line_no` outlive a parse.
 - **chezmoi.** `chezmoi apply` will overwrite a live `todo.md` from its stale
   source copy. stow and bare-git symlinks are fine. This needs a README
   paragraph, not code — but it needs one, because the docs promise dotfiles
