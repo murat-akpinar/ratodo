@@ -51,8 +51,25 @@ Two things are worth noticing about this pipeline:
 - **The panic hook restores the terminal.** A TUI that panics in raw mode leaves
   the user's terminal broken. `std::panic::set_hook` puts the screen back in
   every case. This gets written on day one, not later.
-- Event sources: `crossterm::event::poll` for keys, and an mpsc channel from
-  `notify` for file changes.
+- Event sources: **one channel, two senders.** A thread parked in
+  `crossterm::event::read` sends keys down it; `notify`'s watcher thread sends
+  file changes down the same one. The loop blocks on `recv`.
+
+  This replaces an earlier plan to call `crossterm::event::poll` with a timeout
+  and check the channel on each wake-up, which reached the same place by a worse
+  road: a timeout short enough to keep file changes feeling instant is a timeout
+  that wakes the process several times a second forever, and a timeout long
+  enough to be genuinely idle makes an outside edit take that long to appear.
+  Blocking on one channel has neither problem and is fewer lines. See
+  [decisions.md](decisions.md#settled).
+
+- **Watch the directory, not the file.** Every safe writer — vim, `git`, our own
+  `write.rs` — replaces a file by creating a new one and renaming it over the
+  top. An inotify watch is on the inode, so it goes quiet at exactly the moment
+  something interesting happened. Watching the parent and filtering by file name
+  is the fix, and the filter is its own tested function because getting it
+  backwards means either reloading on every unrelated file or never reloading at
+  all.
 
 ## Concurrent editing
 
@@ -151,9 +168,9 @@ Seven crates, all of them required.
 Deliberately **absent**, and why:
 
 - **No `tokio`.** There is no need for async here — a single local file, and
-  blocking IO is more than enough. The event loop is `crossterm::event::poll`
-  plus notify's mpsc channel. An async runtime would grow compile times and
-  binary size for free.
+  blocking IO is more than enough. The event loop is one mpsc channel with a
+  reader thread on each end of it, which is the whole of the concurrency in this
+  program. An async runtime would grow compile times and binary size for free.
 - **No `serde`.** We write the Markdown parser ourselves (it is the heart of the
   product anyway). `theme.conf` is a flat `key = value` file precisely so that it
   can be parsed in ~40 lines instead of pulling in serde + a TOML crate. serde

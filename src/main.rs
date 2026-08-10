@@ -144,20 +144,89 @@ fn add(path: &Path, input: &str) -> Result<()> {
     Ok(())
 }
 
-fn tui(path: &Path) -> Result<ExitCode> {
+/// Everything the screen needs, read fresh. Called again on every outside
+/// change, which is why it takes a path rather than a document.
+fn snapshot(path: &Path, today: chrono::NaiveDate) -> Result<(Vec<ui::Row>, agenda::Counts)> {
     let doc = write::load(path)?.doc;
-    let today = Local::now().date_naive();
     let tasks: Vec<_> = doc.tasks().cloned().collect();
-    let groups = agenda::agenda(&tasks, today);
     let counts = agenda::Counts::of(&tasks, today);
-    let mut screen = ui::Screen::new(ui::rows(&groups));
+    Ok((ui::rows(&agenda::agenda(&tasks, today)), counts))
+}
+
+enum Msg {
+    Input(Event),
+    /// The list changed underneath us — vim, `git pull`, `ratodo add` next door.
+    Reload,
+    /// stdin ended. Without this the loop would wait for a key nobody can send.
+    InputGone,
+}
+
+/// Whether a directory event is about our list. Watching the directory means
+/// hearing about everything in it — `theme.conf` being saved, the temp file our
+/// own writer makes on the way to a rename — and re-reading on all of that would
+/// be a redraw every time anything in `~/.config/ratodo` moved.
+fn touches(event: &notify::Event, name: &std::ffi::OsStr) -> bool {
+    event.paths.iter().any(|p| p.file_name() == Some(name))
+}
+
+/// Watches the **directory**, not the file. Every safe writer — ours included —
+/// replaces a file by writing a temp one and renaming it over the top, and an
+/// inotify watch on the old inode goes quiet at exactly that moment.
+///
+/// The watcher has to stay alive to keep watching, so it is returned.
+fn watch(path: &Path, tx: std::sync::mpsc::Sender<Msg>) -> Option<notify::RecommendedWatcher> {
+    use notify::Watcher;
+
+    let dir = path.parent()?;
+    let name = path.file_name()?.to_os_string();
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        if event.iter().any(|e| touches(e, &name)) {
+            let _ = tx.send(Msg::Reload);
+        }
+    })
+    .ok()?;
+
+    // A directory that is not there yet cannot be watched, and that is not worth
+    // refusing to open the list over.
+    watcher
+        .watch(dir, notify::RecursiveMode::NonRecursive)
+        .ok()?;
+    Some(watcher)
+}
+
+fn tui(path: &Path) -> Result<ExitCode> {
+    let today = Local::now().date_naive();
+    let (rows, counts) = snapshot(path, today)?;
+    let mut screen = ui::Screen::new(rows);
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let _watcher = watch(path, tx.clone());
+
+    // A thread parked in `read` and a `recv` parked here: both sources wake the
+    // loop the instant they have something, and neither one polls. That is the
+    // whole of "no fixed FPS" — see docs/architecture.md#the-event-loop.
+    std::thread::spawn(move || {
+        loop {
+            match event::read() {
+                Ok(event) => {
+                    if tx.send(Msg::Input(event)).is_err() {
+                        return;
+                    }
+                }
+                Err(_) => {
+                    let _ = tx.send(Msg::InputGone);
+                    return;
+                }
+            }
+        }
+    });
 
     // `try_init` installs a panic hook that turns raw mode off and leaves the
     // alternate screen before chaining to the default one, and `Terminal`'s own
     // Drop puts the cursor back. That is the whole of invariant 5, and it is the
     // library's, so it cannot drift out of step with the setup it undoes.
     let mut terminal = ratatui::try_init()?;
-    let result = run(&mut terminal, &mut screen, counts, today);
+    let result = run(&mut terminal, &mut screen, counts, today, path, &rx);
     ratatui::restore();
     result
 }
@@ -165,27 +234,37 @@ fn tui(path: &Path) -> Result<ExitCode> {
 fn run(
     terminal: &mut ratatui::DefaultTerminal,
     screen: &mut ui::Screen,
-    counts: agenda::Counts,
+    mut counts: agenda::Counts,
     today: chrono::NaiveDate,
+    path: &Path,
+    rx: &std::sync::mpsc::Receiver<Msg>,
 ) -> Result<ExitCode> {
     loop {
         terminal.draw(|frame| ui::draw(frame, screen, counts, today))?;
 
-        // Blocks until something happens: no timeout, no frame rate, 0% CPU in a
-        // pane left open all day. See docs/architecture.md#the-event-loop.
-        let Event::Key(key) = event::read()? else {
-            // Anything else — a resize, say — still falls through to a redraw.
-            continue;
-        };
-
-        // What the key means lives in `ui`, where it can be tested; this loop
-        // only knows how to read one and how to obey.
-        match ui::action(key) {
-            ui::Action::Quit => return Ok(ExitCode::SUCCESS),
-            ui::Action::Move(n) => screen.move_by(n),
-            ui::Action::Top => screen.top(),
-            ui::Action::Bottom => screen.bottom(),
-            ui::Action::Ignore => {}
+        match rx.recv().context("both event sources went away")? {
+            Msg::InputGone => return Ok(ExitCode::SUCCESS),
+            Msg::Reload => {
+                // One save can arrive as several events. Re-reading a small file
+                // twice costs nothing and the second draw emits no cells, so
+                // there is nothing here worth a debounce that could swallow a key.
+                let (rows, fresh) = snapshot(path, today)?;
+                screen.replace(rows);
+                counts = fresh;
+            }
+            // Anything else — a resize, say — falls through to the redraw above.
+            Msg::Input(Event::Key(key)) => {
+                // What the key means lives in `ui`, where it can be tested; this
+                // loop only knows how to read one and how to obey.
+                match ui::action(key) {
+                    ui::Action::Quit => return Ok(ExitCode::SUCCESS),
+                    ui::Action::Move(n) => screen.move_by(n),
+                    ui::Action::Top => screen.top(),
+                    ui::Action::Bottom => screen.bottom(),
+                    ui::Action::Ignore => {}
+                }
+            }
+            Msg::Input(_) => {}
         }
     }
 }
@@ -303,4 +382,43 @@ fn status(path: &Path, json: bool) -> Result<ExitCode> {
     } else {
         ExitCode::SUCCESS
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    fn event(path: &str) -> notify::Event {
+        notify::Event::new(notify::EventKind::Any).add_path(PathBuf::from(path))
+    }
+
+    /// Both halves. Reacting to the wrong file is a redraw whenever anything in
+    /// `~/.config/ratodo` moves; missing our own is the whole feature not working.
+    #[test]
+    fn only_our_own_list_counts_as_a_change() {
+        let name = OsStr::new("todo.md");
+
+        assert!(touches(&event("/home/you/.config/ratodo/todo.md"), name));
+        assert!(!touches(
+            &event("/home/you/.config/ratodo/theme.conf"),
+            name
+        ));
+        assert!(
+            !touches(&event("/home/you/.config/ratodo/todo.md.tmp-1234"), name),
+            "our own writer's temp file must not look like the list"
+        );
+        assert!(!touches(&notify::Event::new(notify::EventKind::Any), name));
+    }
+
+    /// A rename reports both ends. Reading only the first would miss every
+    /// `mv new todo.md`, which is how vim and our own writer save.
+    #[test]
+    fn a_rename_is_noticed_from_whichever_end_names_our_list() {
+        let name = OsStr::new("todo.md");
+        let rename = notify::Event::new(notify::EventKind::Any)
+            .add_path(PathBuf::from("/home/you/.config/ratodo/todo.md.new"))
+            .add_path(PathBuf::from("/home/you/.config/ratodo/todo.md"));
+        assert!(touches(&rename, name));
+    }
 }

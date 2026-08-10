@@ -721,6 +721,57 @@ fn the_bare_command_opens_a_screen_on_a_terminal_and_gives_it_back() {
     );
 }
 
+/// The promise in docs/architecture.md#concurrent-editing: an edit from vim,
+/// `git pull` or `ratodo add` next door reaches the open screen on its own.
+/// Timing, so it needs a real process and real waiting.
+#[cfg(target_os = "linux")]
+#[test]
+fn an_edit_from_outside_reaches_the_open_screen() {
+    use std::io::Write;
+
+    let dir = TempDir::new("watch");
+    let path = dir.file("todo.md");
+    fs::write(&path, "- [ ] the original task\n").unwrap();
+
+    let mut child = Command::new("timeout")
+        .args([
+            "20",
+            "script",
+            "-qec",
+            &format!("stty rows 15 cols 50; {BIN} --file {}", path.display()),
+            "/dev/null",
+        ])
+        .env("XDG_STATE_HOME", dir.file("state"))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("script(1) is needed for this test — it is in util-linux");
+
+    std::thread::sleep(std::time::Duration::from_millis(600));
+
+    // Written the way every safe editor writes: a new file renamed over the top.
+    // A watch on the old inode would go silent right here.
+    let swap = dir.file("todo.md.new");
+    fs::write(
+        &swap,
+        "- [ ] the original task\n- [ ] arrived from outside\n",
+    )
+    .unwrap();
+    fs::rename(&swap, &path).unwrap();
+
+    std::thread::sleep(std::time::Duration::from_millis(600));
+    let mut stdin = child.stdin.take().expect("stdin");
+    stdin.write_all(b"q").unwrap();
+    drop(stdin);
+
+    let out = child.wait_with_output().expect("waiting");
+    let screen = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        screen.contains("arrived"),
+        "the screen never picked up the change: {screen:?}"
+    );
+}
+
 #[test]
 fn unknown_arguments_fail_loudly() {
     let out = run(&["--nonsense"]);

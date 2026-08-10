@@ -70,6 +70,19 @@ Three lists: what is settled, what was rejected, and what is still open.
   the documents were originally written in Turkish and translated.)*
 - ✅ **No test environment needed.** All that is required is a few hand-written
   `todo.md` files. Tests can be written on day one.
+- ✅ **The event loop is one channel, not a poll with a timeout** *(2026-08-11)*.
+  Keys arrive from a thread parked in `crossterm::event::read`, file changes from
+  `notify`'s own thread, both down the same mpsc channel, and the loop blocks on
+  `recv`. Any poll timeout has to choose between waking up forever and being slow
+  to notice an edit; this chooses neither. See
+  [architecture.md](architecture.md#the-event-loop).
+- ✅ **The file watch is on the directory** *(2026-08-11)*. vim, git and our own
+  writer all replace the file by renaming a new one over it, and an inotify watch
+  follows the inode that just stopped being the list.
+- ✅ **A reader that closes the pipe is not an error** *(2026-08-11)*.
+  `ratodo list | head` made `println!` panic. Every stdout write goes through
+  `writeln!`, and `BrokenPipe` alone exits 0. See
+  [cli.md](cli.md#behaving-like-a-unix-program).
 
 ## Rejected
 

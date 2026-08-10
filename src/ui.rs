@@ -47,43 +47,61 @@ pub fn action(key: KeyEvent) -> Action {
 
 /// One line of the list. Only a `Task` can hold the selection; the rest is
 /// scenery the cursor moves over.
+///
+/// Owned rather than borrowed, so that a reload can swap the whole list out
+/// without the screen still pointing into the document it replaced.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Row<'a> {
-    Header(&'a str),
-    Task(&'a Task),
+pub enum Row {
+    Header(String),
+    Task(Task),
     Spacer,
 }
 
 /// Flattens the agenda into lines. The blank row between groups is half of the
 /// design — see docs/design.md#rules — so it is a row, not a margin.
-pub fn rows<'a>(groups: &'a [Group<'a>]) -> Vec<Row<'a>> {
+pub fn rows(groups: &[Group<'_>]) -> Vec<Row> {
     let mut out = Vec::new();
     for group in groups {
         if !out.is_empty() {
             out.push(Row::Spacer);
         }
         if let Some(title) = group.kind.title() {
-            out.push(Row::Header(title));
+            out.push(Row::Header(title.to_string()));
         }
-        out.extend(group.tasks.iter().map(|t| Row::Task(t)));
+        out.extend(group.tasks.iter().map(|t| Row::Task((*t).clone())));
     }
     out
 }
 
-pub struct Screen<'a> {
-    rows: Vec<Row<'a>>,
+#[derive(Default)]
+pub struct Screen {
+    rows: Vec<Row>,
     /// Holds the scroll offset as well as the selection, so the selected row
     /// stays on screen without this module doing viewport arithmetic.
     state: ListState,
 }
 
-impl<'a> Screen<'a> {
-    pub fn new(rows: Vec<Row<'a>>) -> Self {
-        let first = (0..rows.len()).find(|&i| matches!(rows[i], Row::Task(_)));
-        Screen {
-            rows,
-            state: ListState::default().with_selected(first),
-        }
+impl Screen {
+    pub fn new(rows: Vec<Row>) -> Self {
+        let mut screen = Screen::default();
+        screen.replace(rows);
+        screen
+    }
+
+    /// Swaps the list for a freshly read one and tries to leave the cursor where
+    /// it was. Matching on the raw line is not the identity tracking docs/tui.md
+    /// asks for — that is step 6 — but it covers the case that actually happens:
+    /// `ratodo add` in another pane pushing rows around underneath you.
+    pub fn replace(&mut self, rows: Vec<Row>) {
+        let was = self.task().map(|t| t.raw.clone());
+        let kept = was.and_then(|raw| {
+            rows.iter()
+                .position(|r| matches!(r, Row::Task(t) if t.raw == raw))
+        });
+
+        self.rows = rows;
+        let first = (0..self.rows.len()).find(|&i| self.is_task(i));
+        self.state.select(kept.or(first));
     }
 
     pub fn selected(&self) -> Option<usize> {
@@ -278,7 +296,10 @@ mod tests {
     #[test]
     fn the_first_group_gets_no_spacer_above_it() {
         let tasks = tasks(&["a @2026-08-10"]);
-        assert_eq!(rows(&agenda(&tasks, today()))[0], Row::Header("TODAY"));
+        assert_eq!(
+            rows(&agenda(&tasks, today()))[0],
+            Row::Header("TODAY".to_string())
+        );
     }
 
     /// An untitled group is the run of tasks above the file's first heading, and
@@ -349,6 +370,48 @@ mod tests {
         }
         assert_eq!(jumped.selected(), stepped.selected());
         assert_eq!(jumped.task().map(|t| t.title.as_str()), Some("d"));
+    }
+
+    /// `ratodo add` in the next pane pushes rows around. A cursor that jumps to
+    /// the top every time makes the pane unusable as something you leave open.
+    #[test]
+    fn a_reload_leaves_the_cursor_on_the_task_it_was_on() {
+        let before = in_section(&[("one", "S"), ("two", "S"), ("three", "S")]);
+        let groups = agenda(&before, today());
+        let mut screen = Screen::new(rows(&groups));
+        screen.move_by(2);
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("three"));
+
+        let after = in_section(&[
+            ("inserted at the top", "S"),
+            ("one", "S"),
+            ("two", "S"),
+            ("three", "S"),
+        ]);
+        let groups = agenda(&after, today());
+        screen.replace(rows(&groups));
+
+        assert_eq!(
+            screen.task().map(|t| t.title.as_str()),
+            Some("three"),
+            "the cursor followed the row number instead of the task"
+        );
+    }
+
+    #[test]
+    fn a_reload_that_takes_the_selected_task_away_falls_back_to_the_top() {
+        let before = in_section(&[("one", "S"), ("doomed", "S")]);
+        let groups = agenda(&before, today());
+        let mut screen = Screen::new(rows(&groups));
+        screen.bottom();
+
+        let after = in_section(&[("one", "S")]);
+        let groups = agenda(&after, today());
+        screen.replace(rows(&groups));
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("one"));
+
+        screen.replace(rows(&[]));
+        assert_eq!(screen.selected(), None, "an emptied list selects nothing");
     }
 
     #[test]

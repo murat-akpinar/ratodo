@@ -83,8 +83,12 @@ the abandonment risk in [docs/risks.md](docs/risks.md).
 - [x] **No fixed FPS** — draw on events, block when idle. Measured: six seconds
       open, zero seconds of CPU
 - [x] The TUI only opens on a TTY — `ratodo | wc -l` lists instead
-- [ ] Event loop: `crossterm::event::poll` + notify's mpsc channel
-- [ ] inotify: re-read when the file changes from outside
+- [x] Event loop: one mpsc channel, a reader thread on each end, blocking `recv`
+      — not `poll` with a timeout. See [docs/decisions.md](docs/decisions.md#settled)
+- [x] inotify: re-read when the file changes from outside. The watch is on the
+      **directory**, because every safe writer renames over the file
+- [x] The cursor stays on its task across a reload — matched by raw line. Full
+      identity tracking is step 6
 
 ## 4.5 — ics (was step 3; moved behind the TUI)
 
