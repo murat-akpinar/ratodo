@@ -329,6 +329,94 @@ fn porcelain_honours_the_filters_too() {
     assert!(out.lines().all(|l| l.split('\t').count() == 5), "{out:?}");
 }
 
+#[test]
+fn done_ticks_the_one_match_and_changes_exactly_that_byte() {
+    let dir = TempDir::new("done");
+    let path = dir.file("todo.md");
+    let before = "# My list\n\n## Work\n- [ ] pay the invoice @2026-08-12 #ops\n- [ ] call the bank\n\n> a note\n";
+    fs::write(&path, before).unwrap();
+
+    let out = stdout_of(&path, &["done", "invoice"]);
+    assert_eq!(out, "done: pay the invoice\n");
+
+    let after = fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        after,
+        before.replace("- [ ] pay the invoice", "- [x] pay the invoice"),
+        "something other than the one checkbox moved"
+    );
+}
+
+/// The trust break the whole round-trip guarantee exists to prevent: on an
+/// ambiguous match the file must be byte-identical afterwards, and the exit code
+/// must let a script notice.
+#[test]
+fn an_ambiguous_done_writes_nothing_at_all() {
+    let dir = TempDir::new("ambiguous");
+    let path = dir.file("todo.md");
+    let before = "- [ ] write the report\n- [ ] send the report\n";
+    fs::write(&path, before).unwrap();
+
+    let out = run(&["--file", path.to_str().unwrap(), "done", "report"]);
+    assert_eq!(out.status.code(), Some(2), "ambiguity is exit 2");
+    assert!(out.stdout.is_empty(), "{:?}", out.stdout);
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        before,
+        "the file changed"
+    );
+
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("write the report"), "{err}");
+    assert!(err.contains("send the report"), "{err}");
+    assert!(err.contains("nothing was changed"), "{err}");
+
+    let beside: Vec<String> = fs::read_dir(&dir.0)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(beside, ["todo.md"], "a refused write still took a backup");
+}
+
+#[test]
+fn done_with_no_match_is_exit_2_and_says_so() {
+    let dir = TempDir::new("nomatch-done");
+    let path = dir.file("todo.md");
+    fs::write(&path, "- [ ] pay the invoice\n").unwrap();
+
+    let out = run(&["--file", path.to_str().unwrap(), "done", "nonsense"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no open task matches 'nonsense'"),
+        "{:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// "no task matches" would be a lie the user cannot act on, and running it twice
+/// is the ordinary way to find out.
+#[test]
+fn done_twice_says_it_is_already_done_and_succeeds() {
+    let dir = TempDir::new("twice");
+    let path = dir.file("todo.md");
+    fs::write(&path, "- [ ] pay the invoice\n").unwrap();
+
+    stdout_of(&path, &["done", "invoice"]);
+    let again = run(&["--file", path.to_str().unwrap(), "done", "invoice"]);
+
+    assert!(again.status.success(), "the desired state already holds");
+    assert!(
+        String::from_utf8_lossy(&again.stderr).contains("already done: pay the invoice"),
+        "{:?}",
+        String::from_utf8_lossy(&again.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "- [x] pay the invoice\n"
+    );
+}
+
 /// `ratodo status || notify-send "$(ratodo status)"` is the documented use, and
 /// it only works if the exit code carries the overdue flag.
 #[test]

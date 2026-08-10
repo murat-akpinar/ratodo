@@ -106,6 +106,23 @@ pub fn added(task: &Task, today: NaiveDate) -> String {
     parts.join("  ·  ")
 }
 
+/// The one line `ratodo done` prints. Deliberately the same shape as `added`.
+pub fn marked_done(task: &Task) -> String {
+    format!("done: {}", plain(&task.title))
+}
+
+/// Why nothing was changed, and what to type instead. Ends by saying the file
+/// was left alone — the user has to be able to trust that without checking.
+pub fn ambiguous(text: &str, candidates: &[String]) -> String {
+    let mut out = format!("'{}' matches {} tasks:", plain(text), candidates.len());
+    for title in candidates {
+        out.push_str("\n  ");
+        out.push_str(&plain(title));
+    }
+    out.push_str("\nbe more specific — nothing was changed");
+    out
+}
+
 /// Near dates read better as words, far ones as numbers. The absolute date is
 /// always shown too — this is the moment the shorthand gets confirmed, so
 /// "tomorrow" alone would hide exactly what the user wants to check.

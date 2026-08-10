@@ -131,11 +131,31 @@ works with no extra flag.
 
 ### `done` matching
 
-The text is matched against task titles, case-insensitively, as a substring.
-**A unique match is required.** On several matches ratodo prints the candidates,
-exits `2` and writes nothing; on none, the same without the list. Silently
+The text is matched against task titles, case-insensitively, as a substring, and
+**only against the open ones**. A unique match is required:
+
+| Matches | What happens | Exit |
+|---|---|---|
+| exactly one open task | its `[ ]` becomes `[x]`, one byte, nothing else moves | `0` |
+| several | the candidates are printed and the file is not opened for writing | `2` |
+| none, but a completed task matches | `already done: <title>` | `0` |
+| none at all | `no open task matches '<text>'` | `2` |
+
+Searching only the open tasks is what keeps `done "report"` unambiguous once one
+of two reports is finished. The completed-task line exists so that running the
+command twice gets an answer instead of "no task matches", which is a sentence
+the user cannot act on.
+
+There is **no closest match**, no prefix scoring and no "did you mean". Silently
 ticking the wrong task is precisely the trust break that the whole round-trip
-guarantee exists to prevent — see [testing.md](testing.md).
+guarantee exists to prevent — see [testing.md](testing.md) — and a helpful
+heuristic is exactly how it would happen. An empty search matches nothing rather
+than everything, because on a list with one open task `done ''` would otherwise
+look like a correct guess.
+
+Ambiguity costs nothing: no backup, no temp file, no mtime bump. The test for it
+asserts the file is byte-identical afterwards and that the directory beside it is
+still empty.
 
 ### `add` syntax
 

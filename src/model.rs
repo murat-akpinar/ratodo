@@ -212,6 +212,99 @@ mod task_tests {
 }
 
 #[cfg(test)]
+mod lookup_tests {
+    use super::*;
+
+    /// Titles in, a document out — the line indices then mean what the enum says.
+    fn doc(titles: &[(&str, bool)]) -> Doc {
+        Doc {
+            lines: titles
+                .iter()
+                .map(|&(title, done)| Line {
+                    item: Item::Task(Task::new(done, title.into(), None, vec![], None)),
+                    ending: Ending::Lf,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn one_open_match_reports_the_line_it_is_on() {
+        let d = doc(&[("pay the invoice", false), ("call the bank", false)]);
+        assert_eq!(d.find_open("bank"), Lookup::One(1));
+        assert_eq!(
+            d.find_open("INVOICE"),
+            Lookup::One(0),
+            "case does not matter"
+        );
+        assert_eq!(
+            d.find_open("the"),
+            Lookup::Several(vec!["pay the invoice".into(), "call the bank".into(),])
+        );
+    }
+
+    /// The index is into `lines`, not a count of tasks: a document with prose in
+    /// it would otherwise tick a line seven rows above the one that matched.
+    #[test]
+    fn the_index_counts_every_line_not_every_task() {
+        let mut d = doc(&[("first", false), ("target", false)]);
+        d.lines.insert(
+            1,
+            Line {
+                item: Item::Text("> a note".into()),
+                ending: Ending::Lf,
+            },
+        );
+        let Lookup::One(at) = d.find_open("target") else {
+            panic!("expected exactly one match");
+        };
+        assert_eq!(at, 2);
+        assert_eq!(d.lines[at].text(), "- [ ] target");
+    }
+
+    #[test]
+    fn nothing_at_all_is_not_the_same_as_already_finished() {
+        let d = doc(&[("close the old PRs", true)]);
+        assert_eq!(
+            d.find_open("old PRs"),
+            Lookup::AlreadyDone("close the old PRs".into())
+        );
+        assert_eq!(d.find_open("something else"), Lookup::None);
+    }
+
+    /// A completed task must not make an open one ambiguous — that is the whole
+    /// reason the search is over open tasks only.
+    #[test]
+    fn a_finished_task_is_not_a_candidate() {
+        let d = doc(&[("write the report", true), ("send the report", false)]);
+        assert_eq!(d.find_open("report"), Lookup::One(1));
+    }
+
+    /// `ratodo done ''` matches every task by substring rules, and on a list with
+    /// one open task that would read as a correct guess.
+    #[test]
+    fn an_empty_search_matches_nothing_rather_than_everything() {
+        let d = doc(&[("the only task", false)]);
+        assert_eq!(d.find_open(""), Lookup::None);
+        assert_eq!(d.find_open("   "), Lookup::None);
+    }
+
+    #[test]
+    fn surrounding_space_is_not_part_of_the_search() {
+        let d = doc(&[("pay the invoice", false)]);
+        assert_eq!(d.find_open("  invoice  "), Lookup::One(0));
+    }
+
+    #[test]
+    fn a_search_never_changes_anything() {
+        let before = doc(&[("a", false), ("b", true)]);
+        let after = before.clone();
+        let _ = after.find_open("a");
+        assert_eq!(before, after);
+    }
+}
+
+#[cfg(test)]
 mod push_tests {
     use super::*;
 
@@ -348,6 +441,19 @@ pub struct Doc {
     pub lines: Vec<Line>,
 }
 
+/// What `Doc::find_open` found. See docs/cli.md#done-matching.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Lookup {
+    /// The index into `Doc::lines`, not a task number: the caller has to reach
+    /// the same line to change it.
+    One(usize),
+    None,
+    /// The candidate titles, in file order.
+    Several(Vec<String>),
+    /// Matched, but there is nothing left to do to it.
+    AlreadyDone(String),
+}
+
 impl Doc {
     pub fn tasks(&self) -> impl Iterator<Item = &Task> {
         self.lines.iter().filter_map(|l| match &l.item {
@@ -365,6 +471,49 @@ impl Doc {
 
     pub fn task_count(&self) -> usize {
         self.tasks().count()
+    }
+
+    pub fn task_at_mut(&mut self, line: usize) -> Option<&mut Task> {
+        match &mut self.lines.get_mut(line)?.item {
+            Item::Task(t) => Some(t),
+            Item::Text(_) => None,
+        }
+    }
+
+    /// Looks a task up the way `ratodo done '<text>'` does: case-insensitive
+    /// substring, over the open tasks only. See docs/cli.md#done-matching.
+    ///
+    /// Ambiguity is reported rather than resolved. Ticking the wrong line is the
+    /// exact trust break the round-trip guarantee exists to prevent, and a
+    /// "closest match" heuristic is how that happens.
+    pub fn find_open(&self, text: &str) -> Lookup {
+        let needle = text.trim().to_lowercase();
+        if needle.is_empty() {
+            // `done ''` would otherwise match every task, and on a list with one
+            // open task that reads as a successful guess.
+            return Lookup::None;
+        }
+        let hit = |t: &Task| t.title.to_lowercase().contains(&needle);
+
+        let open: Vec<(usize, &Task)> = self
+            .lines
+            .iter()
+            .enumerate()
+            .filter_map(|(i, l)| match &l.item {
+                Item::Task(t) if !t.done && hit(t) => Some((i, t)),
+                _ => None,
+            })
+            .collect();
+
+        match open.as_slice() {
+            [(line, _)] => Lookup::One(*line),
+            [] => match self.tasks().find(|t| t.done && hit(t)) {
+                // Otherwise "no task matches" is a lie the user cannot act on.
+                Some(t) => Lookup::AlreadyDone(t.title.clone()),
+                None => Lookup::None,
+            },
+            several => Lookup::Several(several.iter().map(|(_, t)| t.title.clone()).collect()),
+        }
     }
 
     /// Inserts after the last task rather than at the end of the file. A list

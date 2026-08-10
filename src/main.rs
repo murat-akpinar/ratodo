@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use chrono::Local;
 use clap::{Parser, Subcommand};
 
-use ratodo::model::Priority;
+use ratodo::model::{Lookup, Priority};
 use ratodo::text;
 use ratodo::{agenda, capture, write};
 
@@ -27,6 +27,12 @@ enum Command {
     /// Capture a task and exit
     Add {
         /// Free text: "pay the invoice @tomorrow #home !high"
+        #[arg(required = true, trailing_var_arg = true)]
+        text: Vec<String>,
+    },
+    /// Mark the one task matching this text as done
+    Done {
+        /// Case-insensitive substring of the task's title. It has to match one
         #[arg(required = true, trailing_var_arg = true)]
         text: Vec<String>,
     },
@@ -68,6 +74,7 @@ fn main() -> Result<ExitCode> {
 
     match cli.command {
         Some(Command::Add { text }) => add(&path, &text.join(" "))?,
+        Some(Command::Done { text }) => return done(&path, &text.join(" ")),
         Some(Command::List(args)) => list(&path, &args)?,
         Some(Command::Status { json }) => return status(&path, json),
         // The TUI arrives in step 4; until then the bare command lists.
@@ -114,6 +121,39 @@ fn add(path: &Path, input: &str) -> Result<()> {
 
     println!("{summary}");
     Ok(())
+}
+
+/// Exit 2 — "asked, could not answer" — for both no match and too many, and in
+/// neither case is the file opened for writing.
+fn done(path: &Path, input: &str) -> Result<ExitCode> {
+    let loaded = write::load(path)?;
+    let mut doc = loaded.doc;
+
+    let at = match doc.find_open(input) {
+        Lookup::One(at) => at,
+        Lookup::AlreadyDone(title) => {
+            eprintln!("already done: {}", text::plain(&title));
+            return Ok(ExitCode::SUCCESS);
+        }
+        Lookup::Several(candidates) => {
+            eprintln!("{}", text::ambiguous(input, &candidates));
+            return Ok(ExitCode::from(2));
+        }
+        Lookup::None => {
+            eprintln!("no open task matches '{}'", text::plain(input));
+            return Ok(ExitCode::from(2));
+        }
+    };
+
+    let task = doc
+        .task_at_mut(at)
+        .context("the matched line stopped being a task")?;
+    task.set_done(true);
+    let summary = text::marked_done(task);
+
+    write::save(path, &doc, loaded.mtime, &backup_dir()?)?;
+    println!("{summary}");
+    Ok(ExitCode::SUCCESS)
 }
 
 fn list(path: &Path, args: &ListArgs) -> Result<()> {

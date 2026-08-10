@@ -71,7 +71,7 @@ the abandonment risk in [docs/risks.md](docs/risks.md).
       `ratodo done "$(ratodo list --porcelain | fzf | cut -f3)"`
 - [x] `ratodo status` and `--json` — `class` is the field waybar keys its CSS off
 - [x] `status` exits non-zero when something is overdue
-- [ ] `done "<text>"`: unique match required; ambiguous → print candidates, exit 2,
+- [x] `done "<text>"`: unique match required; ambiguous → print candidates, exit 2,
       **write nothing**
 
 ## 4 — ratatui (the genuinely new part)
