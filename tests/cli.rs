@@ -835,6 +835,144 @@ fn the_calendar_is_written_beside_no_one_and_kept_up_to_date() {
     assert_eq!(text.matches("BEGIN:VTODO").count(), 3, "{text}");
 }
 
+/// Runs with `$XDG_CONFIG_HOME` pointed somewhere a `theme.conf` can be planted.
+fn with_config(dir: &TempDir, args: &[&str]) -> Output {
+    Command::new(BIN)
+        .args(args)
+        .env("XDG_CONFIG_HOME", dir.file("config"))
+        .env("XDG_STATE_HOME", dir.file("state"))
+        .env_remove("NO_COLOR")
+        .output()
+        .expect("running the binary")
+}
+
+fn plant_theme(dir: &TempDir, text: &str) {
+    let config = dir.file("config").join("ratodo");
+    fs::create_dir_all(&config).unwrap();
+    fs::write(config.join("theme.conf"), text).unwrap();
+}
+
+#[test]
+fn theme_list_names_the_built_ins_and_marks_the_default() {
+    let dir = TempDir::new("theme-list");
+    let out = with_config(&dir, &["theme", "list"]);
+    assert!(out.status.success());
+
+    let text = String::from_utf8_lossy(&out.stdout);
+    for name in [
+        "catppuccin-mocha",
+        "catppuccin-latte",
+        "gruvbox-dark",
+        "nord",
+        "dracula",
+        "terminal",
+    ] {
+        assert!(text.contains(name), "{name} missing from {text}");
+    }
+    assert!(text.contains("catppuccin-mocha  (default)"), "{text}");
+}
+
+/// `ratodo theme dump > theme.conf` is the documented way to start a theme
+/// file, so the output has to be a file ratodo reads back without complaint.
+#[test]
+fn a_dumped_theme_is_a_theme_file_ratodo_accepts() {
+    let dir = TempDir::new("theme-dump");
+    let dumped = with_config(&dir, &["theme", "dump"]);
+    assert!(dumped.status.success());
+
+    let text = String::from_utf8_lossy(&dumped.stdout).into_owned();
+    assert!(text.contains("background = none"), "{text}");
+    assert!(text.contains("accent     = #cba6f7"), "{text}");
+
+    plant_theme(&dir, &text);
+    let again = with_config(&dir, &["theme", "dump"]);
+    assert!(
+        again.stderr.is_empty(),
+        "ratodo complained about its own dump: {}",
+        String::from_utf8_lossy(&again.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&again.stdout), text);
+}
+
+#[test]
+fn the_theme_flag_overrides_the_file() {
+    let dir = TempDir::new("theme-flag");
+    plant_theme(&dir, "accent = #ff0000\n");
+
+    let from_file = with_config(&dir, &["theme", "dump"]);
+    assert!(
+        String::from_utf8_lossy(&from_file.stdout).contains("accent     = #ff0000"),
+        "{}",
+        String::from_utf8_lossy(&from_file.stdout)
+    );
+
+    let flagged = with_config(&dir, &["--theme", "terminal", "theme", "dump"]);
+    let text = String::from_utf8_lossy(&flagged.stdout);
+    assert!(!text.contains("#ff0000"), "--theme did not win: {text}");
+    assert!(text.contains("accent     = magenta"), "{text}");
+}
+
+/// Invariant 8, end to end: whatever is in that file, the program still runs.
+#[test]
+fn a_broken_theme_file_warns_and_never_stops_anything() {
+    let dir = TempDir::new("theme-broken");
+    let path = dir.file("todo.md");
+    fs::write(&path, "- [ ] still works\n").unwrap();
+    plant_theme(
+        &dir,
+        "theme = nonsense\naccent = puce\nwibble = #ff0000\nnot a pair at all\n",
+    );
+
+    let out = with_config(&dir, &["--file", path.to_str().unwrap(), "theme", "dump"]);
+    assert!(out.status.success(), "a bad theme file stopped the program");
+
+    let complaints = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(complaints.lines().count(), 4, "{complaints}");
+    assert!(complaints.contains("theme.conf:"), "{complaints}");
+
+    // stdout is still a usable theme file — the warnings went to the other stream.
+    let dumped = String::from_utf8_lossy(&out.stdout);
+    assert!(dumped.contains("accent     = #cba6f7"), "{dumped}");
+}
+
+#[test]
+fn no_color_flattens_every_role() {
+    let dir = TempDir::new("no-color");
+    let out = Command::new(BIN)
+        .args(["theme", "dump"])
+        .env("XDG_CONFIG_HOME", dir.file("config"))
+        .env("NO_COLOR", "1")
+        .output()
+        .expect("running the binary");
+
+    let text = String::from_utf8_lossy(&out.stdout);
+    let colours: Vec<&str> = text
+        .lines()
+        .filter_map(|l| l.split_once('='))
+        .map(|(_, v)| v.trim())
+        .collect();
+    assert_eq!(colours.len(), 11, "{text}");
+    assert!(colours.iter().all(|c| *c == "none"), "{text}");
+}
+
+/// The convention is any non-empty value. An empty `NO_COLOR=` is not a request.
+#[test]
+fn an_empty_no_color_is_not_a_request_for_no_colour() {
+    let dir = TempDir::new("no-color-empty");
+    let out = Command::new(BIN)
+        .args(["theme", "dump"])
+        .env("XDG_CONFIG_HOME", dir.file("config"))
+        .env("NO_COLOR", "")
+        .output()
+        .expect("running the binary");
+
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("#cba6f7"),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
 #[test]
 fn unknown_arguments_fail_loudly() {
     let out = run(&["--nonsense"]);

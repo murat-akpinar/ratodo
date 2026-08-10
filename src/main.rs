@@ -11,7 +11,7 @@ use crossterm::event::{self, Event};
 
 use ratodo::model::{Lookup, Priority};
 use ratodo::text;
-use ratodo::{agenda, capture, ics, ui, write};
+use ratodo::{agenda, capture, ics, theme, ui, write};
 
 #[derive(Parser)]
 #[command(name = "ratodo", version, about, long_about = None)]
@@ -19,6 +19,10 @@ struct Cli {
     /// Use a different list instead of ~/.config/ratodo/todo.md
     #[arg(long, short, global = true, value_name = "PATH")]
     file: Option<PathBuf>,
+
+    /// Run once with a built-in theme, ignoring theme.conf
+    #[arg(long, global = true, value_name = "NAME")]
+    theme: Option<String>,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -42,12 +46,25 @@ enum Command {
     List(ListArgs),
     /// Regenerate todo.ics by hand. Every write does it anyway
     Sync,
+    /// Look at the colours
+    Theme {
+        #[command(subcommand)]
+        what: ThemeCommand,
+    },
     /// Print the counts on one line, for a status bar
     Status {
         /// waybar's format: {"text":…,"tooltip":…,"class":…}
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum ThemeCommand {
+    /// List the built-in themes
+    List,
+    /// Print the active theme as a valid theme.conf
+    Dump,
 }
 
 #[derive(clap::Args, Default)]
@@ -98,10 +115,11 @@ fn dispatch() -> Result<ExitCode> {
         Some(Command::Done { text }) => return done(&path, &text.join(" ")),
         Some(Command::List(args)) => list(&path, &args)?,
         Some(Command::Sync) => sync(&path, true)?,
+        Some(Command::Theme { what }) => theme_command(what, cli.theme.as_deref())?,
         Some(Command::Status { json }) => return status(&path, json),
         // `ratodo | wc -l` and `ratodo > out.txt` still have to mean something,
         // and a TUI down a pipe means nothing at all.
-        None if std::io::stdout().is_terminal() => return tui(&path),
+        None if std::io::stdout().is_terminal() => return tui(&path, cli.theme.as_deref()),
         None => list(&path, &ListArgs::default())?,
     }
     Ok(ExitCode::SUCCESS)
@@ -131,6 +149,48 @@ fn backup_dir() -> Result<PathBuf> {
         .state_dir()
         .unwrap_or_else(|| dirs.cache_dir())
         .to_path_buf())
+}
+
+/// Reads `theme.conf`, applies `--theme` and `NO_COLOR` over it, and complains
+/// on stderr about anything wrong.
+///
+/// **Nothing in here can stop the program.** A theme file that cannot be read at
+/// all is the same as not having one — invariant 8, and the reason this returns
+/// a `Theme` rather than a `Result`.
+fn active_theme(flag: Option<&str>) -> theme::Theme {
+    let config = dirs()
+        .ok()
+        .map(|d| d.config_dir().join("theme.conf"))
+        .and_then(|p| std::fs::read_to_string(p).ok());
+
+    // Any non-empty value counts, which is what the NO_COLOR convention says.
+    let no_colour = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
+    let parsed = theme::resolve(config.as_deref(), flag, no_colour);
+
+    for warning in &parsed.warnings {
+        eprintln!("theme.conf: {warning}");
+    }
+    parsed.theme
+}
+
+fn theme_command(what: ThemeCommand, flag: Option<&str>) -> Result<()> {
+    let mut out = std::io::stdout().lock();
+    match what {
+        ThemeCommand::List => {
+            for (name, _) in theme::BUILT_IN {
+                let note = if name == "catppuccin-mocha" {
+                    "  (default)"
+                } else {
+                    ""
+                };
+                writeln!(out, "{name}{note}")?;
+            }
+        }
+        // `ratodo theme dump > ~/.config/ratodo/theme.conf` is the documented
+        // use, so this has to be the file, and nothing else on stdout.
+        ThemeCommand::Dump => write!(out, "{}", active_theme(flag).dump())?,
+    }
+    Ok(())
 }
 
 /// Derived, regenerated, pointless to back up — so `$XDG_DATA_HOME`, unlike the
@@ -240,7 +300,8 @@ fn watch(path: &Path, tx: std::sync::mpsc::Sender<Msg>) -> Option<notify::Recomm
     Some(watcher)
 }
 
-fn tui(path: &Path) -> Result<ExitCode> {
+fn tui(path: &Path, theme_flag: Option<&str>) -> Result<ExitCode> {
+    let colours = active_theme(theme_flag);
     let today = Local::now().date_naive();
     let (rows, counts) = snapshot(path, today)?;
     let mut screen = ui::Screen::new(rows);
@@ -272,7 +333,15 @@ fn tui(path: &Path) -> Result<ExitCode> {
     // Drop puts the cursor back. That is the whole of invariant 5, and it is the
     // library's, so it cannot drift out of step with the setup it undoes.
     let mut terminal = ratatui::try_init()?;
-    let result = run(&mut terminal, &mut screen, counts, today, path, &rx);
+    let result = run(
+        &mut terminal,
+        &mut screen,
+        counts,
+        today,
+        path,
+        &rx,
+        colours,
+    );
     ratatui::restore();
     result
 }
@@ -284,9 +353,10 @@ fn run(
     today: chrono::NaiveDate,
     path: &Path,
     rx: &std::sync::mpsc::Receiver<Msg>,
+    colours: theme::Theme,
 ) -> Result<ExitCode> {
     loop {
-        terminal.draw(|frame| ui::draw(frame, screen, counts, today))?;
+        terminal.draw(|frame| ui::draw(frame, screen, counts, today, colours))?;
 
         match rx.recv().context("both event sources went away")? {
             Msg::InputGone => return Ok(ExitCode::SUCCESS),

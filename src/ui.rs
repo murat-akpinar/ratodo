@@ -3,12 +3,13 @@
 use chrono::NaiveDate;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 
 use crate::agenda::{Counts, Group};
 use crate::model::Task;
 use crate::text;
+use crate::theme::Theme;
 
 /// What a keypress means. Separated from reading events so the keymap — the
 /// most user-visible surface in the tool — can be tested without a terminal.
@@ -161,24 +162,56 @@ impl Screen {
 
 /// The dumb version: the rows, a border and the counts. The design in
 /// docs/tui.md lands in step 6 — this is the one that proves the loop runs.
-pub fn draw(frame: &mut Frame, screen: &mut Screen, counts: Counts, today: NaiveDate) {
+pub fn draw(
+    frame: &mut Frame,
+    screen: &mut Screen,
+    counts: Counts,
+    today: NaiveDate,
+    colours: Theme,
+) {
     let items: Vec<ListItem> = screen
         .rows
         .iter()
         .map(|row| match row {
             // The CLI's own two-space indent would fight the selection marker.
-            Row::Task(t) => ListItem::new(text::list_line(t, today).trim_start().to_string()),
-            Row::Header(title) => ListItem::new(text::plain(title))
-                .style(Style::default().add_modifier(Modifier::BOLD)),
+            Row::Task(t) => ListItem::new(text::list_line(t, today).trim_start().to_string())
+                .style(Style::default().fg(task_colour(t, today, colours))),
+            Row::Header(title) => {
+                ListItem::new(text::plain(title)).style(Style::default().fg(colours.accent).bold())
+            }
             Row::Spacer => ListItem::new(""),
         })
         .collect();
 
     let list = List::new(items)
-        .block(Block::bordered().title(format!(" ratodo — {} ", text::status_line(counts))))
-        .highlight_symbol("▌ ");
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(colours.border))
+                .title(format!(" ratodo — {} ", text::status_line(counts))),
+        )
+        .style(Style::default().bg(colours.background))
+        .highlight_symbol("▌ ")
+        // Background only. Setting a foreground here would repaint the selected
+        // row in the accent colour, and an overdue task would stop being red the
+        // moment you moved the cursor onto it — which is the one row you are
+        // most likely to be looking at. docs/design.md: red only ever means late.
+        .highlight_style(Style::default().bg(colours.selection));
 
     frame.render_stateful_widget(list, frame.area(), &mut screen.state);
+}
+
+/// Red is only for overdue and green only for done — docs/design.md#rules — so
+/// this is the whole of the colour logic and there is nowhere else to add to it.
+fn task_colour(task: &Task, today: NaiveDate, colours: Theme) -> Color {
+    if task.done {
+        colours.done_text
+    } else if task.is_overdue(today) {
+        colours.overdue
+    } else if task.due.is_some_and(|d| d.date == today) {
+        colours.today
+    } else {
+        colours.foreground
+    }
 }
 
 #[cfg(test)]
@@ -432,7 +465,7 @@ mod tests {
         let counts = Counts::of(tasks, today());
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, today()))
+            .draw(|f| draw(f, &mut screen, counts, today(), crate::theme::MOCHA))
             .unwrap();
         terminal
             .backend()
@@ -472,7 +505,7 @@ mod tests {
         let counts = Counts::of(&tasks, today());
         let mut terminal = Terminal::new(TestBackend::new(30, 6)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, today()))
+            .draw(|f| draw(f, &mut screen, counts, today(), crate::theme::MOCHA))
             .unwrap();
 
         let text: String = terminal
@@ -487,6 +520,94 @@ mod tests {
             "the last task scrolled off: {text}"
         );
         assert!(!text.contains("task0 "), "the view did not scroll at all");
+    }
+
+    /// Reads the colour of the cell a word starts in.
+    fn colour_of(width: u16, height: u16, tasks: &[Task], word: &str, colours: Theme) -> Color {
+        let groups = agenda(tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let counts = Counts::of(tasks, today());
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|f| draw(f, &mut screen, counts, today(), colours))
+            .unwrap();
+
+        // Cell by cell, not by searching a flattened string: `│` and `─` are
+        // multi-byte, so a byte offset into the joined text is not a cell index.
+        let buffer = terminal.backend().buffer().clone();
+        let cells = buffer.content();
+        let symbols: Vec<&str> = cells.iter().map(|c| c.symbol()).collect();
+        let wanted: Vec<String> = word.chars().map(|c| c.to_string()).collect();
+
+        let at = symbols
+            .windows(wanted.len())
+            .position(|run| run.iter().zip(&wanted).all(|(a, b)| *a == b))
+            .unwrap_or_else(|| panic!("{word} was never drawn"));
+        cells[at].fg
+    }
+
+    /// The selected row keeps its own colour. Painting it in the accent would
+    /// mean an overdue task stops being red exactly when the cursor is on it,
+    /// and docs/design.md#rules says red only ever means late.
+    #[test]
+    fn selecting_an_overdue_task_does_not_take_its_red_away() {
+        let tasks = tasks(&["late @2026-08-01", "fine"]);
+        let colours = crate::theme::MOCHA;
+
+        assert_eq!(
+            colour_of(40, 8, &tasks, "late", colours),
+            colours.overdue,
+            "the selection repainted the row"
+        );
+        assert_eq!(
+            colour_of(40, 8, &tasks, "fine", colours),
+            colours.foreground
+        );
+    }
+
+    #[test]
+    fn the_theme_decides_every_colour_on_the_screen() {
+        let mut done = capture("finished", today());
+        done.set_done(true);
+        let tasks = [
+            capture("late @2026-08-01", today()),
+            capture("now @2026-08-10", today()),
+            done,
+        ];
+
+        for (_, colours) in crate::theme::BUILT_IN {
+            assert_eq!(colour_of(40, 12, &tasks, "late", colours), colours.overdue);
+            assert_eq!(colour_of(40, 12, &tasks, "now", colours), colours.today);
+            assert_eq!(
+                colour_of(40, 12, &tasks, "finished", colours),
+                colours.done_text
+            );
+            assert_eq!(
+                colour_of(40, 12, &tasks, "OVERDUE", colours),
+                colours.accent
+            );
+        }
+    }
+
+    /// `NO_COLOR=1` leaves the symbols doing the work. Nothing on the screen may
+    /// carry a colour, or the flag is a lie.
+    #[test]
+    fn no_colour_means_no_colour_anywhere() {
+        let tasks = tasks(&["late @2026-08-01", "now @2026-08-10"]);
+        let plain = crate::theme::Theme::plain();
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let counts = Counts::of(&tasks, today());
+
+        let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+        terminal
+            .draw(|f| draw(f, &mut screen, counts, today(), plain))
+            .unwrap();
+
+        for cell in terminal.backend().buffer().content() {
+            assert_eq!(cell.fg, Color::Reset, "{:?}", cell.symbol());
+            assert_eq!(cell.bg, Color::Reset, "{:?}", cell.symbol());
+        }
     }
 
     /// A title from a file that arrived over `git pull` must not be able to

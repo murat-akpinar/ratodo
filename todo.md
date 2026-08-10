@@ -108,15 +108,19 @@ does not get to block the screen that audience actually opens. See
 
 ## 5 — Theme
 
-- [ ] `theme.rs`: the `Theme` struct, 11 role keys
-- [ ] Built-in themes as `const` tables: catppuccin-mocha (default), catppuccin-latte, gruvbox-dark, nord, dracula, terminal
-- [ ] Every built-in ships `background = none` — transparency is opt-out, not opt-in
-- [ ] `theme.conf` parser (~40 lines, no serde): `key = value`, `#` comments
-- [ ] Value forms: `#rrggbb`, `#rgb`, ANSI index, ANSI name, `none`
-- [ ] Precedence: built-in → `theme =` → individual keys → `--theme` → `NO_COLOR`
-- [ ] Bad input never aborts: warn on stderr, fall back
-- [ ] `ratodo theme list` and `ratodo theme dump`
-- [ ] Verify `background = none` in a transparent terminal
+- [x] `theme.rs`: the `Theme` struct, 11 role keys
+- [x] Built-in themes as `const` tables: catppuccin-mocha (default), catppuccin-latte, gruvbox-dark, nord, dracula, terminal
+- [x] Every built-in ships `background = none` — transparency is opt-out, not opt-in
+- [x] `theme.conf` parser (no serde): `key = value`, `#` comments
+- [x] Value forms: `#rrggbb`, `#rgb`, ANSI index, ANSI name, `none`
+- [x] Precedence: built-in → `theme =` → individual keys → `--theme` → `NO_COLOR`
+- [x] Bad input never aborts: warn on stderr, fall back
+- [x] `ratodo theme list` and `ratodo theme dump`
+- [x] The theme reaches the screen — the selected row keeps its own colour, so
+      an overdue task is still red under the cursor
+- [ ] Verify `background = none` by eye in a transparent terminal. Asserted in a
+      test (every built-in ships `Color::Reset`) and confirmed in a pty by the
+      absence of a background escape, but nobody has looked at it yet
 
 ## 6 — Assemble and apply the design
 

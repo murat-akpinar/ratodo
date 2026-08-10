@@ -9,5 +9,6 @@ pub mod ics;
 pub mod model;
 pub mod parse;
 pub mod text;
+pub mod theme;
 pub mod ui;
 pub mod write;
