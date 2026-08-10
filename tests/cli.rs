@@ -329,6 +329,67 @@ fn porcelain_honours_the_filters_too() {
     assert!(out.lines().all(|l| l.split('\t').count() == 5), "{out:?}");
 }
 
+/// `ratodo status || notify-send "$(ratodo status)"` is the documented use, and
+/// it only works if the exit code carries the overdue flag.
+#[test]
+fn status_exits_non_zero_only_when_something_is_overdue() {
+    let dir = TempDir::new("status");
+    let path = dir.file("todo.md");
+
+    fs::write(&path, "- [ ] someday @2099-01-01\n- [x] finished\n").unwrap();
+    let quiet = run(&["--file", path.to_str().unwrap(), "status"]);
+    assert!(quiet.status.success(), "nothing is late here");
+    assert_eq!(
+        String::from_utf8_lossy(&quiet.stdout),
+        "1 open · 0 overdue\n"
+    );
+
+    fs::write(
+        &path,
+        "- [ ] someday @2099-01-01\n- [ ] ancient @2020-01-01\n",
+    )
+    .unwrap();
+    let late = run(&["--file", path.to_str().unwrap(), "status"]);
+    assert_eq!(late.status.code(), Some(1), "an overdue task must exit 1");
+    assert_eq!(
+        String::from_utf8_lossy(&late.stdout),
+        "2 open · 1 overdue\n"
+    );
+}
+
+/// A missing file is a quiet zero, not an error: the bar runs this every sixty
+/// seconds from the moment it starts, which may be before the list exists.
+#[test]
+fn status_on_a_list_that_is_not_there_yet() {
+    let dir = TempDir::new("status-empty");
+    let path = dir.file("todo.md");
+
+    let out = run(&["--file", path.to_str().unwrap(), "status"]);
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "0 open · 0 overdue\n");
+    assert!(!path.exists(), "status must not create the list");
+}
+
+#[test]
+fn status_json_is_one_line_a_bar_can_parse() {
+    let dir = TempDir::new("status-json");
+    let path = dir.file("todo.md");
+    fs::write(
+        &path,
+        "- [ ] someday @2099-01-01\n- [ ] ancient @2020-01-01\n",
+    )
+    .unwrap();
+
+    let out = run(&["--file", path.to_str().unwrap(), "status", "--json"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(text.lines().count(), 1, "{text}");
+    assert_eq!(
+        text.trim_end(),
+        r#"{"text":"2 ○ 1!","tooltip":"2 open, 1 overdue","class":"overdue"}"#
+    );
+    assert_eq!(out.status.code(), Some(1), "--json keeps the exit code");
+}
+
 #[test]
 fn a_file_with_no_headings_gets_no_headings() {
     let dir = TempDir::new("nosection");

@@ -34,6 +34,40 @@ fn same_tag(a: &str, b: &str) -> bool {
     a.to_lowercase() == b.to_lowercase()
 }
 
+/// What a status bar asks for. See docs/cli.md#status.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Counts {
+    pub open: usize,
+    pub today: usize,
+    pub overdue: usize,
+}
+
+impl Counts {
+    pub fn of(tasks: &[Task], today: NaiveDate) -> Self {
+        let open = tasks.iter().filter(|t| !t.done);
+        Counts {
+            open: open.clone().count(),
+            today: open
+                .clone()
+                .filter(|t| t.due.is_some_and(|d| d.date == today))
+                .count(),
+            overdue: tasks.iter().filter(|t| t.is_overdue(today)).count(),
+        }
+    }
+
+    /// The field waybar and eww key their CSS off, so these three words are an
+    /// interface: renaming one silently unstyles somebody's bar.
+    pub fn class(&self) -> &'static str {
+        if self.overdue > 0 {
+            "overdue"
+        } else if self.today > 0 {
+            "due"
+        } else {
+            "ok"
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind<'a> {
     Overdue,
@@ -308,6 +342,62 @@ mod tests {
             .filter_map(|g| g.kind.title())
             .collect();
         assert_eq!(titles, ["Work", "Home", "Work"]);
+    }
+
+    #[test]
+    fn the_counts_a_bar_asks_for() {
+        let mut done = task("finished @2026-08-01");
+        done.set_done(true);
+        let tasks = [
+            task("late @2026-08-01"),
+            task("now @2026-08-10"),
+            task("soon @2026-08-12"),
+            task("undated"),
+            done,
+        ];
+        assert_eq!(
+            Counts::of(&tasks, today()),
+            Counts {
+                open: 4,
+                today: 1,
+                overdue: 1,
+            }
+        );
+    }
+
+    /// A completed task is neither open nor overdue however late it was — the
+    /// count a bar shows must not include work that is finished.
+    #[test]
+    fn completing_something_late_empties_the_counts() {
+        let mut t = task("late @2026-08-01");
+        t.set_done(true);
+        assert_eq!(Counts::of(&[t], today()), Counts::default());
+    }
+
+    #[test]
+    fn the_class_is_the_worst_thing_the_list_contains() {
+        let quiet = task("soon @2026-08-12");
+        let due = task("now @2026-08-10");
+        let late = task("late @2026-08-01");
+
+        assert_eq!(Counts::of(&[], today()).class(), "ok");
+        assert_eq!(
+            Counts::of(std::slice::from_ref(&quiet), today()).class(),
+            "ok"
+        );
+        assert_eq!(
+            Counts::of(std::slice::from_ref(&due), today()).class(),
+            "due"
+        );
+        assert_eq!(
+            Counts::of(std::slice::from_ref(&late), today()).class(),
+            "overdue"
+        );
+        assert_eq!(
+            Counts::of(&[quiet, due, late], today()).class(),
+            "overdue",
+            "overdue outranks a task merely due today"
+        );
     }
 
     fn matching<'a>(tasks: &'a [Task], filter: Filter<'_>) -> Vec<&'a str> {

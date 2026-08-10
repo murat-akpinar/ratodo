@@ -1,6 +1,7 @@
 //! Subcommands and terminal setup. See docs/cli.md.
 
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use chrono::Local;
@@ -31,6 +32,12 @@ enum Command {
     },
     /// Print the list
     List(ListArgs),
+    /// Print the counts on one line, for a status bar
+    Status {
+        /// waybar's format: {"text":…,"tooltip":…,"class":…}
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(clap::Args, Default)]
@@ -52,7 +59,7 @@ fn priority(name: &str) -> Result<Priority, String> {
     Priority::from_name(name).ok_or_else(|| "expected high, med or low".to_string())
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
     let path = match cli.file {
         Some(p) => p,
@@ -60,11 +67,13 @@ fn main() -> Result<()> {
     };
 
     match cli.command {
-        Some(Command::Add { text }) => add(&path, &text.join(" ")),
-        Some(Command::List(args)) => list(&path, &args),
+        Some(Command::Add { text }) => add(&path, &text.join(" "))?,
+        Some(Command::List(args)) => list(&path, &args)?,
+        Some(Command::Status { json }) => return status(&path, json),
         // The TUI arrives in step 4; until then the bare command lists.
-        None => list(&path, &ListArgs::default()),
+        None => list(&path, &ListArgs::default())?,
     }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn dirs() -> Result<directories::ProjectDirs> {
@@ -151,9 +160,31 @@ fn list(path: &Path, args: &ListArgs) -> Result<()> {
 
     // Counted over what was shown, not over the file: a summary that disagrees
     // with the list above it is worse than no summary.
-    let open = tasks.iter().filter(|t| !t.done).count();
-    let overdue = tasks.iter().filter(|t| t.is_overdue(today)).count();
-    println!("\n{open} open · {overdue} overdue");
+    println!("\n{}", text::status_line(agenda::Counts::of(&tasks, today)));
 
     Ok(())
+}
+
+/// Exits non-zero when something is overdue, which is the whole reason
+/// `ratodo status || notify-send "$(ratodo status)"` needs no extra flag.
+fn status(path: &Path, json: bool) -> Result<ExitCode> {
+    let doc = write::load(path)?.doc;
+    let today = Local::now().date_naive();
+    let tasks: Vec<_> = doc.tasks().cloned().collect();
+    let counts = agenda::Counts::of(&tasks, today);
+
+    println!(
+        "{}",
+        if json {
+            text::status_json(counts)
+        } else {
+            text::status_line(counts)
+        }
+    );
+
+    Ok(if counts.overdue > 0 {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    })
 }

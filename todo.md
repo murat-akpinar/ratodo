@@ -69,8 +69,8 @@ the abandonment risk in [docs/risks.md](docs/risks.md).
       most of a developer's list is undated
 - [x] `list --porcelain` — tab-separated, stable, no colour. The contract behind
       `ratodo done "$(ratodo list --porcelain | fzf | cut -f3)"`
-- [ ] `ratodo status` and `--json` — `class` is the field waybar keys its CSS off
-- [ ] `status` exits non-zero when something is overdue
+- [x] `ratodo status` and `--json` — `class` is the field waybar keys its CSS off
+- [x] `status` exits non-zero when something is overdue
 - [ ] `done "<text>"`: unique match required; ambiguous → print candidates, exit 2,
       **write nothing**
 

@@ -98,9 +98,29 @@ $ ratodo status --json
 {"text":"3 ○ 1!","tooltip":"3 open, 1 overdue","class":"overdue"}
 ```
 
-The `class` field is the load-bearing one: waybar and eww key their CSS off it
-(`ok`, `due`, `overdue`). Hand-formatted — a JSON object this shape does not
-justify `serde`. In a bar config it is one line:
+The `class` field is the load-bearing one: waybar and eww key their CSS off it,
+so those three words are an interface — renaming one silently unstyles somebody's
+bar.
+
+| `class` | When |
+|---|---|
+| `overdue` | anything is past its date |
+| `due` | nothing is late, but something is due today |
+| `ok` | neither |
+
+`text` gains its ` N!` only when something is overdue, and `tooltip` names the
+due-today count only when there is one, so a quiet list reads `{"text":"2 ○",
+"tooltip":"2 open, 1 due today","class":"due"}`.
+
+Hand-formatted — a JSON object this shape does not justify `serde`, and it is
+only safe to hand-format because every value in it is a number or one of those
+fixed words. **No text from the user's file reaches it.** Putting a task title in
+the tooltip is the change that would need escaping first.
+
+A list that does not exist yet is `0 open · 0 overdue` and exit `0`, not an
+error: the bar starts polling before the user has captured anything.
+
+In a bar config it is one line:
 
 ```json
 "custom/todo": { "exec": "ratodo status --json", "return-type": "json", "interval": 60 }

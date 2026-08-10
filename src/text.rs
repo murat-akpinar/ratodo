@@ -2,6 +2,7 @@
 
 use chrono::NaiveDate;
 
+use crate::agenda::Counts;
 use crate::model::{Due, Task};
 
 /// A todo.md can arrive over `git pull`. Control characters in it would be
@@ -58,6 +59,38 @@ pub fn porcelain_line(task: &Task) -> String {
     )
 }
 
+/// The summary under `list`, and the whole of `status`.
+pub fn status_line(counts: Counts) -> String {
+    format!("{} open · {} overdue", counts.open, counts.overdue)
+}
+
+/// One line for waybar or eww. See docs/cli.md#status.
+///
+/// Hand-formatted, which is only safe because every value in here is a number
+/// or one of three fixed words — no text from the user's file reaches it. Put a
+/// task title in the tooltip and this needs escaping first.
+pub fn status_json(counts: Counts) -> String {
+    let text = if counts.overdue > 0 {
+        format!("{} ○ {}!", counts.open, counts.overdue)
+    } else {
+        format!("{} ○", counts.open)
+    };
+
+    let mut tooltip = vec![format!("{} open", counts.open)];
+    if counts.today > 0 {
+        tooltip.push(format!("{} due today", counts.today));
+    }
+    if counts.overdue > 0 {
+        tooltip.push(format!("{} overdue", counts.overdue));
+    }
+
+    format!(
+        r#"{{"text":"{text}","tooltip":"{}","class":"{}"}}"#,
+        tooltip.join(", "),
+        counts.class()
+    )
+}
+
 /// The one line `ratodo add` prints before getting out of the way.
 pub fn added(task: &Task, today: NaiveDate) -> String {
     let mut parts = vec![format!("added: {}", plain(&task.title))];
@@ -95,6 +128,7 @@ pub fn relative(due: Due, today: NaiveDate) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agenda::Counts;
     use crate::capture::capture;
     use crate::model::Priority;
 
@@ -171,6 +205,49 @@ mod tests {
 
         let undated = capture("a", today());
         assert_eq!(list_line(&undated, today()), "  [ ] a");
+    }
+
+    #[test]
+    fn the_status_line_is_the_same_string_list_ends_with() {
+        let counts = Counts {
+            open: 3,
+            today: 0,
+            overdue: 1,
+        };
+        assert_eq!(status_line(counts), "3 open · 1 overdue");
+        assert_eq!(status_line(Counts::default()), "0 open · 0 overdue");
+    }
+
+    /// The shape in docs/cli.md, asserted whole: waybar reads `text`, shows
+    /// `tooltip` and styles off `class`, so all three are an interface.
+    #[test]
+    fn the_status_json_is_what_waybar_expects() {
+        let counts = Counts {
+            open: 3,
+            today: 0,
+            overdue: 1,
+        };
+        assert_eq!(
+            status_json(counts),
+            r#"{"text":"3 ○ 1!","tooltip":"3 open, 1 overdue","class":"overdue"}"#
+        );
+    }
+
+    #[test]
+    fn a_quiet_list_gets_no_exclamation_mark_and_no_overdue_clause() {
+        let counts = Counts {
+            open: 2,
+            today: 1,
+            overdue: 0,
+        };
+        assert_eq!(
+            status_json(counts),
+            r#"{"text":"2 ○","tooltip":"2 open, 1 due today","class":"due"}"#
+        );
+        assert_eq!(
+            status_json(Counts::default()),
+            r#"{"text":"0 ○","tooltip":"0 open","class":"ok"}"#
+        );
     }
 
     /// The field count is the contract: `cut -f5` has to mean priority on every
