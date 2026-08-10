@@ -88,6 +88,13 @@ Three lists: what is settled, what was rejected, and what is still open.
   written out in the source *(2026-08-11)*. `DefaultHasher` is allowed to change
   between Rust releases, and a UID that moves is every calendar entry deleted
   and recreated. See [calendar.md](calendar.md#implementation).
+- ✅ **The ASCII fallback is chosen by locale, not by `NO_COLOR`** *(2026-08-11)*.
+  Two questions, two signals: `$LC_ALL`/`$LC_CTYPE`/`$LANG` decide the glyphs,
+  `NO_COLOR` and the theme decide the colours. See
+  [tui.md](tui.md#no-colour-no-nerd-font).
+- ✅ **Display width comes from ratatui, not a new crate** *(2026-08-11)*.
+  `Span::width` already does the Unicode arithmetic, so `şğüöç` and 🚀 line up
+  without an eighth dependency.
 - ✅ **A reader that closes the pipe is not an error** *(2026-08-11)*.
   `ratodo list | head` made `println!` panic. Every stdout write goes through
   `writeln!`, and `BrokenPipe` alone exits 0. See

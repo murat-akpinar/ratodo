@@ -126,8 +126,9 @@ does not get to block the screen that audience actually opens. See
 
 Screens and keymap: [docs/tui.md](docs/tui.md).
 
-- [ ] Draw the grouped agenda with header rules, `○ ✓ !` symbols, `▌` selection
-- [ ] ASCII fallback: `[ ]` `[x]` `[!]`, `>` selection
+- [x] Draw the grouped agenda with header rules, `○ ✓ !` symbols, `▌` selection
+- [x] ASCII fallback: `[ ]` `[x]` `[!]`, `>` selection — chosen from the locale,
+      and it takes the frame and the punctuation with it
 - [ ] The bottom line, multiplexed: hints / input / result / warning
 - [ ] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `a o` · `⏎` · `d u` · `h l z` · `e` · `r` · `?` · `q`
 - [ ] `h`/`l` fold the group under the cursor — lf/ranger/yazi muscle memory, not "fold LATER"
@@ -139,13 +140,14 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
 - [ ] A toggled task does not change position until the next reload
 - [ ] Empty state with the file path and a worked example
 - [ ] `?` help overlay
-- [ ] Width breakpoints: ≥60 / 34–59 / <34, in the documented drop order
+- [x] Width breakpoints: ≥60 / 34–59 / <34, in the documented drop order
 - [ ] Height under 10 rows: collapse the hint bar
-- [ ] `NO_COLOR=1` on a bare TTY still reads correctly
+- [x] `NO_COLOR=1` on a bare TTY still reads correctly
 - [ ] `:` and `/` answer on the bottom line instead of doing nothing
-- [ ] `clap`: `ratodo` · `add` · `list` · `done` · `sync` · `theme`
-- [ ] `--file` and `--theme` global flags
-- [ ] Check column alignment with non-ASCII and emoji
+- [x] `clap`: `ratodo` · `add` · `list` · `done` · `sync` · `theme`
+- [x] `--file` and `--theme` global flags
+- [x] Check column alignment with non-ASCII and emoji — display columns via
+      ratatui's own width, so no eighth dependency
 
 ## 7 — Release
 

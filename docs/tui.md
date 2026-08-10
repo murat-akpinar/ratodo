@@ -312,6 +312,18 @@ Selection becomes `>`, the symbols become `[ ] [x] [!]`. Note that these are the
 *file's* own syntax, which is a pleasant accident: the fallback rendering looks
 like the file it is showing.
 
+**The two are separate switches, and they read separate signals.** Colour comes
+off `NO_COLOR` and the theme; glyphs come off the **locale** — `$LC_ALL`,
+`$LC_CTYPE`, `$LANG`, in that order, and anything that is not UTF-8 gets the
+ASCII form. Whether a terminal can draw `○` and whether its user wants colour
+are different questions, however often the same terminal answers no to both.
+
+When the ASCII form is chosen it takes **the whole screen** with it: the frame
+becomes `+ - |`, the group rules become `-`, and the `—` and `·` in the title
+become `-` and `/`. A fallback that leaves box-drawing characters in the border
+is not a fallback; it is the same broken screen with tidier checkboxes. The test
+for it asserts the entire buffer `is_ascii()` rather than checking three symbols.
+
 ## Rules that keep it comfortable in a side pane
 
 These are the ones easy to lose while implementing, and they are the difference

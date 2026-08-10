@@ -4,6 +4,7 @@ use chrono::NaiveDate;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 
 use crate::agenda::{Counts, Group};
@@ -160,44 +161,282 @@ impl Screen {
     }
 }
 
-/// The dumb version: the rows, a border and the counts. The design in
-/// docs/tui.md lands in step 6 — this is the one that proves the loop runs.
-pub fn draw(
-    frame: &mut Frame,
-    screen: &mut Screen,
-    counts: Counts,
-    today: NaiveDate,
-    colours: Theme,
-) {
+/// `○ ✓ !` or `[ ] [x] [!]`. See docs/design.md#rules — an ASCII fallback is
+/// mandatory, and no meaning is ever carried by colour alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Glyphs {
+    Unicode,
+    Ascii,
+}
+
+impl Glyphs {
+    /// Read from the locale, and **not** from `NO_COLOR`: whether a terminal can
+    /// draw `○` and whether the user wants colour are two different questions,
+    /// however often the same terminal answers no to both.
+    pub fn for_locale(locale: Option<&str>) -> Self {
+        match locale {
+            Some(l) if l.to_ascii_lowercase().replace('-', "").contains("utf8") => Glyphs::Unicode,
+            // Including `None`: an unset locale is C, which is not UTF-8.
+            _ => Glyphs::Ascii,
+        }
+    }
+
+    fn mark(self, task: &Task, today: NaiveDate) -> &'static str {
+        match (self, task.done, task.is_overdue(today)) {
+            (Glyphs::Unicode, true, _) => "✓",
+            (Glyphs::Unicode, false, true) => "!",
+            (Glyphs::Unicode, false, false) => "○",
+            (Glyphs::Ascii, true, _) => "[x]",
+            (Glyphs::Ascii, false, true) => "[!]",
+            (Glyphs::Ascii, false, false) => "[ ]",
+        }
+    }
+
+    fn cursor(self) -> &'static str {
+        match self {
+            Glyphs::Unicode => "▌ ",
+            Glyphs::Ascii => "> ",
+        }
+    }
+
+    fn rule(self) -> char {
+        match self {
+            Glyphs::Unicode => '─',
+            Glyphs::Ascii => '-',
+        }
+    }
+
+    /// The frame too. A fallback that leaves box-drawing characters in the
+    /// border is not a fallback — it is the same broken screen with tidier
+    /// checkboxes.
+    fn border(self) -> ratatui::symbols::border::Set<'static> {
+        match self {
+            Glyphs::Unicode => ratatui::symbols::border::PLAIN,
+            Glyphs::Ascii => ratatui::symbols::border::Set {
+                top_left: "+",
+                top_right: "+",
+                bottom_left: "+",
+                bottom_right: "+",
+                vertical_left: "|",
+                vertical_right: "|",
+                horizontal_top: "-",
+                horizontal_bottom: "-",
+            },
+        }
+    }
+
+    /// The dash between the name and the counts, and the one between the counts.
+    fn punctuation(self) -> (&'static str, &'static str) {
+        match self {
+            Glyphs::Unicode => ("—", "·"),
+            Glyphs::Ascii => ("-", "/"),
+        }
+    }
+}
+
+/// How much of a row fits. A pane in a tiling layout is narrow as the normal
+/// case, not the edge case — docs/tui.md#width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Size {
+    /// Under 34 columns: the frame goes entirely and only rows are left.
+    Bare,
+    /// 34–59: spacers and tags go, the date shortens.
+    Narrow,
+    /// 60 and up: everything.
+    Wide,
+}
+
+impl Size {
+    pub fn of(columns: u16) -> Self {
+        match columns {
+            0..=33 => Size::Bare,
+            34..=59 => Size::Narrow,
+            _ => Size::Wide,
+        }
+    }
+}
+
+/// Everything the drawing needs that is not the list itself.
+#[derive(Debug, Clone, Copy)]
+pub struct Render {
+    pub colours: Theme,
+    pub glyphs: Glyphs,
+    pub today: NaiveDate,
+}
+
+/// Display columns — not bytes, and not characters. `ş` is one column and `🚀`
+/// is two, and a list that counts either of them wrong draws a ragged right
+/// edge. The fixtures carry both on purpose.
+fn columns(text: &str) -> usize {
+    Span::raw(text).width()
+}
+
+/// Cuts to `limit` columns, ending in `…`. The title is the last thing to be
+/// shortened and never goes below twelve columns: a row you cannot identify is
+/// not a row, it is noise.
+fn shorten(text: &str, limit: usize) -> String {
+    if columns(text) <= limit {
+        return text.to_string();
+    }
+    if limit == 0 {
+        return String::new();
+    }
+
+    let mut out = String::new();
+    let mut used = 0;
+    for c in text.chars() {
+        let w = columns(c.encode_utf8(&mut [0u8; 4]));
+        // One column is held back for the ellipsis.
+        if used + w > limit - 1 {
+            break;
+        }
+        out.push(c);
+        used += w;
+    }
+    out.push('…');
+    out
+}
+
+/// The right-hand date column. Near dates read as words and far ones as
+/// numbers; the narrow forms are what docs/tui.md#width drops to.
+fn when(task: &Task, today: NaiveDate, size: Size) -> String {
+    let Some(due) = task.due else {
+        return String::new();
+    };
+    let days = (due.date - today).num_days();
+    let time = due.time.map(|t| t.format("%H:%M").to_string());
+
+    match (days, size) {
+        (d, _) if d < 0 => format!("{}d ago", -d),
+        (0, _) => time.unwrap_or_else(|| "today".to_string()),
+        (1..=6, Size::Wide) => match time {
+            Some(t) => format!("{} {t}", due.date.format("%a")),
+            None => due.date.format("%a").to_string(),
+        },
+        (1..=6, _) => due.date.format("%a").to_string(),
+        _ => due.date.format("%b %-d").to_string(),
+    }
+}
+
+/// One task, laid out: mark, title, then whatever still fits on the right.
+///
+/// The drop order is the one in docs/tui.md#width — tags, then priority, then
+/// the date shortens, then the title is cut. Tags go before dates because a date
+/// is actionable and a tag is a filter.
+fn task_line(task: &Task, width: usize, render: Render, size: Size) -> Line<'static> {
+    let colour = task_colour(task, render.today, render.colours);
+    let mark = render.glyphs.mark(task, render.today);
+
+    let mut right: Vec<Span<'static>> = Vec::new();
+    let date = when(task, render.today, size);
+    if !date.is_empty() {
+        right.push(Span::styled(date, Style::default().fg(render.colours.dim)));
+    }
+    if size == Size::Wide {
+        if let Some(p) = task.priority {
+            right.push(Span::styled(
+                format!("  {}", p.as_str()),
+                Style::default().fg(render.colours.dim),
+            ));
+        }
+        for tag in &task.tags {
+            right.push(Span::styled(
+                format!("  #{}", text::plain(tag)),
+                Style::default().fg(render.colours.tag),
+            ));
+        }
+    }
+
+    let right_width: usize = right.iter().map(|s| columns(&s.content)).sum();
+    let mark_width = columns(mark) + 1;
+    // Twelve columns of title, always. Everything on the right gives way first.
+    let for_title = width
+        .saturating_sub(mark_width + right_width + 2)
+        .max(12.min(width.saturating_sub(mark_width)));
+
+    let title = shorten(&text::plain(&task.title), for_title);
+    let gap = width.saturating_sub(mark_width + columns(&title) + right_width);
+
+    let mut spans = vec![
+        Span::styled(format!("{mark} "), Style::default().fg(colour)),
+        Span::styled(title, Style::default().fg(colour)),
+        Span::raw(" ".repeat(gap)),
+    ];
+    spans.extend(right);
+    Line::from(spans)
+}
+
+/// A group heading with a rule out to the right edge. In a narrow pane the eye
+/// needs a horizontal anchor to find where a group starts; a bare word does not
+/// give it — docs/tui.md.
+fn header_line(title: &str, width: usize, render: Render) -> Line<'static> {
+    let name = text::plain(title);
+    let rule = width.saturating_sub(columns(&name) + 2);
+    Line::from(vec![
+        Span::styled(name, Style::default().fg(render.colours.accent).bold()),
+        Span::styled(
+            format!(" {}", render.glyphs.rule().to_string().repeat(rule)),
+            Style::default().fg(render.colours.border),
+        ),
+    ])
+}
+
+pub fn draw(frame: &mut Frame, screen: &mut Screen, counts: Counts, render: Render) {
+    let area = frame.area();
+    let size = Size::of(area.width);
+
+    // Under 34 columns the frame is two of them, which is a tenth of the pane.
+    let (dash, _) = render.glyphs.punctuation();
+    let block = (size > Size::Bare).then(|| {
+        Block::bordered()
+            .border_set(render.glyphs.border())
+            .border_style(Style::default().fg(render.colours.border))
+            .title(format!(
+                " ratodo {dash} {} ",
+                title_counts(counts, size, render.glyphs)
+            ))
+    });
+    let inner = block.as_ref().map_or(area, |b| b.inner(area));
+
+    // The selection marker is drawn into the row, so the width the layout gets
+    // is what is left after it.
+    let cursor = render.glyphs.cursor();
+    let width = (inner.width as usize).saturating_sub(columns(cursor));
+
     let items: Vec<ListItem> = screen
         .rows
         .iter()
+        .filter(|row| !(size < Size::Wide && matches!(row, Row::Spacer)))
         .map(|row| match row {
-            // The CLI's own two-space indent would fight the selection marker.
-            Row::Task(t) => ListItem::new(text::list_line(t, today).trim_start().to_string())
-                .style(Style::default().fg(task_colour(t, today, colours))),
-            Row::Header(title) => {
-                ListItem::new(text::plain(title)).style(Style::default().fg(colours.accent).bold())
-            }
+            Row::Task(t) => ListItem::new(task_line(t, width, render, size)),
+            Row::Header(title) => ListItem::new(header_line(title, width, render)),
             Row::Spacer => ListItem::new(""),
         })
         .collect();
 
-    let list = List::new(items)
-        .block(
-            Block::bordered()
-                .border_style(Style::default().fg(colours.border))
-                .title(format!(" ratodo — {} ", text::status_line(counts))),
-        )
-        .style(Style::default().bg(colours.background))
-        .highlight_symbol("▌ ")
+    let mut list = List::new(items)
+        .style(Style::default().bg(render.colours.background))
+        .highlight_symbol(cursor)
         // Background only. Setting a foreground here would repaint the selected
         // row in the accent colour, and an overdue task would stop being red the
         // moment you moved the cursor onto it — which is the one row you are
         // most likely to be looking at. docs/design.md: red only ever means late.
-        .highlight_style(Style::default().bg(colours.selection));
+        .highlight_style(Style::default().bg(render.colours.selection));
+    if let Some(block) = block {
+        list = list.block(block);
+    }
 
-    frame.render_stateful_widget(list, frame.area(), &mut screen.state);
+    frame.render_stateful_widget(list, area, &mut screen.state);
+}
+
+/// `5 open · 1 overdue` while it fits, `5 · 1!` when it does not — and the same
+/// numbers a waybar module shows, in the same words. One source.
+fn title_counts(counts: Counts, size: Size, glyphs: Glyphs) -> String {
+    let (_, dot) = glyphs.punctuation();
+    match size {
+        Size::Wide => format!("{} open {dot} {} overdue", counts.open, counts.overdue),
+        _ => format!("{} {dot} {}!", counts.open, counts.overdue),
+    }
 }
 
 /// Red is only for overdue and green only for done — docs/design.md#rules — so
@@ -224,6 +463,14 @@ mod tests {
 
     fn today() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 8, 10).unwrap()
+    }
+
+    fn render(colours: Theme) -> Render {
+        Render {
+            colours,
+            glyphs: Glyphs::Unicode,
+            today: today(),
+        }
     }
 
     fn tasks(specs: &[&str]) -> Vec<Task> {
@@ -465,7 +712,7 @@ mod tests {
         let counts = Counts::of(tasks, today());
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, today(), crate::theme::MOCHA))
+            .draw(|f| draw(f, &mut screen, counts, render(crate::theme::MOCHA)))
             .unwrap();
         terminal
             .backend()
@@ -476,20 +723,261 @@ mod tests {
             .collect()
     }
 
+    /// The layout arithmetic, pinned. Every other rendering test asks whether
+    /// something is *present*, which leaves the padding free to be a column out
+    /// in either direction — six mutants lived in exactly that gap. This one
+    /// asks where each character actually is, and it is meant to be updated by
+    /// hand when the design changes on purpose.
+    #[test]
+    fn the_wide_screen_exactly() {
+        let mut work = capture("write the plan", today());
+        work.section = Some("Work".into());
+        let tasks = [capture("late @2026-08-09 #ops", today()), work];
+
+        assert_eq!(
+            rendered(62, 7, &tasks),
+            [
+                "┌ ratodo — 2 open · 1 overdue ───────────────────────────────┐",
+                "│  OVERDUE ───────────────────────────────────────────────── │",
+                "│▌ ! late                                        1d ago  #ops│",
+                "│                                                            │",
+                "│  Work ──────────────────────────────────────────────────── │",
+                "│  ○ write the plan                                          │",
+                "└────────────────────────────────────────────────────────────┘",
+            ]
+        );
+    }
+
+    /// Where the title gets cut, pinned to the column. The two snapshots above
+    /// use short titles, which leaves the gap arithmetic free to be wrong by a
+    /// column in either direction without anything noticing.
+    #[test]
+    fn a_cut_title_stops_two_columns_short_of_the_date() {
+        let mut long = capture("a @2026-08-09 #ops", today());
+        long.title = "an extremely long task title that will not fit".into();
+
+        assert_eq!(
+            rendered(50, 5, &[long]),
+            [
+                "┌ ratodo — 1 · 1! ───────────────────────────────┐",
+                "│  OVERDUE ───────────────────────────────────── │",
+                "│▌ ! an extremely long task title that w…  1d ago│",
+                "│                                                │",
+                "└────────────────────────────────────────────────┘",
+            ]
+        );
+    }
+
+    /// The same list one breakpoint down: short counts, no tags, and the blank
+    /// row between the groups gone.
+    #[test]
+    fn the_narrow_screen_exactly() {
+        let mut work = capture("write the plan", today());
+        work.section = Some("Work".into());
+        let tasks = [capture("late @2026-08-09 #ops", today()), work];
+
+        assert_eq!(
+            rendered(46, 7, &tasks),
+            [
+                "┌ ratodo — 2 · 1! ───────────────────────────┐",
+                "│  OVERDUE ───────────────────────────────── │",
+                "│▌ ! late                              1d ago│",
+                "│  Work ──────────────────────────────────── │",
+                "│  ○ write the plan                          │",
+                "│                                            │",
+                "└────────────────────────────────────────────┘",
+            ]
+        );
+    }
+
     #[test]
     fn the_screen_shows_the_counts_the_groups_and_the_marker() {
-        let tasks = tasks(&["late @2026-08-01", "now @2026-08-10"]);
-        let screen = rendered(46, 8, &tasks);
+        let tasks = tasks(&[
+            "late @2026-08-01",
+            "now @2026-08-10 16:00",
+            "soon #ops !low",
+        ]);
+        let screen = rendered(62, 10, &tasks);
 
         assert!(
-            screen[0].contains("ratodo — 2 open · 1 overdue"),
+            screen[0].contains("ratodo — 3 open · 1 overdue"),
             "{screen:?}"
         );
-        assert!(screen[1].contains("OVERDUE"), "{screen:?}");
-        assert!(screen[2].contains("▌ [!] late"), "{screen:?}");
+        assert!(screen[1].starts_with("│  OVERDUE ────"), "{screen:?}");
+        assert!(screen[2].contains("▌ ! late"), "{screen:?}");
+        assert!(screen[2].contains("9d ago"), "{screen:?}");
         assert!(screen[4].contains("TODAY"), "{screen:?}");
-        assert!(screen[5].contains("[ ] now"), "{screen:?}");
+        assert!(screen[5].contains("○ now"), "{screen:?}");
+        assert!(screen[5].contains("16:00"), "{screen:?}");
         assert!(!screen[5].contains('▌'), "two rows drawn as selected");
+        assert!(screen[7].contains("○ soon"), "{screen:?}");
+        assert!(
+            screen[7].contains("!low") && screen[7].contains("#ops"),
+            "{screen:?}"
+        );
+    }
+
+    /// The right-hand column is right-aligned, which is the whole reason it is
+    /// a column: the eye reads down it.
+    #[test]
+    fn the_date_column_ends_at_the_right_edge() {
+        let tasks = tasks(&["short @2026-08-01", "a much longer title here @2026-08-01"]);
+        let screen = rendered(62, 8, &tasks);
+
+        let ends: Vec<&str> = screen[2..4]
+            .iter()
+            .map(|row| row.trim_end_matches('│').trim_end())
+            .collect();
+        for row in &ends {
+            assert!(row.ends_with("9d ago"), "{row:?}");
+        }
+    }
+
+    /// The three breakpoints from docs/tui.md#width, and what each gives up.
+    #[test]
+    fn the_width_breakpoints() {
+        let tasks = tasks(&["late @2026-08-01", "now @2026-08-10 #ops !high"]);
+
+        let wide = rendered(62, 10, &tasks);
+        assert!(wide[0].contains("3 · ") || wide[0].contains("2 open · 1 overdue"));
+        assert!(wide.iter().any(|r| r.contains("#ops")), "{wide:?}");
+        assert!(wide.iter().any(|r| r.contains("!high")), "{wide:?}");
+        assert!(
+            wide.iter()
+                .any(|r| r.trim_matches(['│', ' ']).is_empty() && r.contains('│')),
+            "a wide pane keeps its spacer rows: {wide:?}"
+        );
+
+        let narrow = rendered(40, 10, &tasks);
+        assert!(narrow[0].contains("2 · 1!"), "{narrow:?}");
+        assert!(
+            !narrow.iter().any(|r| r.contains("#ops")),
+            "tags survived: {narrow:?}"
+        );
+        assert!(!narrow.iter().any(|r| r.contains("!high")), "{narrow:?}");
+        assert!(narrow.iter().any(|r| r.contains("late")), "{narrow:?}");
+
+        let bare = rendered(30, 8, &tasks);
+        assert!(!bare[0].contains('┌'), "the frame survived: {bare:?}");
+        assert!(bare.iter().any(|r| r.contains("late")), "{bare:?}");
+    }
+
+    /// A row you cannot identify is not a row, it is noise. The title is the
+    /// last thing shortened and never goes below twelve columns.
+    #[test]
+    fn a_long_title_is_cut_last_and_never_to_nothing() {
+        let mut long = capture("a @2026-08-01", today());
+        long.title = "an extremely long task title that will not fit anywhere".into();
+
+        for width in [30u16, 40, 62] {
+            let screen = rendered(width, 6, &[long.clone()]);
+            let row = screen
+                .iter()
+                .find(|r| r.contains('…'))
+                .unwrap_or_else(|| panic!("nothing was truncated at {width}: {screen:?}"));
+            let shown: String = row
+                .chars()
+                .skip_while(|c| *c != 'a')
+                .take_while(|c| *c != '…')
+                .collect();
+            assert!(shown.chars().count() >= 11, "{width}: {shown:?}");
+        }
+    }
+
+    /// `ş` is one column and `🚀` is two. A layout that counts bytes or chars
+    /// draws a ragged right edge, which is why both are in the fixtures.
+    #[test]
+    fn the_right_edge_holds_with_wide_and_accented_characters() {
+        let mut task = capture("a @2026-08-01", today());
+        task.title = "şğüöç 🚀 iş listesi".into();
+        let screen = rendered(50, 6, &[task]);
+
+        // Not `chars().count()`: a double-width character takes two cells and
+        // ratatui leaves the second one empty, so the row's character count is
+        // shorter than the row. What matters is that the frame still closes.
+        let last = screen.len() - 1;
+        for row in &screen[1..last] {
+            assert!(row.ends_with('│'), "the right edge broke: {screen:?}");
+        }
+        assert!(screen[0].ends_with('┐') && screen[last].ends_with('┘'));
+        assert!(screen[2].ends_with("9d ago│"), "{screen:?}");
+    }
+
+    #[test]
+    fn the_ascii_fallback_replaces_every_glyph() {
+        let tasks = tasks(&["late @2026-08-01", "fine"]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let counts = Counts::of(&tasks, today());
+        let render = Render {
+            colours: crate::theme::MOCHA,
+            glyphs: Glyphs::Ascii,
+            today: today(),
+        };
+
+        let mut terminal = Terminal::new(TestBackend::new(62, 8)).unwrap();
+        terminal
+            .draw(|f| draw(f, &mut screen, counts, render))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+
+        assert!(text.contains("> [!] late"), "{text}");
+        assert!(text.contains("[ ] fine"), "{text}");
+        // The strong form: not "the checkboxes are ASCII" but "the screen is".
+        // A fallback that leaves the frame in box-drawing characters is the same
+        // broken screen with tidier checkboxes.
+        assert!(
+            text.is_ascii(),
+            "something non-ASCII reached the screen: {text}"
+        );
+    }
+
+    #[test]
+    fn the_locale_decides_the_glyphs() {
+        for utf8 in ["en_US.UTF-8", "tr_TR.utf8", "C.UTF-8", "en_GB.UTF8"] {
+            assert_eq!(Glyphs::for_locale(Some(utf8)), Glyphs::Unicode, "{utf8}");
+        }
+        for plain in ["C", "POSIX", "en_US", "en_US.ISO-8859-1"] {
+            assert_eq!(Glyphs::for_locale(Some(plain)), Glyphs::Ascii, "{plain}");
+        }
+        assert_eq!(
+            Glyphs::for_locale(None),
+            Glyphs::Ascii,
+            "an unset locale is C, which is not UTF-8"
+        );
+    }
+
+    #[test]
+    fn the_date_column_shortens_before_the_title_does() {
+        let task = capture("a @2026-08-12 09:30", today());
+        assert_eq!(when(&task, today(), Size::Wide), "Wed 09:30");
+        assert_eq!(when(&task, today(), Size::Narrow), "Wed");
+
+        let late = capture("a @2026-08-08", today());
+        assert_eq!(when(&late, today(), Size::Wide), "2d ago");
+
+        let far = capture("a @2026-09-20", today());
+        assert_eq!(when(&far, today(), Size::Wide), "Sep 20");
+
+        let undated = capture("a", today());
+        assert_eq!(when(&undated, today(), Size::Wide), "");
+    }
+
+    #[test]
+    fn shortening_counts_columns_not_bytes() {
+        assert_eq!(shorten("hello", 10), "hello");
+        assert_eq!(shorten("hello there", 8), "hello t…");
+        assert_eq!(shorten("şşşşş", 3), "şş…");
+        assert_eq!(shorten("🚀🚀🚀", 5), "🚀🚀…");
+        assert_eq!(shorten("anything", 0), "");
+        assert_eq!(columns("şğüöç"), 5);
+        assert_eq!(columns("🚀"), 2);
     }
 
     /// A pane in a tiling layout is routinely shorter than the list. If the
@@ -505,7 +993,7 @@ mod tests {
         let counts = Counts::of(&tasks, today());
         let mut terminal = Terminal::new(TestBackend::new(30, 6)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, today(), crate::theme::MOCHA))
+            .draw(|f| draw(f, &mut screen, counts, render(crate::theme::MOCHA)))
             .unwrap();
 
         let text: String = terminal
@@ -529,7 +1017,7 @@ mod tests {
         let counts = Counts::of(tasks, today());
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, today(), colours))
+            .draw(|f| draw(f, &mut screen, counts, render(colours)))
             .unwrap();
 
         // Cell by cell, not by searching a flattened string: `│` and `─` are
@@ -601,7 +1089,7 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, today(), plain))
+            .draw(|f| draw(f, &mut screen, counts, render(plain)))
             .unwrap();
 
         for cell in terminal.backend().buffer().content() {

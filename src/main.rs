@@ -151,6 +151,13 @@ fn backup_dir() -> Result<PathBuf> {
         .to_path_buf())
 }
 
+/// The first locale variable that is set, in the order the C library reads them.
+fn locale() -> Option<String> {
+    ["LC_ALL", "LC_CTYPE", "LANG"]
+        .iter()
+        .find_map(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
+}
+
 /// Reads `theme.conf`, applies `--theme` and `NO_COLOR` over it, and complains
 /// on stderr about anything wrong.
 ///
@@ -301,9 +308,12 @@ fn watch(path: &Path, tx: std::sync::mpsc::Sender<Msg>) -> Option<notify::Recomm
 }
 
 fn tui(path: &Path, theme_flag: Option<&str>) -> Result<ExitCode> {
-    let colours = active_theme(theme_flag);
-    let today = Local::now().date_naive();
-    let (rows, counts) = snapshot(path, today)?;
+    let render = ui::Render {
+        colours: active_theme(theme_flag),
+        glyphs: ui::Glyphs::for_locale(locale().as_deref()),
+        today: Local::now().date_naive(),
+    };
+    let (rows, counts) = snapshot(path, render.today)?;
     let mut screen = ui::Screen::new(rows);
 
     let (tx, rx) = std::sync::mpsc::channel();
@@ -333,15 +343,7 @@ fn tui(path: &Path, theme_flag: Option<&str>) -> Result<ExitCode> {
     // Drop puts the cursor back. That is the whole of invariant 5, and it is the
     // library's, so it cannot drift out of step with the setup it undoes.
     let mut terminal = ratatui::try_init()?;
-    let result = run(
-        &mut terminal,
-        &mut screen,
-        counts,
-        today,
-        path,
-        &rx,
-        colours,
-    );
+    let result = run(&mut terminal, &mut screen, counts, path, &rx, render);
     ratatui::restore();
     result
 }
@@ -350,13 +352,13 @@ fn run(
     terminal: &mut ratatui::DefaultTerminal,
     screen: &mut ui::Screen,
     mut counts: agenda::Counts,
-    today: chrono::NaiveDate,
     path: &Path,
     rx: &std::sync::mpsc::Receiver<Msg>,
-    colours: theme::Theme,
+    render: ui::Render,
 ) -> Result<ExitCode> {
+    let today = render.today;
     loop {
-        terminal.draw(|frame| ui::draw(frame, screen, counts, today, colours))?;
+        terminal.draw(|frame| ui::draw(frame, screen, counts, render))?;
 
         match rx.recv().context("both event sources went away")? {
             Msg::InputGone => return Ok(ExitCode::SUCCESS),
