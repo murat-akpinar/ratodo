@@ -4,6 +4,27 @@ The big advantage of this project: **no test environment is required.** No
 cluster, no server, no account. All you need is a handful of hand-written
 `todo.md` files. Tests can be written from day one.
 
+## A green suite is not the same as a working one
+
+The failure mode that matters here is not a test that fails — it is a test that
+passes and proves nothing. This project is one where that would be expensive:
+the promise is "we cannot corrupt your file", and a suite that quietly stopped
+checking that would leave the promise standing with nothing behind it.
+
+Three specific ways a suite lies, and what is in place against each:
+
+| The lie | What it looks like | The guard |
+|---|---|---|
+| **The test cannot fail** | An assertion that holds no matter what the code does | `cargo mutants` — deliberately break the code and confirm something goes red |
+| **The generator never generates the interesting case** | 4000 random documents that all happen to be empty | `the_generator_produces_what_we_think_it_does` asserts the corpus really contains CRLF, tabs, `[X]`, emoji, invalid dates, near-miss task lines |
+| **The comparison is too weak to notice** | Comparing parsed models when the bytes are what matter | `the_checker_would_notice_damage` feeds the comparison known-damaged input and requires it to reject each one |
+
+One real example, from writing these: a test asserted that `@9999999d` was
+rejected as an overflow. It was not — 27,000 years from now is a perfectly valid
+`NaiveDate`, so the assertion was wrong and the code was right. The test failed,
+which is the only reason anyone found out. A weaker assertion would have passed
+and quietly documented a behaviour that does not exist.
+
 ## The two tests that matter
 
 Everything else is ordinary unit testing. These two are the product:
@@ -19,6 +40,26 @@ the indentation, the double spaces and the emoji they typed themselves.
 
 If that property breaks, the tool has corrupted somebody's hand-written file.
 See [risks.md](risks.md).
+
+## Three layers of input
+
+| Layer | File | What it is for |
+|---|---|---|
+| Unit | `src/*.rs` `#[cfg(test)]` | One function, with today's date injected rather than read from the clock |
+| Fixtures | `tests/fixtures/*.md` | The cases we thought of, readable and hand-checked |
+| Generated | `tests/property.rs` | The cases we did not think of — 4000 documents from a fixed seed |
+| CLI | `tests/cli.rs` | The real binary, driven the way a user drives it |
+| Mutants | `cargo mutants` | Not input at all: it breaks the *code* and checks that a test notices |
+
+`tests/cli.rs` is deliberately free of anything depending on today's date. A test
+that passes this week and fails next week is another way for a suite to mislead
+you, so date phrasing is asserted in `text.rs` where `today` is a parameter, and
+the CLI tests only use absolute dates and shapes.
+
+The generated documents are built from a seeded xorshift, so a failure is
+reproducible from the seed printed in the message. No `proptest` or `quickcheck`
+dependency: the generator is 40 lines and the shrinking those crates provide is
+not worth a dev-dependency here, since a failing document is already small.
 
 ## Fixtures
 
@@ -98,8 +139,20 @@ That is the whole reason for the module layout in
 ## Running
 
 ```
-cargo test              # everything
-cargo test parse        # one module
-cargo clippy -- -D warnings
+cargo test                          # everything
+cargo test --test property          # the generated corpus
+cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+python3 scripts/check-docs.py       # every Markdown link and anchor
 ```
+
+And, before trusting the suite rather than the code:
+
+```
+cargo mutants --timeout 60
+```
+
+Anything reported as **MISSED** is a change to the source that no test objected
+to. Some of those are fine — a mutation inside a `Display` impl usually is — but
+a missed mutant in `parse`, `write` or `model` is a hole in the fidelity
+guarantee and gets a test.

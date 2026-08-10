@@ -263,6 +263,12 @@ mod tests {
             "- [] empty brackets",
             "- [?] not a checkbox",
             "-- [ ] two bullets",
+            // A closing bracket in the right place with no opening one. Each of
+            // these fails a different clause of the box check.
+            "- ax] rest",
+            "- a ] rest",
+            "- [x rest",
+            "- x] rest",
         ] {
             assert_eq!(parse(line).task_count(), 0, "{line:?} must not be a task");
         }

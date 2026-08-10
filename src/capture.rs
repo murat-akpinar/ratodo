@@ -150,9 +150,53 @@ mod tests {
 
     #[test]
     fn weekday_is_always_in_the_future() {
-        assert_eq!(resolve_date("mon", today()), Some(ymd(2026, 8, 17)));
-        assert_eq!(resolve_date("tue", today()), Some(ymd(2026, 8, 11)));
-        assert_eq!(resolve_date("sun", today()), Some(ymd(2026, 8, 16)));
+        for (name, expected) in [
+            ("mon", ymd(2026, 8, 17)),
+            ("tue", ymd(2026, 8, 11)),
+            ("wed", ymd(2026, 8, 12)),
+            ("thu", ymd(2026, 8, 13)),
+            ("fri", ymd(2026, 8, 14)),
+            ("sat", ymd(2026, 8, 15)),
+            ("sun", ymd(2026, 8, 16)),
+        ] {
+            assert_eq!(resolve_date(name, today()), Some(expected), "@{name}");
+        }
+    }
+
+    /// Every other test here starts from a Monday, where `today`'s weekday
+    /// index is zero and the offset arithmetic cannot be wrong in the usual
+    /// way. Starting mid-week is what actually exercises it.
+    #[test]
+    fn weekdays_from_the_middle_of_the_week() {
+        let wednesday = ymd(2026, 8, 12);
+        for (name, expected) in [
+            ("thu", ymd(2026, 8, 13)),
+            ("fri", ymd(2026, 8, 14)),
+            ("sun", ymd(2026, 8, 16)),
+            ("mon", ymd(2026, 8, 17)),
+            ("tue", ymd(2026, 8, 18)),
+            ("wed", ymd(2026, 8, 19)),
+        ] {
+            assert_eq!(resolve_date(name, wednesday), Some(expected), "@{name}");
+        }
+
+        let sunday = ymd(2026, 8, 16);
+        assert_eq!(resolve_date("mon", sunday), Some(ymd(2026, 8, 17)));
+        assert_eq!(resolve_date("sat", sunday), Some(ymd(2026, 8, 22)));
+        assert_eq!(resolve_date("sun", sunday), Some(ymd(2026, 8, 23)));
+    }
+
+    #[test]
+    fn every_priority_is_recognised() {
+        for (word, expected) in [
+            ("!high", Priority::High),
+            ("!med", Priority::Med),
+            ("!low", Priority::Low),
+        ] {
+            assert_eq!(parse_priority(word), Some(expected), "{word}");
+        }
+        assert_eq!(parse_priority("!urgent"), None);
+        assert_eq!(parse_priority("high"), None);
     }
 
     #[test]

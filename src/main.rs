@@ -1,14 +1,13 @@
 //! Subcommands and terminal setup. See docs/cli.md.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use chrono::{Local, NaiveDate};
+use chrono::Local;
 use clap::{Parser, Subcommand};
 
-use ratodo::capture;
-use ratodo::model::{Due, Task};
-use ratodo::write;
+use ratodo::text;
+use ratodo::{capture, write};
 
 #[derive(Parser)]
 #[command(name = "ratodo", version, about, long_about = None)]
@@ -53,10 +52,10 @@ fn default_path() -> Result<PathBuf> {
     Ok(dirs.config_dir().join("todo.md"))
 }
 
-fn add(path: &std::path::Path, text: &str) -> Result<()> {
+fn add(path: &Path, input: &str) -> Result<()> {
     let today = Local::now().date_naive();
-    let task = capture::capture(text, today);
-    let summary = describe(&task, today);
+    let task = capture::capture(input, today);
+    let summary = text::added(&task, today);
 
     let loaded = write::load(path)?;
     let mut doc = loaded.doc;
@@ -67,99 +66,31 @@ fn add(path: &std::path::Path, text: &str) -> Result<()> {
     Ok(())
 }
 
-fn list(path: &std::path::Path) -> Result<()> {
+fn list(path: &Path) -> Result<()> {
     let doc = write::load(path)?.doc;
     let today = Local::now().date_naive();
-
-    let mut section = None;
-    let mut open = 0;
-    let mut overdue = 0;
-
-    for task in doc.tasks() {
-        if task.section != section {
-            section = task.section.clone();
-            println!("\n{}", section.as_deref().unwrap_or("(no section)"));
-        }
-
-        let late = !task.done && task.due.is_some_and(|d| d.date < today);
-        let mark = if task.done {
-            "[x]"
-        } else if late {
-            "[!]"
-        } else {
-            "[ ]"
-        };
-
-        if !task.done {
-            open += 1;
-        }
-        if late {
-            overdue += 1;
-        }
-
-        let mut line = format!("  {mark} {}", plain(&task.title));
-        if let Some(due) = task.due {
-            line.push_str(&format!(
-                "  {}",
-                due.to_file_string().trim_start_matches('@')
-            ));
-        }
-        for tag in &task.tags {
-            line.push_str(&format!("  #{}", plain(tag)));
-        }
-        if let Some(p) = task.priority {
-            line.push_str(&format!("  {}", p.as_str()));
-        }
-        println!("{line}");
-    }
 
     if doc.task_count() == 0 {
         println!("nothing here yet — try: ratodo add \"buy milk @tomorrow #home\"");
         println!("file: {}", path.display());
-    } else {
-        println!("\n{open} open · {overdue} overdue");
+        return Ok(());
     }
+
+    // Starting at None means a file with no headings at all prints no heading,
+    // rather than a "(no section)" nobody asked for.
+    let mut section = None;
+    for task in doc.tasks() {
+        if task.section != section {
+            section = task.section.clone();
+            let name = section.as_deref().unwrap_or("(no section)");
+            println!("\n{}", text::plain(name));
+        }
+        println!("{}", text::list_line(task, today));
+    }
+
+    let open = doc.tasks().filter(|t| !t.done).count();
+    let overdue = doc.tasks().filter(|t| t.is_overdue(today)).count();
+    println!("\n{open} open · {overdue} overdue");
 
     Ok(())
-}
-
-/// A todo.md can arrive over `git pull`. Control characters in it would be
-/// acted on by the terminal rather than shown.
-fn plain(s: &str) -> String {
-    s.chars()
-        .map(|c| if c.is_control() { '\u{fffd}' } else { c })
-        .collect()
-}
-
-fn describe(task: &Task, today: NaiveDate) -> String {
-    let mut parts = vec![format!("added: {}", plain(&task.title))];
-    if let Some(due) = task.due {
-        parts.push(format!("due {}", relative(due, today)));
-    }
-    for tag in &task.tags {
-        parts.push(format!("#{}", plain(tag)));
-    }
-    if let Some(p) = task.priority {
-        parts.push(p.as_str().to_string());
-    }
-    parts.join("  ·  ")
-}
-
-fn relative(due: Due, today: NaiveDate) -> String {
-    let days = (due.date - today).num_days();
-    let when = match days {
-        0 => "today".to_string(),
-        1 => "tomorrow".to_string(),
-        2..=6 => due.date.format("%A").to_string(),
-        _ => due.date.format("%Y-%m-%d").to_string(),
-    };
-    let stamp = match due.time {
-        Some(t) => format!("{} {}", due.date.format("%Y-%m-%d"), t.format("%H:%M")),
-        None => due.date.format("%Y-%m-%d").to_string(),
-    };
-    if (0..=6).contains(&days) {
-        format!("{when} ({stamp})")
-    } else {
-        stamp
-    }
 }

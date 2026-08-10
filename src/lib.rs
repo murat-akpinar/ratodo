@@ -6,4 +6,5 @@
 pub mod capture;
 pub mod model;
 pub mod parse;
+pub mod text;
 pub mod write;

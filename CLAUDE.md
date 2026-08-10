@@ -24,6 +24,11 @@ cloud, no account. Currently in the design phase; there is no `src/` yet.
    ```
    Green tests are not the same as working software: run the binary against a
    throwaway file too, and say what you actually saw.
+
+   After changing `parse`, `write`, `model`, `capture` or `text`, also run
+   `cargo mutants --timeout 90`. A **MISSED** mutant is a change to the source
+   that no test objected to — in those modules that is a hole in the fidelity
+   guarantee, and it gets a test rather than an excuse. See docs/testing.md.
 4. **Only if all of it passes: commit.** If anything fails, fix it or report the
    failure — never commit red.
 5. **Update the changelog:** `git cliff -o CHANGELOG.md`, then commit it

@@ -36,6 +36,8 @@ todo** (ugly, but real). If step 4 stalls, the project does not die.
 - [x] **Round-trip test:** `parse(render(parse(x))) == parse(x)`
 - [x] **Fidelity test:** toggling any one task changes exactly one byte, on every fixture
 - [x] `ratodo list` and `ratodo add` → the product works from here on
+- [x] `tests/property.rs`: 4000 generated documents, the generator its own oracle
+- [x] `cargo mutants` clean over `parse` / `write` / `model` / `capture` / `text`
 
 ## 3 — agenda + ics (no terminal needed)
 

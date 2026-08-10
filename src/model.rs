@@ -132,6 +132,11 @@ impl Task {
     }
     // -- ALAN END --
 
+    /// A completed task is never overdue, however long ago it was due.
+    pub fn is_overdue(&self, today: NaiveDate) -> bool {
+        !self.done && self.due.is_some_and(|d| d.date < today)
+    }
+
     fn render_fields(&self) -> String {
         let mut s = String::with_capacity(self.title.len() + 32);
         s.push_str(if self.done { "- [x] " } else { "- [ ] " });
@@ -149,6 +154,49 @@ impl Task {
             s.push_str(p.as_str());
         }
         s
+    }
+}
+
+#[cfg(test)]
+mod task_tests {
+    use super::*;
+
+    fn ymd(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    fn due_on(y: i32, m: u32, d: u32) -> Option<Due> {
+        Some(Due::new(ymd(y, m, d)))
+    }
+
+    /// The boundary the whole agenda hangs off: due *today* is the TODAY group,
+    /// not the OVERDUE one. See docs/design.md.
+    #[test]
+    fn due_today_is_not_overdue() {
+        let today = ymd(2026, 8, 10);
+        let mut task = Task::new(false, "a".into(), due_on(2026, 8, 10), vec![], None);
+        assert!(!task.is_overdue(today), "a task due today is not late yet");
+
+        task.due = due_on(2026, 8, 9);
+        assert!(task.is_overdue(today), "yesterday is late");
+
+        task.due = due_on(2026, 8, 11);
+        assert!(!task.is_overdue(today));
+    }
+
+    #[test]
+    fn a_completed_task_is_never_overdue() {
+        let today = ymd(2026, 8, 10);
+        let mut task = Task::new(false, "a".into(), due_on(2020, 1, 1), vec![], None);
+        assert!(task.is_overdue(today));
+        task.set_done(true);
+        assert!(!task.is_overdue(today));
+    }
+
+    #[test]
+    fn an_undated_task_is_never_overdue() {
+        let task = Task::new(false, "a".into(), None, vec![], None);
+        assert!(!task.is_overdue(ymd(2026, 8, 10)));
     }
 }
 

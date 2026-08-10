@@ -79,18 +79,20 @@ src/
   parse.rs     todo.md -> Doc, raw line preserved            ← the product lives here
   write.rs     Doc -> todo.md, atomic + backup, and the file IO
   capture.rs   free text -> Task, resolving @tomorrow and friends
+  text.rs      human-facing strings for the command line
   agenda.rs    (&[Task], today) -> Vec<Group>                ← the product lives here
   ics.rs       &[Task] -> todo.ics (VTODO)
   theme.rs     Theme struct, built-in themes, theme.conf parser
   ui.rs        ratatui drawing
 tests/
   fidelity.rs  round-trip and byte-for-byte tests over every fixture
+  property.rs  generated documents, checked against the same invariants
   fixtures/    hand-written todo.md files — well-formed ones and deliberately awkward ones
 ```
 
-Ten files, flat. No `mod.rs` pyramid, no trait layer, no plugin system.
+Eleven files, flat. No `mod.rs` pyramid, no trait layer, no plugin system.
 
-Two of them were not in the original plan and are worth naming:
+Three of them were not in the original plan and are worth naming:
 
 - **`lib.rs`** exists because a binary-only crate cannot be reached from
   `tests/`. The core is a library and `main.rs` is a thin shell over it, which is
@@ -99,6 +101,10 @@ Two of them were not in the original plan and are worth naming:
   they enforce opposite rules: `parse` is strict because it reads the file,
   `capture` is permissive because it reads a human. Merging them would put a
   flag in the middle of the one function that must never get this wrong.
+- **`text.rs`** exists because mutation testing found that everything living in
+  `main.rs` was untested — including which tasks count as overdue, which is
+  product logic, not printing. Anything with a decision in it moves out of the
+  binary so it can be tested. `main.rs` keeps argument parsing and IO.
 
 A document is every line of the file in order, each carrying its own ending, so
 that a mixed-endings file and a file with no final newline both survive:
