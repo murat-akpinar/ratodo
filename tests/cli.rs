@@ -203,6 +203,132 @@ fn dated_tasks_are_grouped_ahead_of_the_undated_ones() {
     assert!(out.contains("1 overdue"), "{out}");
 }
 
+/// A list to filter, with nothing dated in it: the groups are then the file's
+/// own headings whatever day the suite runs on.
+fn filterable(dir: &TempDir) -> PathBuf {
+    let path = dir.file("todo.md");
+    fs::write(
+        &path,
+        "## Work\n- [ ] deploy #ops !high\n- [ ] invoice #admin\n\n\
+         ## Home\n- [ ] plumber #home !low\n- [ ] bins #home #ops\n",
+    )
+    .unwrap();
+    path
+}
+
+#[test]
+fn tag_and_priority_narrow_the_list() {
+    let dir = TempDir::new("filter");
+    let path = filterable(&dir);
+
+    let one = stdout_of(&path, &["list", "--tag", "ops"]);
+    assert!(one.contains("deploy") && one.contains("bins"), "{one}");
+    assert!(
+        !one.contains("invoice") && !one.contains("plumber"),
+        "{one}"
+    );
+    assert!(
+        one.contains("2 open · "),
+        "the summary counts what it showed"
+    );
+
+    let two = stdout_of(&path, &["list", "--tag", "admin", "--tag", "home"]);
+    assert!(two.contains("invoice") && two.contains("plumber"), "{two}");
+    assert!(
+        !two.contains("deploy"),
+        "repeated tags should widen, not narrow"
+    );
+
+    let high = stdout_of(&path, &["list", "--prio", "high"]);
+    assert!(
+        high.contains("deploy") && !high.contains("plumber"),
+        "{high}"
+    );
+
+    let both = stdout_of(&path, &["list", "--tag", "home", "--prio", "low"]);
+    assert!(both.contains("plumber") && !both.contains("bins"), "{both}");
+}
+
+#[test]
+fn a_filter_that_matches_nothing_says_so_on_stderr_and_succeeds() {
+    let dir = TempDir::new("nomatch");
+    let path = filterable(&dir);
+
+    let out = run(&["--file", path.to_str().unwrap(), "list", "--tag", "nope"]);
+    assert!(out.status.success(), "an empty result is still an answer");
+    assert!(out.stdout.is_empty(), "{:?}", out.stdout);
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no task matches"),
+        "{:?}",
+        out.stderr
+    );
+}
+
+#[test]
+fn an_unknown_priority_is_rejected_before_anything_is_read() {
+    let dir = TempDir::new("badprio");
+    let path = dir.file("todo.md");
+
+    let out = run(&["--file", path.to_str().unwrap(), "list", "--prio", "urgent"]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("high, med or low"),
+        "{:?}",
+        out.stderr
+    );
+}
+
+/// The contract behind `ratodo done "$(ratodo list --porcelain | fzf | cut -f3)"`:
+/// every line has the same five fields whatever the task is missing.
+#[test]
+fn porcelain_is_five_tab_separated_fields_and_nothing_else() {
+    let dir = TempDir::new("porcelain");
+    let path = dir.file("todo.md");
+    fs::write(
+        &path,
+        "## Work\n- [ ] deploy @2099-01-01 #ops !high\n- [x] bare\n",
+    )
+    .unwrap();
+
+    let out = stdout_of(&path, &["list", "--porcelain"]);
+    assert_eq!(
+        out, "open\t2099-01-01\tdeploy\tops\thigh\ndone\t\tbare\t\t\n",
+        "{out:?}"
+    );
+
+    let titles: Vec<&str> = out.lines().map(|l| l.split('\t').nth(2).unwrap()).collect();
+    assert_eq!(
+        titles,
+        ["deploy", "bare"],
+        "cut -f3 is the documented column"
+    );
+}
+
+#[test]
+fn porcelain_stays_silent_when_there_is_nothing_to_say() {
+    let dir = TempDir::new("porcelain-empty");
+    let path = dir.file("todo.md");
+
+    let out = run(&["--file", path.to_str().unwrap(), "list", "--porcelain"]);
+    assert!(out.status.success());
+    assert!(out.stdout.is_empty(), "{:?}", out.stdout);
+    assert!(
+        out.stderr.is_empty(),
+        "a machine is reading; the hint is noise: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn porcelain_honours_the_filters_too() {
+    let dir = TempDir::new("porcelain-filter");
+    let path = filterable(&dir);
+
+    let out = stdout_of(&path, &["list", "--porcelain", "--tag", "ops"]);
+    assert_eq!(out.lines().count(), 2, "{out:?}");
+    assert!(out.lines().all(|l| l.split('\t').count() == 5), "{out:?}");
+}
+
 #[test]
 fn a_file_with_no_headings_gets_no_headings() {
     let dir = TempDir::new("nosection");

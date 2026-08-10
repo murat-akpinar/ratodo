@@ -65,9 +65,9 @@ the abandonment risk in [docs/risks.md](docs/risks.md).
 - [x] `agenda.rs`: `agenda(&[Task], today) -> Vec<Group>` — `today` is a **parameter**
 - [x] Group tests: overdue / today / this week / later / undated
 - [x] Boundary tests: exactly today 00:00, exactly +7 days, a past year, an invalid date
-- [ ] `list --tag` / `--prio` — the agenda says nothing about undated tasks, and
+- [x] `list --tag` / `--prio` — the agenda says nothing about undated tasks, and
       most of a developer's list is undated
-- [ ] `list --porcelain` — tab-separated, stable, no colour. The contract behind
+- [x] `list --porcelain` — tab-separated, stable, no colour. The contract behind
       `ratodo done "$(ratodo list --porcelain | fzf | cut -f3)"`
 - [ ] `ratodo status` and `--json` — `class` is the field waybar keys its CSS off
 - [ ] `status` exits non-zero when something is overdue

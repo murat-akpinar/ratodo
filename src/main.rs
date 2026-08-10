@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use chrono::Local;
 use clap::{Parser, Subcommand};
 
+use ratodo::model::Priority;
 use ratodo::text;
 use ratodo::{agenda, capture, write};
 
@@ -29,7 +30,26 @@ enum Command {
         text: Vec<String>,
     },
     /// Print the list
-    List,
+    List(ListArgs),
+}
+
+#[derive(clap::Args, Default)]
+struct ListArgs {
+    /// Only tasks carrying this tag. Repeatable, and repeats mean or
+    #[arg(long, value_name = "NAME")]
+    tag: Vec<String>,
+
+    /// Only tasks at this priority: high, med or low
+    #[arg(long, value_name = "LEVEL", value_parser = priority)]
+    prio: Option<Priority>,
+
+    /// Tab-separated output for scripts: no headings, no summary, no colour
+    #[arg(long)]
+    porcelain: bool,
+}
+
+fn priority(name: &str) -> Result<Priority, String> {
+    Priority::from_name(name).ok_or_else(|| "expected high, med or low".to_string())
 }
 
 fn main() -> Result<()> {
@@ -41,8 +61,9 @@ fn main() -> Result<()> {
 
     match cli.command {
         Some(Command::Add { text }) => add(&path, &text.join(" ")),
+        Some(Command::List(args)) => list(&path, &args),
         // The TUI arrives in step 4; until then the bare command lists.
-        Some(Command::List) | None => list(&path),
+        None => list(&path, &ListArgs::default()),
     }
 }
 
@@ -86,31 +107,52 @@ fn add(path: &Path, input: &str) -> Result<()> {
     Ok(())
 }
 
-fn list(path: &Path) -> Result<()> {
+fn list(path: &Path, args: &ListArgs) -> Result<()> {
     let doc = write::load(path)?.doc;
     let today = Local::now().date_naive();
-
-    // stderr, not stdout: `ratodo list | wc -l` has to count tasks and nothing else.
-    if doc.task_count() == 0 {
-        eprintln!("nothing here yet — try: ratodo add 'buy milk @tomorrow #home'");
-        eprintln!("file: {}", path.display());
-        return Ok(());
-    }
+    let filter = agenda::Filter {
+        tags: &args.tag,
+        prio: args.prio,
+    };
 
     // `agenda` wants a slice and the tasks live scattered through `doc.lines`,
     // so they are copied out. A todo list is small; this is not worth a lifetime.
-    let tasks: Vec<_> = doc.tasks().cloned().collect();
-    for group in agenda::agenda(&tasks, today) {
+    let tasks: Vec<_> = doc.tasks().filter(|t| filter.matches(t)).cloned().collect();
+    let groups = agenda::agenda(&tasks, today);
+
+    if args.porcelain {
+        // Nothing on stderr either: a machine is reading, and an empty result is
+        // already the answer.
+        for task in groups.iter().flat_map(|g| &g.tasks) {
+            println!("{}", text::porcelain_line(task));
+        }
+        return Ok(());
+    }
+
+    // stderr, not stdout: `ratodo list | wc -l` has to count tasks and nothing else.
+    if tasks.is_empty() {
+        if doc.task_count() == 0 {
+            eprintln!("nothing here yet — try: ratodo add 'buy milk @tomorrow #home'");
+            eprintln!("file: {}", path.display());
+        } else {
+            eprintln!("no task matches that filter");
+        }
+        return Ok(());
+    }
+
+    for group in &groups {
         if let Some(title) = group.kind.title() {
             println!("\n{}", text::plain(title));
         }
-        for task in group.tasks {
+        for task in &group.tasks {
             println!("{}", text::list_line(task, today));
         }
     }
 
-    let open = doc.tasks().filter(|t| !t.done).count();
-    let overdue = doc.tasks().filter(|t| t.is_overdue(today)).count();
+    // Counted over what was shown, not over the file: a summary that disagrees
+    // with the list above it is worse than no summary.
+    let open = tasks.iter().filter(|t| !t.done).count();
+    let overdue = tasks.iter().filter(|t| t.is_overdue(today)).count();
     println!("\n{open} open · {overdue} overdue");
 
     Ok(())

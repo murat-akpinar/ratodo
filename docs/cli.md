@@ -19,8 +19,8 @@ Two entry paths, both in v1. The second one is the reason the product exists.
 
 | Flag | Meaning |
 |---|---|
-| `--tag <name>` | Only tasks carrying `#name`. Repeatable; repeats mean OR |
-| `--prio <level>` | Only `!high` / `!med` / `!low` |
+| `--tag <name>` | Only tasks carrying `#name`. Repeatable; repeats mean OR. Case-insensitive, so `#Ops` answers to `--tag ops` |
+| `--prio <level>` | Only `high`, `med` or `low` — the exact level, not "and above". Anything else is rejected before the file is opened |
 | `--porcelain` | Machine-readable output. See below |
 
 Global flags:
@@ -51,17 +51,35 @@ not have to be retrofitted:
 
 ### `list --porcelain`
 
-One task per line, tab-separated, no colour, no summary line, no group headings:
+One task per line, tab-separated, no colour, no summary line, no group headings.
+Agenda order, so the most urgent line is the first one:
 
 ```
 $ ratodo list --porcelain
-open	2026-08-12	write the deploy plan	ops	high
-open		call the bank
-done	2026-08-09	close the old PRs	ops
+open	2026-08-09	close the old PRs	ops	
+open	2026-08-12	write the deploy plan	ops,home	high
+open			call the bank		
 ```
 
-Fields: `state`, ISO date (empty if none), title, then tags and priority. Stable
-across versions — this is the contract that makes
+**Five fields, always all five**, even when they are empty:
+
+| # | Field | Notes |
+|---|---|---|
+| 1 | state | `open` or `done`. Overdue is not a state here — the date is right there in field 2, and a script that wants both can have both |
+| 2 | due date | `YYYY-MM-DD`, empty if none. **Date only**; a time is display, not data a bar needs |
+| 3 | title | Control characters, tabs included, are replaced with `�` so the field count cannot be forged by a line in the file |
+| 4 | tags | Comma-separated, no `#`, empty if none |
+| 5 | priority | `high` / `med` / `low`, empty if none |
+
+The fixed count is the point: `cut -f5` has to mean priority on every line, which
+it cannot if tags each take a column of their own. The format grows by **appending**
+a sixth column, never by changing what one to five mean.
+
+An empty result prints nothing at all — not even the "nothing here yet" hint,
+which is help for a human — and still exits `0`. A filter that matches nothing is
+an answer, not an error.
+
+Stable across versions — this is the contract that makes
 
 ```
 ratodo done "$(ratodo list --porcelain | fzf | cut -f3)"

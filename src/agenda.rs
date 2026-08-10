@@ -2,7 +2,37 @@
 
 use chrono::{Days, NaiveDate};
 
-use crate::model::Task;
+use crate::model::{Priority, Task};
+
+/// What `list --tag` and `--prio` narrow the file down to. See docs/cli.md.
+///
+/// The agenda only has something to say about dated tasks, and most of a
+/// developer's list is undated — this is how the rest of it stays reachable.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Filter<'a> {
+    /// Empty means no tag filter at all. Several tags mean *or*.
+    pub tags: &'a [String],
+    pub prio: Option<Priority>,
+}
+
+impl Filter<'_> {
+    pub fn matches(&self, task: &Task) -> bool {
+        let tagged = self.tags.is_empty()
+            || self
+                .tags
+                .iter()
+                .any(|wanted| task.tags.iter().any(|t| same_tag(t, wanted)));
+        tagged && self.prio.is_none_or(|p| task.priority == Some(p))
+    }
+}
+
+/// `#Ops` and `#ops` are the same tag to everyone except a byte comparison.
+/// Unicode-aware lowercasing, which still gets Turkish dotted/dotless I wrong —
+/// `İş` and `iş` will not match. Noted rather than solved: the fix is a locale
+/// the tool does not otherwise need.
+fn same_tag(a: &str, b: &str) -> bool {
+    a.to_lowercase() == b.to_lowercase()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind<'a> {
@@ -278,6 +308,96 @@ mod tests {
             .filter_map(|g| g.kind.title())
             .collect();
         assert_eq!(titles, ["Work", "Home", "Work"]);
+    }
+
+    fn matching<'a>(tasks: &'a [Task], filter: Filter<'_>) -> Vec<&'a str> {
+        tasks
+            .iter()
+            .filter(|t| filter.matches(t))
+            .map(|t| t.title.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn the_empty_filter_is_not_a_filter() {
+        let tasks = [task("a #ops !high"), task("b")];
+        assert_eq!(matching(&tasks, Filter::default()), ["a", "b"]);
+    }
+
+    #[test]
+    fn a_tag_filter_keeps_only_what_carries_it() {
+        let tasks = [task("a #ops"), task("b #home"), task("c")];
+        let ops = [String::from("ops")];
+        assert_eq!(
+            matching(
+                &tasks,
+                Filter {
+                    tags: &ops,
+                    ..Filter::default()
+                }
+            ),
+            ["a"]
+        );
+    }
+
+    /// Repeats are or, not and — nobody means "carries both" by listing two.
+    #[test]
+    fn several_tags_widen_the_result() {
+        let tasks = [task("a #ops"), task("b #home"), task("c #other")];
+        let two = [String::from("ops"), String::from("home")];
+        assert_eq!(
+            matching(
+                &tasks,
+                Filter {
+                    tags: &two,
+                    ..Filter::default()
+                }
+            ),
+            ["a", "b"]
+        );
+    }
+
+    #[test]
+    fn a_tag_matches_whatever_case_the_file_wrote_it_in() {
+        let tasks = [task("a #Ops"), task("b #OPS")];
+        let ops = [String::from("oPs")];
+        assert_eq!(
+            matching(
+                &tasks,
+                Filter {
+                    tags: &ops,
+                    ..Filter::default()
+                }
+            ),
+            ["a", "b"]
+        );
+    }
+
+    /// `--prio high` means high, not "high and above": there is no ranking in
+    /// the file format to read one off.
+    #[test]
+    fn a_priority_filter_is_an_exact_level() {
+        let tasks = [task("a !high"), task("b !med"), task("c")];
+        let high = Filter {
+            prio: Some(Priority::High),
+            ..Filter::default()
+        };
+        assert_eq!(matching(&tasks, high), ["a"]);
+    }
+
+    #[test]
+    fn a_tag_and_a_priority_together_narrow_rather_than_widen() {
+        let tasks = [
+            task("both #ops !high"),
+            task("tag only #ops"),
+            task("prio only !high"),
+        ];
+        let ops = [String::from("ops")];
+        let filter = Filter {
+            tags: &ops,
+            prio: Some(Priority::High),
+        };
+        assert_eq!(matching(&tasks, filter), ["both"]);
     }
 
     /// A dated task between two undated ones must not split the undated run: the

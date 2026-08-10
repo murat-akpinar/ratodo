@@ -38,6 +38,26 @@ pub fn list_line(task: &Task, today: NaiveDate) -> String {
     line
 }
 
+/// One task for a script: five tab-separated fields, always all five, so
+/// `cut -f5` means the same thing on every line. See docs/cli.md#list---porcelain.
+///
+/// `plain` is doing real work here — a tab inside a title would otherwise invent
+/// a sixth field and shift everything after it.
+pub fn porcelain_line(task: &Task) -> String {
+    let state = if task.done { "done" } else { "open" };
+    let date = task
+        .due
+        .map(|d| d.date.format("%Y-%m-%d").to_string())
+        .unwrap_or_default();
+    let tags: Vec<String> = task.tags.iter().map(|t| plain(t)).collect();
+    let prio = task.priority.map_or("", |p| p.name());
+    format!(
+        "{state}\t{date}\t{}\t{}\t{prio}",
+        plain(&task.title),
+        tags.join(",")
+    )
+}
+
 /// The one line `ratodo add` prints before getting out of the way.
 pub fn added(task: &Task, today: NaiveDate) -> String {
     let mut parts = vec![format!("added: {}", plain(&task.title))];
@@ -151,6 +171,73 @@ mod tests {
 
         let undated = capture("a", today());
         assert_eq!(list_line(&undated, today()), "  [ ] a");
+    }
+
+    /// The field count is the contract: `cut -f5` has to mean priority on every
+    /// line, including the ones with no tags and no date.
+    #[test]
+    fn a_porcelain_line_always_has_five_fields() {
+        let cases = [
+            "everything @2026-08-12 #ops #home !high",
+            "bare",
+            "dated @2026-08-12",
+            "tagged #ops",
+        ];
+        for text in cases {
+            let line = porcelain_line(&capture(text, today()));
+            assert_eq!(line.split('\t').count(), 5, "{text} → {line:?}");
+        }
+    }
+
+    #[test]
+    fn the_porcelain_fields_are_state_date_title_tags_priority() {
+        let t = capture(
+            "write the deploy plan @2026-08-12 #ops #home !high",
+            today(),
+        );
+        assert_eq!(
+            porcelain_line(&t),
+            "open\t2026-08-12\twrite the deploy plan\tops,home\thigh"
+        );
+
+        assert_eq!(
+            porcelain_line(&capture("call the bank", today())),
+            "open\t\tcall the bank\t\t"
+        );
+    }
+
+    #[test]
+    fn porcelain_says_done_and_drops_the_overdue_distinction() {
+        let mut t = capture("close the old PRs @2026-08-09 #ops", today());
+        assert!(t.is_overdue(today()), "the fixture is meant to be late");
+        assert!(
+            porcelain_line(&t).starts_with("open\t"),
+            "overdue is a display state; a script reads the date itself"
+        );
+
+        t.set_done(true);
+        assert_eq!(
+            porcelain_line(&t),
+            "done\t2026-08-09\tclose the old PRs\tops\t"
+        );
+    }
+
+    /// The time is deliberately not in there. Field 2 is a date a script can
+    /// compare or hand to `date -d`; if the time is ever wanted it arrives as a
+    /// sixth column, which costs nobody their `cut -f3`.
+    #[test]
+    fn a_time_does_not_reach_the_date_field() {
+        let t = capture("standup @2026-08-12 09:30", today());
+        assert_eq!(porcelain_line(&t).split('\t').nth(1), Some("2026-08-12"));
+    }
+
+    #[test]
+    fn a_tab_in_a_title_cannot_invent_a_field() {
+        let mut t = capture("harmless", today());
+        t.title = "two\tcolumns".into();
+        let line = porcelain_line(&t);
+        assert_eq!(line.split('\t').count(), 5, "{line:?}");
+        assert!(line.contains("two\u{fffd}columns"), "{line:?}");
     }
 
     #[test]

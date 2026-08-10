@@ -34,6 +34,17 @@ impl Priority {
             Priority::Low => "!low",
         }
     }
+
+    /// The bare word, as `--prio` and `list --porcelain` spell it.
+    pub fn name(self) -> &'static str {
+        &self.as_str()[1..]
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        [Priority::High, Priority::Med, Priority::Low]
+            .into_iter()
+            .find(|p| p.name() == name)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
