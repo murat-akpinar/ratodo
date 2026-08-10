@@ -17,6 +17,11 @@ Split the single 25 KB decision record into eleven focused documents under docs/
 - *(ui)* Design every screen and settle the keymap ([4e6bef8](https://github.com/murat-akpinar/ratodo/commit/4e6bef82ab8479a27072dbb1ae284bf76a89503a))
 The design record had one screen sketch and a seven-key table. Neither covered what the tool actually has to do while someone works next to it.
 
+### 🧪 Testing
+
+- Close the holes mutation testing found ([2809f2a](https://github.com/murat-akpinar/ratodo/commit/2809f2ac2e8e76a52be20e8885a5ba4e5bd87a3f))
+The suite was green and partly decorative. `cargo mutants` breaks the source one edit at a time and checks that something goes red; on the first run 34 of 180 mutants survived, meaning 34 ways to break ratodo that no test objected to. It is now 0.
+
 ### ⚙️ Miscellaneous Tasks
 
 - Add agent working rules and a Rust gitignore ([6449064](https://github.com/murat-akpinar/ratodo/commit/644906428c4fa86dd1c0c64352274950cff90de5))
