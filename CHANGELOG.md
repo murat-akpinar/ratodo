@@ -1,5 +1,9 @@
 ## [unreleased]
 
+### 🚀 Features
+
+- *(parse)* Read and write todo.md without disturbing it
+
 ### 📚 Documentation
 
 - Restructure the design record into a docs/ directory
@@ -8,4 +12,5 @@
 ### ⚙️ Miscellaneous Tasks
 
 - Add agent working rules and a Rust gitignore
+- *(changelog)* Update
 - *(changelog)* Update
