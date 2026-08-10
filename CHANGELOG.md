@@ -20,6 +20,8 @@ vim, `git pull` or `ratodo add` in another pane now reaches the open list on its
 `ratodo sync` writes `~/.local/share/ratodo/todo.ics`, and every capture rewrites it so the calendar is never a version behind. Open, dated tasks only; ~90 lines of string formatting and no eighth dependency.
 - *(theme)* Eleven colour roles, six built-ins and a theme.conf ([73ac1aa](https://github.com/murat-akpinar/ratodo/commit/73ac1aa4a5363b98799b3e9c1341d9966f152c42))
 `theme.rs` holds the `Theme` struct, the built-in tables, the parser and the resolver, in one file and with no new dependency — the parser is `split_once` and a hex decode. `--theme`, `ratodo theme list` and `ratodo theme dump` are wired up, and the colours actually reach the screen.
+- *(ui)* Apply the design to the list ([f556500](https://github.com/murat-akpinar/ratodo/commit/f5565003d22ef5fc4abbd1cbfefc3e60788de0dd))
+The screens in docs/tui.md, drawn: `○ ✓ !` marks, a `▌` selection, group headers with a rule out to the right edge, and a right-aligned column carrying the date, then the priority, then the tags.
 
 ### 🐛 Bug Fixes
 
