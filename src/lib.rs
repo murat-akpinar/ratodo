@@ -5,6 +5,7 @@
 
 pub mod agenda;
 pub mod capture;
+pub mod ics;
 pub mod model;
 pub mod parse;
 pub mod text;

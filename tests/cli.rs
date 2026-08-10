@@ -641,8 +641,10 @@ fn the_default_path_is_the_config_directory() {
         "nothing was written to {}",
         expected.display()
     );
+    // The derived `todo.ics` does live under XDG_DATA_HOME, and should. What must
+    // never be there is the list itself — that is the deviation this test is about.
     assert!(
-        !dir.file("data").exists(),
+        !dir.file("data").join("ratodo").join("todo.md").exists(),
         "the list must not go under XDG_DATA_HOME"
     );
 }
@@ -770,6 +772,67 @@ fn an_edit_from_outside_reaches_the_open_screen() {
         screen.contains("arrived"),
         "the screen never picked up the change: {screen:?}"
     );
+}
+
+/// The `.ics` is derived, so it goes under `$XDG_DATA_HOME` and never next to
+/// the list. Capturing regenerates it without being asked.
+#[test]
+fn the_calendar_is_written_beside_no_one_and_kept_up_to_date() {
+    let dir = TempDir::new("ics");
+    let path = dir.file("todo.md");
+    let data = dir.file("data");
+    // Two open dated tasks against one completed and one undated, so that every
+    // way of getting the filter wrong lands on a different number. One of each
+    // would let "count the done ones instead" produce the right answer.
+    fs::write(
+        &path,
+        "- [ ] pay the invoice @2026-08-12\n- [ ] call the bank @2026-08-13\n\
+         - [x] already done @2026-08-01\n- [ ] someday\n",
+    )
+    .unwrap();
+
+    let with_data = |args: &[&str]| {
+        let mut full = vec!["--file", path.to_str().unwrap()];
+        full.extend_from_slice(args);
+        let out = Command::new(BIN)
+            .args(&full)
+            .env("XDG_DATA_HOME", &data)
+            .env("XDG_STATE_HOME", dir.file("state"))
+            .output()
+            .expect("running the binary");
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    let said = with_data(&["sync"]);
+    assert_eq!(
+        said,
+        {
+            let mut expected = String::from("wrote 2 dated tasks to ");
+            expected.push_str(&data.join("ratodo").join("todo.ics").display().to_string());
+            expected.push('\n');
+            expected
+        },
+        "the count includes tasks that were not exported"
+    );
+
+    let ics = data.join("ratodo").join("todo.ics");
+    let text = fs::read_to_string(&ics).unwrap();
+    assert!(text.contains("SUMMARY:pay the invoice"), "{text}");
+    assert!(
+        !dir.file("todo.ics").exists(),
+        "the .ics landed by the list"
+    );
+
+    // A capture regenerates it, so the calendar is never a version behind.
+    with_data(&["add", "renew the domain @2026-09-01"]);
+    let text = fs::read_to_string(&ics).unwrap();
+    assert!(text.contains("SUMMARY:renew the domain"), "{text}");
+    assert_eq!(text.matches("BEGIN:VTODO").count(), 3, "{text}");
 }
 
 #[test]

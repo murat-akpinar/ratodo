@@ -79,6 +79,15 @@ Three lists: what is settled, what was rejected, and what is still open.
 - ✅ **The file watch is on the directory** *(2026-08-11)*. vim, git and our own
   writer all replace the file by renaming a new one over it, and an inotify watch
   follows the inode that just stopped being the list.
+- ✅ **A timed task is exported as a floating time, not UTC** *(2026-08-11)*.
+  `@2026-08-13 09:30` carries no timezone because its author meant half past
+  nine where they are; converting with today's offset makes the entry wrong the
+  first time they travel. *(This corrects a line in
+  [calendar.md](calendar.md#implementation) that said UTC.)*
+- ✅ **The `.ics` UID is derived from title and section**, hashed with an FNV-1a
+  written out in the source *(2026-08-11)*. `DefaultHasher` is allowed to change
+  between Rust releases, and a UID that moves is every calendar entry deleted
+  and recreated. See [calendar.md](calendar.md#implementation).
 - ✅ **A reader that closes the pipe is not an error** *(2026-08-11)*.
   `ratodo list | head` made `println!` panic. Every stdout write goes through
   `writeln!`, and `BrokenPipe` alone exits 0. See

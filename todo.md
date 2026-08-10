@@ -15,7 +15,7 @@ todo** (ugly, but real). If step 4 stalls, the project does not die.
 - [x] `cargo init --name ratodo`
 - [x] `Cargo.toml`: GPL-3.0, MSRV 1.88 — deps added per step, not all seven up front
 - [ ] Verify truecolor: `printf "\x1b[38;2;203;166;247mmauve\x1b[0m\n"`
-- [ ] Install khal or Thunderbird (to verify the `.ics` output)
+- [ ] Install khal or Thunderbird — to see the `.ics` displayed, not just parsed
 
 ## 1 — Fixtures (no terminal needed)
 
@@ -97,9 +97,14 @@ Thunderbird and GNOME users, not the tiling-WM audience of seed point 2 — so i
 does not get to block the screen that audience actually opens. See
 [docs/decisions.md](docs/decisions.md#reversed).
 
-- [ ] `ics.rs`: VTODO output (~30 lines of string formatting, no crate)
-- [ ] `ics.rs`: stable UID, CRLF, 75-octet line folding
-- [ ] Snapshot test **plus** real verification: feed the output to khal
+- [x] `ics.rs`: VTODO output (~30 lines of string formatting, no crate)
+- [x] `ics.rs`: stable UID, CRLF, 75-octet line folding
+- [x] `ratodo sync`, and a regenerate after every capture
+- [x] Real verification: the output parsed by Python's `icalendar` — a different
+      implementation of the same RFC. Comma escaping, folding of a Turkish and
+      emoji title, and the floating time all came back intact
+- [ ] The other half of it: khal or Thunderbird actually **displaying** the file,
+      which is what catches a client that quietly ignores VTODO
 
 ## 5 — Theme
 

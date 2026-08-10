@@ -5,13 +5,13 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use chrono::Local;
+use chrono::{Local, Utc};
 use clap::{Parser, Subcommand};
 use crossterm::event::{self, Event};
 
 use ratodo::model::{Lookup, Priority};
 use ratodo::text;
-use ratodo::{agenda, capture, ui, write};
+use ratodo::{agenda, capture, ics, ui, write};
 
 #[derive(Parser)]
 #[command(name = "ratodo", version, about, long_about = None)]
@@ -40,6 +40,8 @@ enum Command {
     },
     /// Print the list
     List(ListArgs),
+    /// Regenerate todo.ics by hand. Every write does it anyway
+    Sync,
     /// Print the counts on one line, for a status bar
     Status {
         /// waybar's format: {"text":…,"tooltip":…,"class":…}
@@ -95,6 +97,7 @@ fn dispatch() -> Result<ExitCode> {
         Some(Command::Add { text }) => add(&path, &text.join(" "))?,
         Some(Command::Done { text }) => return done(&path, &text.join(" ")),
         Some(Command::List(args)) => list(&path, &args)?,
+        Some(Command::Sync) => sync(&path, true)?,
         Some(Command::Status { json }) => return status(&path, json),
         // `ratodo | wc -l` and `ratodo > out.txt` still have to mean something,
         // and a TUI down a pipe means nothing at all.
@@ -130,6 +133,41 @@ fn backup_dir() -> Result<PathBuf> {
         .to_path_buf())
 }
 
+/// Derived, regenerated, pointless to back up — so `$XDG_DATA_HOME`, unlike the
+/// list itself. See docs/format.md.
+fn ics_path() -> Result<PathBuf> {
+    Ok(dirs()?.data_dir().join("todo.ics"))
+}
+
+/// Rewrites `todo.ics` from the list. `loud` is for `ratodo sync`, which was
+/// asked to do this; after a capture it happens quietly.
+///
+/// A failure here never fails the command that triggered it. The `.ics` is a
+/// convenience and the task is already safely in the file — refusing to capture
+/// because a calendar export went wrong would be the tail wagging the dog.
+fn sync(path: &Path, loud: bool) -> Result<()> {
+    let doc = write::load(path)?.doc;
+    let tasks: Vec<_> = doc.tasks().cloned().collect();
+    let out = ics_path()?;
+
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&out, ics::calendar(&tasks, Utc::now()))?;
+
+    if loud {
+        let exported = tasks.iter().filter(|t| !t.done && t.due.is_some()).count();
+        writeln!(
+            std::io::stdout(),
+            "wrote {} dated task{} to {}",
+            exported,
+            if exported == 1 { "" } else { "s" },
+            out.display()
+        )?;
+    }
+    Ok(())
+}
+
 fn add(path: &Path, input: &str) -> Result<()> {
     let today = Local::now().date_naive();
     let task = capture::capture(input, today);
@@ -141,7 +179,15 @@ fn add(path: &Path, input: &str) -> Result<()> {
     write::save(path, &doc, loaded.mtime, &backup_dir()?)?;
 
     writeln!(std::io::stdout(), "{summary}")?;
+    quietly_sync(path);
     Ok(())
+}
+
+/// The capture already succeeded and said so. Whatever the calendar export
+/// makes of it, the user's list is written and this is not the moment to make
+/// noise about a derived file.
+fn quietly_sync(path: &Path) {
+    let _ = sync(path, false);
 }
 
 /// Everything the screen needs, read fresh. Called again on every outside
@@ -299,6 +345,7 @@ fn done(path: &Path, input: &str) -> Result<ExitCode> {
 
     write::save(path, &doc, loaded.mtime, &backup_dir()?)?;
     writeln!(std::io::stdout(), "{summary}")?;
+    quietly_sync(path);
     Ok(ExitCode::SUCCESS)
 }
 

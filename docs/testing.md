@@ -156,3 +156,22 @@ Anything reported as **MISSED** is a change to the source that no test objected
 to. Some of those are fine — a mutation inside a `Display` impl usually is — but
 a missed mutant in `parse`, `write` or `model` is a hole in the fidelity
 guarantee and gets a test.
+
+**TIMEOUT is a catch, not a miss.** Every one of them so far is the same shape: a
+mutation to a loop counter (`+=` becoming `*=`, `-=` becoming `/=`) leaves the
+loop unable to advance, so the mutant hangs instead of returning a wrong answer.
+Hanging is detection.
+
+Two kinds of MISSED are worth naming, because the honest response to each is
+different:
+
+- **An equivalent mutant** cannot be killed, because it does not change the
+  program. `n > 0` and `n >= 0` are the same answer where the loop around them
+  never runs at `n == 0`. Writing a test that appears to cover it is worse than
+  leaving it; the fix is to restructure so the ambiguous branch is not there —
+  which is how `Screen::move_by` came to read its sign once, outside the loop.
+- **A weak assertion** is the common case and the useful one. A mutant surviving
+  usually means a test looked at half of what it claimed to. Every one found so
+  far was real: a backup asserted absent but never asserted present, a keymap
+  with no coverage at all, a `sync` count checked against a list where three
+  different wrong filters all give the same number.

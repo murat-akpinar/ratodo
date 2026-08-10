@@ -184,7 +184,13 @@ is also the answer for a bare TTY). Eleven keys, full spec:
 
 ## Calendar
 
-Open tasks that have a date are exported to `todo.ics` as VTODO entries, one-way.
+Open tasks that have a date are exported to `~/.local/share/ratodo/todo.ics` as
+VTODO entries, one-way. Every capture rewrites it; `ratodo sync` does it by hand.
+
+A time in your file has no timezone, so it does not get one here either —
+`@2026-08-13 09:30` is exported as a floating time and stays half past nine
+wherever you are.
+
 Generating the file is the easy part; subscribing to it is up to your client, and
 they differ a lot:
 
