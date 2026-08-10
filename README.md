@@ -10,12 +10,14 @@
 
 </div>
 
-> ⚠️ **Status: v1 in progress.** `ratodo add` and `ratodo list` work today; the
-> TUI below is designed but not built yet. Progress in [`todo.md`](todo.md),
-> reasoning in [`docs/`](docs/README.md).
+> ⚠️ **Status: v1 in progress.** The whole command line works today — `add`,
+> `list` with its filters, `done` and `status`, which is enough to use it and
+> enough to wire into a bar. The TUI below is designed but not built yet.
+> Progress in [`todo.md`](todo.md), reasoning in [`docs/`](docs/README.md).
 >
 > ```console
 > $ cargo run -- --file ./todo-test.md add 'try ratodo @tomorrow #test'
+> $ cargo run -- --file ./todo-test.md list
 > ```
 
 ## What it is
@@ -139,6 +141,23 @@ In your bar, it is one line:
 ```json
 "custom/todo": { "exec": "ratodo status --json", "return-type": "json", "interval": 60 }
 ```
+
+`status` exits non-zero when something is overdue, so nagging yourself needs no
+extra flag:
+
+```bash
+ratodo status || notify-send "$(ratodo status)"
+```
+
+`--porcelain` is five tab-separated fields — state, date, title, tags, priority —
+and column three is the title, which is what `done` wants:
+
+```bash
+ratodo done "$(ratodo list --porcelain | fzf | cut -f3)"
+```
+
+`done` takes any part of the title and needs it to match exactly one open task.
+If two match it shows you both and changes nothing.
 
 ## Theming
 
