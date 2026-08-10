@@ -1,0 +1,17 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# ratodo runtime artefacts (in case anyone points --file at the repo)
+*.md.bak
+todo.ics
+
+# Editors
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
