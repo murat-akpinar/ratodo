@@ -166,7 +166,7 @@ fn list_shows_sections_titles_and_a_summary() {
     let path = dir.file("todo.md");
     fs::write(
         &path,
-        "## Work\n- [ ] first @2026-12-01 #ops !high\n- [x] second\n\n## Home\n- [ ] third\n",
+        "## Work\n- [ ] first #ops !high\n- [x] second\n\n## Home\n- [ ] third\n",
     )
     .unwrap();
 
@@ -174,11 +174,33 @@ fn list_shows_sections_titles_and_a_summary() {
 
     assert!(out.contains("\nWork\n"), "{out}");
     assert!(out.contains("\nHome\n"), "{out}");
-    assert!(out.contains("[ ] first  2026-12-01  #ops  !high"), "{out}");
+    assert!(out.contains("[ ] first  #ops  !high"), "{out}");
     assert!(out.contains("[x] second"), "{out}");
     assert!(out.contains("[ ] third"), "{out}");
     assert!(out.contains("2 open · "), "{out}");
     assert!(out.trim_end().ends_with("overdue"), "{out}");
+}
+
+/// Only the two groups whose answer cannot change with the calendar are asserted
+/// here; TODAY and THIS WEEK need `today` injected and are covered in
+/// `agenda.rs`, where it is.
+#[test]
+fn dated_tasks_are_grouped_ahead_of_the_undated_ones() {
+    let dir = TempDir::new("groups");
+    let path = dir.file("todo.md");
+    fs::write(
+        &path,
+        "## Work\n- [ ] someday @2099-01-01\n- [ ] no date\n- [ ] ancient @2020-01-01\n",
+    )
+    .unwrap();
+
+    let out = stdout_of(&path, &["list"]);
+    let headings: Vec<&str> = out
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with(' ') && !l.contains('·'))
+        .collect();
+    assert_eq!(headings, ["OVERDUE", "LATER", "Work"], "{out}");
+    assert!(out.contains("1 overdue"), "{out}");
 }
 
 #[test]

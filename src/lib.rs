@@ -3,6 +3,7 @@
 //! The pure core (`parse`, `write`, `capture`) is a library so it can be tested
 //! without a terminal; the binary is a thin shell over it.
 
+pub mod agenda;
 pub mod capture;
 pub mod model;
 pub mod parse;

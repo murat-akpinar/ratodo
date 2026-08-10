@@ -7,7 +7,7 @@ use chrono::Local;
 use clap::{Parser, Subcommand};
 
 use ratodo::text;
-use ratodo::{capture, write};
+use ratodo::{agenda, capture, write};
 
 #[derive(Parser)]
 #[command(name = "ratodo", version, about, long_about = None)]
@@ -97,16 +97,16 @@ fn list(path: &Path) -> Result<()> {
         return Ok(());
     }
 
-    // Starting at None means a file with no headings at all prints no heading,
-    // rather than a "(no section)" nobody asked for.
-    let mut section = None;
-    for task in doc.tasks() {
-        if task.section != section {
-            section = task.section.clone();
-            let name = section.as_deref().unwrap_or("(no section)");
-            println!("\n{}", text::plain(name));
+    // `agenda` wants a slice and the tasks live scattered through `doc.lines`,
+    // so they are copied out. A todo list is small; this is not worth a lifetime.
+    let tasks: Vec<_> = doc.tasks().cloned().collect();
+    for group in agenda::agenda(&tasks, today) {
+        if let Some(title) = group.kind.title() {
+            println!("\n{}", text::plain(title));
         }
-        println!("{}", text::list_line(task, today));
+        for task in group.tasks {
+            println!("{}", text::list_line(task, today));
+        }
     }
 
     let open = doc.tasks().filter(|t| !t.done).count();

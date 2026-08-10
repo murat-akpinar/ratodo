@@ -62,9 +62,9 @@ the abandonment risk in [docs/risks.md](docs/risks.md).
 
 ## 3 — agenda + the scriptable surface (no terminal needed)
 
-- [ ] `agenda.rs`: `agenda(&[Task], today) -> Vec<Group>` — `today` is a **parameter**
-- [ ] Group tests: overdue / today / this week / later / undated
-- [ ] Boundary tests: exactly today 00:00, exactly +7 days, a past year, an invalid date
+- [x] `agenda.rs`: `agenda(&[Task], today) -> Vec<Group>` — `today` is a **parameter**
+- [x] Group tests: overdue / today / this week / later / undated
+- [x] Boundary tests: exactly today 00:00, exactly +7 days, a past year, an invalid date
 - [ ] `list --tag` / `--prio` — the agenda says nothing about undated tasks, and
       most of a developer's list is undated
 - [ ] `list --porcelain` — tab-separated, stable, no colour. The contract behind

@@ -84,10 +84,24 @@ it is testable without a terminal.
 | 3 | THIS WEEK | `today < due ≤ +7d` | `○` · dim · `Aug 20` |
 | 4 | LATER | `due > +7d` | `○` · dim · collapsed, `l` expands |
 | 5 | *(the file's `##` heading)* | no date | `○` · in file order |
-| 6 | — | `[x]` completed | `✓` · dim · at the end of its own group |
+| 6 | — | `[x]` completed | `✓` · dim · at the end of its own **dated** group |
 
 Undated tasks stay under the `##` sections of the file, **in the order they
-appear in the file**. We do not reorder the user's own arrangement.
+appear in the file**. We do not reorder the user's own arrangement — and that
+beats row 6, so a completed undated task keeps its place rather than sinking.
+The two rules can only collide there, because rows 1–4 are already an ordering
+the user did not write.
+
+Inside a dated group: open before completed, then by date, then by time. A task
+with no time heads its own day, the way a calendar puts all-day events above the
+timetable. Ties keep file order — the sort is stable, deliberately.
+
+Group 1 is about *where a task sits*, which is not the same question as whether
+it still needs attention: a completed task keeps the date it had, so it appears
+under OVERDUE with a `✓`, while `Task::is_overdue` — the one that drives the `!`
+symbol, the counts and `status`'s exit code — says no. Both readings of the word
+are right; they are answering different questions, and the code says so where
+they meet.
 
 There is exactly one view mode: **agenda**. There is no second "file view /
 agenda view" mode — two modes means state management, key conflicts and two
