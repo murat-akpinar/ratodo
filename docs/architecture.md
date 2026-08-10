@@ -74,22 +74,40 @@ silently — warning and backing off is the honest behaviour.
 ```
 src/
   main.rs      clap subcommands, terminal setup/teardown, panic hook
-  model.rs     Task, Section, Due, Priority
-  parse.rs     todo.md -> Vec<Task>, raw line preserved      ← the product lives here
-  write.rs     Vec<Task> -> todo.md, atomic + backup
-  agenda.rs    (Vec<Task>, today) -> Vec<Group>              ← the product lives here
-  ics.rs       Vec<Task> -> todo.ics (VTODO)
+  lib.rs       the pure core, exposed so tests/ can reach it
+  model.rs     Doc, Line, Task, Due, Priority
+  parse.rs     todo.md -> Doc, raw line preserved            ← the product lives here
+  write.rs     Doc -> todo.md, atomic + backup, and the file IO
+  capture.rs   free text -> Task, resolving @tomorrow and friends
+  agenda.rs    (&[Task], today) -> Vec<Group>                ← the product lives here
+  ics.rs       &[Task] -> todo.ics (VTODO)
   theme.rs     Theme struct, built-in themes, theme.conf parser
   ui.rs        ratatui drawing
 tests/
+  fidelity.rs  round-trip and byte-for-byte tests over every fixture
   fixtures/    hand-written todo.md files — well-formed ones and deliberately awkward ones
 ```
 
-Eight files. No `mod.rs` pyramid, no trait layer, no plugin system.
+Ten files, flat. No `mod.rs` pyramid, no trait layer, no plugin system.
 
-The `Task` struct, roughly:
+Two of them were not in the original plan and are worth naming:
+
+- **`lib.rs`** exists because a binary-only crate cannot be reached from
+  `tests/`. The core is a library and `main.rs` is a thin shell over it, which is
+  the same split the "difficulty is unevenly distributed" table below describes.
+- **`capture.rs`** is separate from `parse.rs` on purpose. They look similar but
+  they enforce opposite rules: `parse` is strict because it reads the file,
+  `capture` is permissive because it reads a human. Merging them would put a
+  flag in the middle of the one function that must never get this wrong.
+
+A document is every line of the file in order, each carrying its own ending, so
+that a mixed-endings file and a file with no final newline both survive:
 
 ```rust
+struct Doc  { lines: Vec<Line> }
+struct Line { item: Item, ending: Ending }   // Ending: Lf | CrLf | None
+enum   Item { Task(Task), Text(String) }     // Text = everything we don't touch
+
 struct Task {
     raw: String,        // the line exactly as it was read
     line_no: usize,
@@ -98,12 +116,17 @@ struct Task {
     due: Option<Due>,
     tags: Vec<String>,
     priority: Option<Priority>,
+    section: Option<String>,
     dirty: bool,        // false -> write `raw` back untouched
+    checkbox: usize,    // byte index of the character between the brackets
 }
 ```
 
 `dirty` is what makes round-trip fidelity mechanical rather than a matter of
-discipline.
+discipline. `checkbox` is what makes it survive the most common write of all:
+marking something done replaces that one ASCII byte inside `raw` instead of
+re-rendering the line, so the user's spacing and anything we failed to understand
+come through untouched.
 
 ## Dependencies
 

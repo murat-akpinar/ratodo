@@ -4,14 +4,19 @@
 
 **A todo TUI, built with ratatui — one Markdown file, no cloud, no account.**
 
-[![status](https://img.shields.io/badge/status-design%20phase-orange)](docs/)
+[![status](https://img.shields.io/badge/status-v1%20in%20progress-orange)](todo.md)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.97%2B-orange)](https://www.rust-lang.org)
 
 </div>
 
-> ⚠️ **Status: design phase.** There is no code yet — this repository currently
-> holds the design record. Start at [`docs/`](docs/README.md).
+> ⚠️ **Status: v1 in progress.** `ratodo add` and `ratodo list` work today; the
+> TUI below is designed but not built yet. Progress in [`todo.md`](todo.md),
+> reasoning in [`docs/`](docs/README.md).
+>
+> ```console
+> $ cargo run -- --file ./todo-test.md add "try ratodo @tomorrow #test"
+> ```
 
 ## What it is
 
@@ -162,11 +167,15 @@ Details and subscription steps: [`docs/calendar.md`](docs/calendar.md).
 
 ## Install
 
-Not yet — there is nothing to install. Once v1 lands:
+Not published yet. To build it now:
 
 ```console
-$ cargo install ratodo
+$ git clone https://github.com/murat-akpinar/ratodo && cd ratodo
+$ cargo build --release
+$ ./target/release/ratodo --help
 ```
+
+Once v1 lands: `cargo install ratodo`.
 
 ## Documentation
 

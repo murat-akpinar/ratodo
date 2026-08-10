@@ -18,11 +18,12 @@ cloud, no account. Currently in the design phase; there is no `src/` yet.
 3. **Test.**
    ```
    cargo fmt --check
-   cargo clippy -- -D warnings
+   cargo clippy --all-targets -- -D warnings
    cargo test
+   python3 scripts/check-docs.py
    ```
-   *(Until `src/` exists, step 3 is: check that Markdown links resolve and the
-   docs stay consistent with each other.)*
+   Green tests are not the same as working software: run the binary against a
+   throwaway file too, and say what you actually saw.
 4. **Only if all of it passes: commit.** If anything fails, fix it or report the
    failure — never commit red.
 5. **Update the changelog:** `git cliff -o CHANGELOG.md`, then commit it
@@ -101,6 +102,18 @@ recorded in [docs/decisions.md](docs/decisions.md), not applied silently.
 
 ## Code style
 
+- **Few comments.** The reasoning lives in `docs/`; repeating it in the source is
+  noise that goes stale. One `//!` line per module pointing at the document that
+  explains it, and otherwise comment only what the code cannot say itself: a
+  non-obvious invariant, a deliberate deviation, a trap.
+- When a block genuinely needs marking out, delimit it:
+  ```rust
+  // -- ALAN START: round-trip --
+  ...
+  // -- ALAN END --
+  ```
+  Sparingly. If a section needs a marker to be understandable, first ask whether
+  it should be its own function.
 - rustfmt defaults; clippy clean at `-D warnings`
 - `anyhow` for errors; no `unwrap()` outside tests (`expect` with a real message
   is acceptable in `main`)
@@ -118,6 +131,7 @@ recorded in [docs/decisions.md](docs/decisions.md), not applied silently.
 | `notes.md` | Raw thinking, loose ends, the idea graveyard |
 | `todo.md` | The task list. Work top to bottom |
 | `README.md` | User-facing. English, and the first sentence says "built **with** ratatui" — never "for" |
+| `scripts/check-docs.py` | Verifies every relative Markdown link and anchor resolves |
 | `cliff.toml` | git-cliff config. Conventional commits required |
 | `CHANGELOG.md` | Generated. Never edit by hand |
 

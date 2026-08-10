@@ -12,29 +12,30 @@ todo** (ugly, but real). If step 4 stalls, the project does not die.
 - [x] `git init`, remote configured
 - [x] Verify the name is free — crates.io ✅, GitHub ✅, PATH ✅ (see [docs/naming.md](docs/naming.md))
 - [x] Design record written up in `docs/`
-- [ ] `cargo init --name ratodo`
-- [ ] `Cargo.toml`: the seven crates, GPL-3.0, MSRV
+- [x] `cargo init --name ratodo`
+- [x] `Cargo.toml`: GPL-3.0, MSRV 1.88 — deps added per step, not all seven up front
 - [ ] Verify truecolor: `printf "\x1b[38;2;203;166;247mmauve\x1b[0m\n"`
 - [ ] Install khal or Thunderbird (to verify the `.ics` output)
 
 ## 1 — Fixtures (no terminal needed)
 
-- [ ] `tests/fixtures/simple.md` — copy of [docs/examples/todo.md](docs/examples/todo.md)
-- [ ] `tests/fixtures/gnarly.md` — the deliberately awkward one, draft in [docs/testing.md](docs/testing.md)
-- [ ] Write the expected `Vec<Task>` for each fixture
+- [x] `tests/fixtures/simple.md` — copy of [docs/examples/todo.md](docs/examples/todo.md), kept in sync by a test
+- [x] `tests/fixtures/gnarly.md` — the deliberately awkward one
+- [x] `crlf.md`, `no-final-newline.md`, `empty.md` — the byte-level edge cases
+- [x] Expected parse results asserted in `tests/fidelity.rs`
 
 ## 2 — parse + write (no terminal needed) ← the heart of the product
 
-- [ ] `model.rs`: `Task { raw, line_no, done, title, due, tags, priority, dirty }`
-- [ ] `parse.rs`: line → `Task`. **The raw line is always kept**
-- [ ] `parse.rs`: `@date`, `@date HH:MM`, `#tag`, `!priority`, word-by-word, no regex
-- [ ] `parse.rs`: shorthand dates — `@today @tomorrow @mon…@sun @3d @2w` → ISO
-- [ ] `write.rs`: if `dirty == false`, write the raw line back untouched
-- [ ] `write.rs`: atomic write — temp → `fsync` → `rename`, `.bak` beforehand
-- [ ] `write.rs`: mtime check — if it changed since we read it, warn and refuse
-- [ ] **Round-trip test:** `parse(write(parse(x))) == parse(x)`
-- [ ] **Fidelity test:** every untouched line byte-for-byte identical
-- [ ] `ratodo list` → `println!`. The product works from here on
+- [x] `model.rs`: `Doc` / `Line` / `Item` / `Task`, each line keeping its own ending
+- [x] `parse.rs`: line → `Task`. **The raw line is always kept**
+- [x] `parse.rs`: `@date`, `@date HH:MM`, `#tag`, `!priority`, word-by-word, no regex
+- [x] `capture.rs`: shorthand dates — `@today @tomorrow @mon…@sun @3d @2w` → ISO
+- [x] `write.rs`: if `dirty == false`, write the raw line back untouched
+- [x] `write.rs`: atomic write — temp → `fsync` → `rename`, `.bak` beforehand
+- [x] `write.rs`: mtime check — if it changed since we read it, refuse and say so
+- [x] **Round-trip test:** `parse(render(parse(x))) == parse(x)`
+- [x] **Fidelity test:** toggling any one task changes exactly one byte, on every fixture
+- [x] `ratodo list` and `ratodo add` → the product works from here on
 
 ## 3 — agenda + ics (no terminal needed)
 

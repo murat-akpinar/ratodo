@@ -1,0 +1,26 @@
+[package]
+name = "ratodo"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A todo TUI, built with ratatui — one Markdown file, no cloud, no account."
+repository = "https://github.com/murat-akpinar/ratodo"
+license = "GPL-3.0-only"
+readme = "README.md"
+keywords = ["todo", "tui", "markdown", "cli", "productivity"]
+categories = ["command-line-utilities"]
+
+# Dependencies are added when the step that needs them arrives, so the build
+# stays fast while the pure-function core is being written. The full approved
+# list — and what is deliberately absent — is in docs/architecture.md.
+#   step 4 (TUI):  ratatui, crossterm, notify
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+clap = { version = "4", features = ["derive"] }
+directories = "6"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
