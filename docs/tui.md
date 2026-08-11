@@ -203,7 +203,7 @@ nothing is given up, and the box lands where the eye already is:
 │ TODAY ───────────────────────────────────────────────────  │
 │ ▌ ○ pay the invoice                                 #home  │
 │  ┌───────────────────────────────────────────────────────┐ │
-│  │ add ▏call the accountant @thu !high                   │ │
+│  │ ADD ▏call the accountant @thu !high                   │ │
 │  ├───────────────────────────────────────────────────────┤ │
 │  │      due Thursday (2026-08-13)  ·  !high              │ │
 │  └───────────────────────────────────────────────────────┘ │
@@ -216,7 +216,7 @@ nothing is given up, and the box lands where the eye already is:
 **The box opens with today's date already in it, behind the caret:**
 
 ```
-│  │ add ▏▏ @2026-08-12                                    │ │
+│  │ ADD ▏▏ @2026-08-12                                    │ │
 │  ├───────────────────────────────────────────────────────┤ │
 │  │      due today (2026-08-12)                           │ │
 ```
@@ -260,7 +260,7 @@ name — backspace over the date it opened with, and the hint is there:
 
 ```
 │  ┌───────────────────────────────────────────────────────┐ │
-│  │ add ▏                                                 │ │
+│  │ ADD ▏                                                 │ │
 │  ├───────────────────────────────────────────────────────┤ │
 │  │      @thu #home !high $list                           │ │
 │  └───────────────────────────────────────────────────────┘ │
@@ -280,7 +280,7 @@ was meant as a date and can never be one gets said out loud, in the same colour
 the bottom line warns in:
 
 ```
-│  │ add ▏call the plumber @2026-13-45 #home                │ │
+│  │ ADD ▏call the plumber @2026-13-45 #home                │ │
 │  ├───────────────────────────────────────────────────────┤ │
 │  │      @2026-13-45 is not a date  ·  #home              │ │
 │  └───────────────────────────────────────────────────────┘ │
@@ -333,7 +333,7 @@ sentence sends that one capture to `work.md`, and the preview says so before
 
 ```
 │  ┌───────────────────────────────────────────────────────┐ │
-│  │ add ▏call the accountant @thu $work                   │ │
+│  │ ADD ▏call the accountant @thu $work                   │ │
 │  ├───────────────────────────────────────────────────────┤ │
 │  │      → work.md  ·  due Thursday (2026-08-13)          │ │
 │  └───────────────────────────────────────────────────────┘ │
@@ -380,7 +380,7 @@ typed. `tab` opens a field where that date does not exist:
 
 ```
 │  ┌───────────────────────────────────────────────────────┐ │
-│  │ add ▏renew the passport                               │ │
+│  │ ADD ▏renew the passport                               │ │
 │  ├───────────────────────────────────────────────────────┤ │
 │  │      [11] 08  2026  ↓ ↑                               │ │
 │  └───────────────────────────────────────────────────────┘ │
@@ -423,7 +423,7 @@ prompt would be a second thing to get wrong. What changes is the question.
 
 ```
 │  ┌───────────────────────────────────────────────────────┐ │
-│  │ put off ▏2                                            │ │
+│  │ PUT OFF ▏2                                            │ │
 │  ├───────────────────────────────────────────────────────┤ │
 │  │      Wednesday (2026-08-12)                           │ │
 │  └───────────────────────────────────────────────────────┘ │
@@ -468,18 +468,19 @@ task that is nearly a task you already have should be an edit, not a retype.
 
 ```
 │  ┌───────────────────────────────────────────────────────┐ │
-│  │ copy ▏water the plants @2026-08-12 #home              │ │
+│  │ COPY ▏water the plants @2026-08-12 #home              │ │
 │  ├───────────────────────────────────────────────────────┤ │
 │  │      due Wednesday (2026-08-12) │ #home               │ │
 │  └───────────────────────────────────────────────────────┘ │
 ```
 
-**It says `copy`, in the accent**, and that label is the whole design. `y` fills
+**It says `COPY`, in the accent**, and that label is the whole design. `y` fills
 the box the way `⏎` does and then means something else by it: what comes back is
 a **new** task, so the line it was copied from is not the line `⏎` rewrites.
 The label is the only thing on the screen that says so, which is why it is the
-one of the four that is lit — it said `add` until 2026-08-11, and a box filled
-from the row under the cursor that says `add` in the same grey as every other
+one of the four that takes a colour — the other three are bold and full
+brightness, and this one is bold and the accent. It said `add` until 2026-08-11,
+and a box filled from the row under the cursor that says `ADD` like every other
 box is a box nobody reads the first word of. Nothing is written until `⏎`, and a
 cancelled box leaves the file exactly as it was — which is the difference
 between this and a copy that lands first and is edited afterwards.
@@ -571,7 +572,7 @@ The first thing a new user sees, so it has to teach rather than apologise:
 │  e          open ~/.config/ratodo/todo.md in $EDITOR       │
 │                                                            │
 │  ┌──────────────────────────────────────────────┐          │
-│  │ add ▏buy milk @tomorrow #home                │          │
+│  │ ADD ▏buy milk @tomorrow #home                │          │
 │  ├──────────────────────────────────────────────┤          │
 │  │      due tomorrow (2026-08-11)  ·  #home     │          │
 │  └──────────────────────────────────────────────┘          │

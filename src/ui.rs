@@ -191,12 +191,15 @@ impl Purpose {
         }
     }
 
+    /// Upper case, the way the group headings on the list are: both are the
+    /// tool's own word rather than the user's, and the screen says so the same
+    /// way twice — docs/design.md#what-each-colour-means.
     fn label(&self) -> &'static str {
         match self {
-            Purpose::Add => "add",
-            Purpose::Copy => "copy",
-            Purpose::Edit(_) => "edit",
-            Purpose::Postpone(_) => "put off",
+            Purpose::Add => "ADD",
+            Purpose::Copy => "COPY",
+            Purpose::Edit(_) => "EDIT",
+            Purpose::Postpone(_) => "PUT OFF",
         }
     }
 }
@@ -1647,13 +1650,15 @@ fn addressed(name: &str, render: Render<'_>) -> Option<Span<'static>> {
 fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'static>>, usize) {
     let dim = Style::default().fg(render.colours.dim);
     let head = format!(" {} {}", input.purpose.label(), render.glyphs.field());
-    // The box's own border is already the accent, and it is what says *you are
-    // in the box*. A label in the same colour an inch inside it says the same
-    // thing twice and leaves `copy` — the one label that has news — with nothing
-    // to be told apart by. docs/design.md#what-each-colour-means.
+    // Weight and full brightness, not a colour: the box's own border is already
+    // the accent and is what says *you are in the box*, so a label in the same
+    // colour an inch inside says it twice and leaves `COPY` — the one label with
+    // news — nothing to be told apart by. `COPY` keeps the accent for that, and
+    // is the only span on this screen where it lands on a word the tool did not
+    // write as a heading. docs/design.md#what-each-colour-means.
     let label = match input.purpose {
         Purpose::Copy => Style::default().fg(render.colours.accent).bold(),
-        _ => dim,
+        _ => Style::default().fg(render.colours.foreground).bold(),
     };
     // The window is anchored on the caret, not on the end of the line: what is
     // before it fills the field from the right, and whatever room is left shows
@@ -4190,12 +4195,13 @@ mod tests {
 
         // And the box says so, in the accent: "this is not the line you were
         // looking at" is the one thing `y` has to get across. The other three
-        // stay dim — the box's own border is already the accent and is what says
-        // *you are in the box*, so a label repeating it an inch inside leaves
-        // this one nothing to be told apart by.
+        // are full brightness and bold but take no colour — the box's own border
+        // is already the accent and is what says *you are in the box*, so a
+        // label repeating it an inch inside leaves this one nothing to be told
+        // apart by.
         let (lines, _) = input_lines(&input, 60, render(crate::theme::MOCHA));
         let head = &lines[0].spans[0];
-        assert_eq!(head.content, " copy");
+        assert_eq!(head.content, " COPY");
         assert_eq!(head.style.fg, Some(crate::theme::MOCHA.accent));
 
         for purpose in [
@@ -4205,12 +4211,23 @@ mod tests {
         ] {
             let box_ = Input::new(String::new(), purpose);
             let (lines, _) = input_lines(&box_, 60, render(crate::theme::MOCHA));
+            let head = &lines[0].spans[0];
             assert_eq!(
-                lines[0].spans[0].style.fg,
-                Some(crate::theme::MOCHA.dim),
+                head.style.fg,
+                Some(crate::theme::MOCHA.foreground),
                 "{:?}",
                 box_.purpose
             );
+            assert!(
+                head.style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::BOLD),
+                "{:?}",
+                box_.purpose
+            );
+            // Upper case, the way the group headings on the list are: the tool's
+            // own word, said the same way twice.
+            assert_eq!(head.content, head.content.to_uppercase());
         }
     }
 
@@ -4367,12 +4384,12 @@ mod tests {
 
         input.home();
         let (start, at) = field(&input);
-        assert!(start.starts_with(" add ▏a very long"), "{start:?}");
+        assert!(start.starts_with(" ADD ▏a very long"), "{start:?}");
         assert!(
             !start.contains("at all"),
             "the caret scrolled off: {start:?}"
         );
-        assert_eq!(at, columns(" add ▏"));
+        assert_eq!(at, columns(" ADD ▏"));
     }
 
     fn with_input(
@@ -4426,7 +4443,7 @@ mod tests {
                 "┌ ratodo — 4 open · 0 overdue ───────────────────────────────────────┐",
                 "│  TODAY ─────────────────────────────────────────────────────────── │",
                 "│▌┌────────────────────────────────────────────────────────────────┐y│",
-                "│ │ add ▏call the accountant @thu !high                            │ │",
+                "│ │ ADD ▏call the accountant @thu !high                            │ │",
                 "│ ├────────────────────────────────────────────────────────────────┤ │",
                 "│ │      due Thursday (2026-08-13) │ !high                         │ │",
                 "│ └────────────────────────────────────────────────────────────────┘ │",
@@ -4499,7 +4516,7 @@ mod tests {
         let screen = with_input(70, 9, &tasks(&["a"]), &input, Glyphs::Unicode);
         let field = screen
             .iter()
-            .position(|r| r.contains(" add ▏just write it down"));
+            .position(|r| r.contains(" ADD ▏just write it down"));
         let field = field.unwrap_or_else(|| panic!("{screen:?}"));
 
         // Two rows down, because the rule sits between the field and what it
@@ -4921,7 +4938,7 @@ mod tests {
         let rows = screen(&input);
         let at = rows
             .iter()
-            .position(|r| r.contains(" put off ▏"))
+            .position(|r| r.contains(" PUT OFF ▏"))
             .unwrap_or_else(|| panic!("{rows:?}"));
         assert!(
             rows[at + 2].contains("how long?"),
@@ -5029,7 +5046,7 @@ mod tests {
         let screen = with_input(30, 8, &tasks(&["x"]), &input, Glyphs::Unicode);
         let field = screen
             .iter()
-            .find(|row| row.contains(" edit ▏"))
+            .find(|row| row.contains(" EDIT ▏"))
             .unwrap_or_else(|| panic!("{screen:?}"));
 
         // The border is the row's last column, so the end of the line is the
@@ -5050,7 +5067,7 @@ mod tests {
         let screen = with_input(62, 7, &tasks(&["a"]), &input, Glyphs::Ascii);
         let text = screen.join("\n");
 
-        assert!(text.contains(" add |milk @tomorrow"), "{text}");
+        assert!(text.contains(" ADD |milk @tomorrow"), "{text}");
         assert!(text.contains("ret save   esc cancel"), "{text}");
         assert!(
             text.is_ascii(),
@@ -5080,7 +5097,7 @@ mod tests {
             busy[2..7].iter().all(|r| r.contains('│')),
             "the box is not where it should be: {busy:?}"
         );
-        assert!(busy[3].contains(" add ▏"), "{busy:?}");
+        assert!(busy[3].contains(" ADD ▏"), "{busy:?}");
         // The keys move off the hint bar for as long as the box is open: `a`
         // and `d` are letters in there, and naming them would be a lie.
         assert!(busy[9].contains("esc cancel"), "{busy:?}");
@@ -5117,7 +5134,7 @@ mod tests {
         };
 
         // The box is 36 wide on a 40-column pane and starts two in, so the
-        // field begins three columns further along: `│ add ▏`.
+        // field begins three columns further along: `│ ADD ▏`.
         assert_eq!(at("", 10), (9, 3));
         assert_eq!(at("milk", 10), (13, 3));
         // A pane with no room for the box draws no field, so the cursor is not
@@ -5146,11 +5163,11 @@ mod tests {
         // Four rows: one for the bottom line leaves three, which is a border,
         // the field, and a border. The preview is the row that goes.
         let short = with_input(40, 4, &tasks, &Input::adding(today()), Glyphs::Unicode);
-        assert!(short[1].contains(" add ▏"), "{short:?}");
+        assert!(short[1].contains(" ADD ▏"), "{short:?}");
         // Three rows leave two, and two rows are both border: nothing is drawn
         // rather than a box with nowhere to type in it.
         let shorter = with_input(40, 3, &tasks, &Input::adding(today()), Glyphs::Unicode);
-        assert!(!shorter.iter().any(|r| r.contains("add")), "{shorter:?}");
+        assert!(!shorter.iter().any(|r| r.contains("ADD")), "{shorter:?}");
     }
 
     /// One row is held back whatever happens, so a message never pushes the list
@@ -5437,7 +5454,7 @@ mod tests {
         let text = screen.join("\n");
 
         assert!(
-            text.contains(&format!("add ▏{EXAMPLE}")),
+            text.contains(&format!("ADD ▏{EXAMPLE}")),
             "the field is not the one `a` opens: {text}"
         );
         assert!(
@@ -5453,7 +5470,7 @@ mod tests {
         // being a line, because losing it entirely is the one thing a short pane
         // must not do.
         let short = rendered(60, 12, &[]).join("\n");
-        assert!(!short.contains("add ▏"), "the box did not fit: {short}");
+        assert!(!short.contains("ADD ▏"), "the box did not fit: {short}");
         assert!(
             short.contains(&format!("Try:  a  then  {EXAMPLE}")),
             "{short}"
@@ -5484,7 +5501,7 @@ mod tests {
             .iter()
             .map(|c| c.symbol())
             .collect();
-        assert!(ascii.contains("add |"), "{ascii}");
+        assert!(ascii.contains("ADD |"), "{ascii}");
         assert!(ascii.is_ascii(), "something non-ASCII reached it: {ascii}");
     }
 

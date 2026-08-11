@@ -1076,7 +1076,7 @@ fn the_input_mode_captures_a_task_and_ctrl_c_only_cancels_it() {
     let (raw, _, file) = run(b"amilk @tomorrow #home\x1bq");
     // The label and the caret are two spans and no longer contiguous in the
     // stream: the label is bold, so the reset sits between them.
-    assert!(raw.contains(" add"), "no input field opened: {raw:?}");
+    assert!(raw.contains(" ADD"), "no input field opened: {raw:?}");
     assert!(raw.contains("▏"), "no input field opened: {raw:?}");
     assert!(
         raw.contains("due tomorrow ("),

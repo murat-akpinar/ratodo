@@ -45,10 +45,10 @@ of these rows.
 
 | Colour | Its one job | Everywhere it appears |
 |---|---|---|
-| `foreground` | **the user's own words** | task titles, the line being typed, help descriptions |
-| `dim` | **a secondary fact** | dates that are not pressing, tags in a preview, the caret, the hint bar, `add`/`edit`/`put off` labels, the empty-box example |
+| `foreground` | **full brightness: the user's own words, and the name of the mode they are in** | task titles, the line being typed, help descriptions, the `ADD` / `EDIT` / `PUT OFF` labels (bold) |
+| `dim` | **a secondary fact** | dates that are not pressing, tags in a preview, the caret, the hint bar, the empty-box example |
 | `border` | **furniture** — frames and rules, never content | the main frame, the column rules `│`, the preview separators, heading rules |
-| `accent` | **the tool pointing at something** | group headings, the input box's own border, the focused cell of the date field, the key names in `?`, `→ work.md`, a resolved `@thu` and the day `p` lands on, the `copy` label |
+| `accent` | **the tool pointing at something** | group headings, the input box's own border, the focused cell of the date field, the key names in `?`, `→ work.md`, a resolved `@thu` and the day `p` lands on, the `COPY` label |
 | `overdue` | **the negative outcome** | an overdue row and its date, a cancelled row, every warning and refusal in the bottom line and the preview |
 | `today` | **due today** | a row due today and its date |
 | `done` | **finished** | a ticked row, the `✓`, the progress bar |
@@ -61,6 +61,18 @@ Two things follow from the table that are easy to get wrong:
   task title is not. A resolved date under the input is us saying *this is what
   we understood*; the date on the row is the task's own and wears the row's
   colour. When something is in doubt, ask whether the user typed it.
+- **A label is lit by weight, not by a colour of its own.** The four box labels
+  are `foreground` and bold — full brightness against the dim caret beside them
+  — and only `COPY` takes the accent, because only `COPY` has news. Giving them
+  a hue would have meant a thirteenth role and a seventh meaning on the screen,
+  which is the sprawl this table exists to stop. The palette is not the limit
+  here: Catppuccin Mocha has fourteen accent colours and the other five built-in
+  themes do not, so a role has to be fillable in `nord`, `gruvbox-dark` and a
+  bare `terminal` too.
+- **The tool's own words are upper case.** `OVERDUE`, `TODAY`, `LATER` on the
+  list and `ADD`, `EDIT`, `COPY`, `PUT OFF` in the box. A user's heading keeps
+  its `##` and its own casing; ours does not need one, because the case already
+  says whose word it is.
 - **A field never borrows the row's colour.** `!high` on a late row used to be
   drawn in `overdue`, which made the date and the priority the same red on the
   one row where they most need telling apart. Every field keeps its own job's

@@ -379,7 +379,7 @@ The input box paints it the same two ways, because a box teaching a colour the
 list then contradicts is worse than either of them alone. On the `terminal`
 theme it is ANSI 6, the one index the other eleven roles had left.
 
-### Only `copy` is lit → every label is → only `copy` again (2026-08-12)
+### Only `copy` is lit → every label is → lit by weight, and upper case (2026-08-12)
 
 **Was, and is again:** the input box's first word is dim for `add`, `edit` and
 `put off`, and in the accent only for `copy`. `copy` is the one with something to
@@ -395,9 +395,22 @@ day, it made mauve mean six things at once — see
 [design.md](design.md#what-each-colour-means), which was written out of exactly
 this.
 
-If a lit label is ever wanted again, the way to do it is weight or `foreground`,
-not the accent: the accent is the tool's voice and the border is already using
-it here.
+**And that is what it became, an hour later.** Asked for a third time — *can the
+labels be a different colour* — and the answer the scheme allows is the one the
+line above already named: **`foreground` and bold**, full brightness against the
+dim caret beside them, with `COPY` alone keeping the accent because `COPY` is
+the only one with news. Lit, and not a seventh meaning on the screen.
+
+**A thirteenth role was the alternative and it was refused.** Catppuccin Mocha
+does have fourteen accent colours — the palette was never the limit. `nord`,
+`gruvbox-dark`, `dracula` and a bare ANSI `terminal` are, because a role has to
+be fillable in all six built-ins, and more than that: every hue added is a
+meaning the reader has to learn. Twelve is the ceiling.
+
+**They are upper case now**, the way `OVERDUE`, `TODAY` and `LATER` are: both
+are the tool's own word rather than the user's, and the screen says so the same
+way twice. A heading out of the user's file keeps its `##` *and* its own casing,
+which is what still tells the two apart.
 
 ### The input box opens empty → it opens on today (2026-08-12)
 
