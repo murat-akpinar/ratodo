@@ -1,3 +1,8 @@
+## [unreleased]
+
+### ⚙️ Miscellaneous Tasks
+
+- Point the PKGBUILD at v0.7.0 ([1801138](https://github.com/murat-akpinar/ratodo/commit/1801138859cbe09a6a533d433d5e78edd5a30956))
 ## [0.7.0] - 2026-08-11
 
 ### 🚀 Features
@@ -13,6 +18,7 @@ Mauve had become the answer to six questions: the group headings, the input box 
 ### ⚙️ Miscellaneous Tasks
 
 - Point the PKGBUILD at v0.6.0 ([596d654](https://github.com/murat-akpinar/ratodo/commit/596d654e56cb8f190d906090dc0d3622edfb4195))
+- *(release)* V0.7.0 ([7dedb1f](https://github.com/murat-akpinar/ratodo/commit/7dedb1f8d74c9d8afc8c2c7030f47aac45b2dc2e))
 ## [0.6.0] - 2026-08-11
 
 ### 🚀 Features
