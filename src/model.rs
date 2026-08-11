@@ -161,6 +161,24 @@ impl Task {
     }
     // -- ALAN END --
 
+    /// What makes this the same task as before: the section it sits in and its
+    /// title.
+    ///
+    /// Deliberately **not** the raw line — a date moved or a tag added is the
+    /// same task with a new line, and a calendar entry or a cursor that let go
+    /// of it there would be letting go on every edit. Deliberately not the row
+    /// number either, which is the thing a reload has just rearranged.
+    ///
+    /// `\u{1}` between the two because it cannot occur in either: a section
+    /// called `a` holding `b#c` must not collide with `a#c` holding `b`.
+    pub fn identity(&self) -> String {
+        format!(
+            "{}\u{1}{}",
+            self.section.as_deref().unwrap_or(""),
+            self.title
+        )
+    }
+
     /// A completed task is never overdue, however long ago it was due.
     pub fn is_overdue(&self, today: NaiveDate) -> bool {
         !self.done && self.due.is_some_and(|d| d.date < today)

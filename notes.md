@@ -101,9 +101,10 @@ surface.
 - **`line_no` goes stale after `push_task`.** Now that a captured task is
   inserted after the last task rather than at EOF, every line below it keeps the
   number it had at parse time. Nothing reads `line_no` after a mutation today —
-  `add` pushes, saves and exits — but the TUI in step 6 tracks selection by task
-  identity, and this is exactly the kind of thing that quietly becomes that
-  identity. Either renumber on insert or never let `line_no` outlive a parse.
+  `add` pushes, saves and exits. It did *not* become the selection's identity in
+  step 6: that is `Task::identity`, the section and the title, shared with the
+  `.ics` UID. So this is now a trap rather than a bug — either renumber on
+  insert or never let `line_no` outlive a parse.
 *(chezmoi and `set autoread` moved out of here on 2026-08-11: both are README
 sections now. The `e` / reader-thread question left on 2026-08-11 too — the
 answer was to go back to `poll`, and it is written up in

@@ -238,10 +238,11 @@ impl Screen {
         screen
     }
 
-    /// Swaps the list for a freshly read one and tries to leave the cursor where
-    /// it was. Matching on the raw line is not the identity tracking docs/tui.md
-    /// asks for — that is step 6 — but it covers the case that actually happens:
-    /// `ratodo add` in another pane pushing rows around underneath you.
+    /// Swaps the list for a freshly read one and leaves the cursor on the task
+    /// it was on — by identity, not by row, so `ratodo add` in another pane
+    /// pushing four rows in above it does not move it, and neither does the task
+    /// itself changing. A tool that loses your place while you are reading it is
+    /// not usable as a side pane — docs/tui.md#write-conflict.
     pub fn replace(&mut self, rows: Vec<Row>) {
         self.all = rows;
         self.refresh();
@@ -255,7 +256,7 @@ impl Screen {
     /// nearest task. Sending it to the top of the list would be the one thing a
     /// side pane must not do.
     fn refresh(&mut self) {
-        let was_on = self.task().map(|t| t.raw.clone());
+        let was_on = self.task().map(Task::identity);
         let was_at = self.state.selected().unwrap_or(0);
 
         self.rows = Vec::with_capacity(self.all.len());
@@ -290,10 +291,17 @@ impl Screen {
             }
         }
 
-        let kept = was_on.and_then(|raw| {
+        // The nearest match, not the first. Two tasks with the same title in the
+        // same section share an identity, and the one that was under the cursor
+        // is the one closest to where the cursor was — picking the first would
+        // send it up the screen every time somebody has two `call the bank`s.
+        let kept = was_on.and_then(|id| {
             self.rows
                 .iter()
-                .position(|r| matches!(r, Row::Task(t) if t.raw == raw))
+                .enumerate()
+                .filter(|(_, r)| matches!(r, Row::Task(t) if t.identity() == id))
+                .map(|(i, _)| i)
+                .min_by_key(|i| i.abs_diff(was_at))
         });
         let near = (was_at..self.rows.len())
             .find(|&i| self.is_selectable(i))
@@ -1506,6 +1514,58 @@ mod tests {
             screen.task().map(|t| t.title.as_str()),
             Some("three"),
             "the cursor followed the row number instead of the task"
+        );
+    }
+
+    /// The task itself changed — somebody ran `ratodo done` in the next pane, or
+    /// a `git pull` brought a tag with it. The line is not the task, so the
+    /// cursor has no business letting go of it.
+    #[test]
+    fn a_reload_holds_on_to_a_task_whose_line_changed() {
+        let before = in_section(&[("one", "S"), ("two", "S"), ("three", "S")]);
+        let groups = agenda(&before, today());
+        let mut screen = Screen::new(rows(&groups));
+        screen.move_by(1);
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("two"));
+
+        // Ticked and tagged from outside, and pushed down the list by an insert.
+        let mut ticked = capture("two #ops", today());
+        ticked.section = Some("S".into());
+        ticked.set_done(true);
+        let mut after = in_section(&[("inserted", "S"), ("one", "S")]);
+        after.push(ticked);
+        after.extend(in_section(&[("three", "S")]));
+
+        screen.replace(rows(&agenda(&after, today())));
+        assert_eq!(
+            screen.task().map(|t| t.title.as_str()),
+            Some("two"),
+            "the cursor followed the raw line instead of the task"
+        );
+        assert!(screen.task().unwrap().done);
+    }
+
+    /// Two tasks can be the same task as far as identity goes. The cursor stays
+    /// with the nearer of them rather than jumping to the first — picking the
+    /// first would walk it up the screen every time somebody keeps two
+    /// `call the bank`s in one section.
+    #[test]
+    fn a_duplicated_title_keeps_the_cursor_on_the_nearer_one() {
+        let tasks = in_section(&[
+            ("call the bank", "S"),
+            ("filler", "S"),
+            ("call the bank", "S"),
+        ]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        screen.bottom();
+        let was = screen.selected();
+
+        screen.replace(rows(&agenda(&tasks, today())));
+        assert_eq!(
+            screen.selected(),
+            was,
+            "the cursor jumped to the other one of the pair"
         );
     }
 

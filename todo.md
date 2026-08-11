@@ -88,8 +88,7 @@ the abandonment risk in [docs/risks.md](docs/risks.md).
       [docs/decisions.md](docs/decisions.md#reversed))*
 - [x] inotify: re-read when the file changes from outside. The watch is on the
       **directory**, because every safe writer renames over the file
-- [x] The cursor stays on its task across a reload — matched by raw line. Full
-      identity tracking is step 6
+- [x] The cursor stays on its task across a reload — by identity, see step 6
 
 ## 4.5 — ics (was step 3; moved behind the TUI)
 
@@ -143,7 +142,9 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
       input mode
 - [x] Write-conflict line with `r` reload. A refusal while the input is open
       re-reads by itself and hands the typed text back to the field
-- [ ] Selection survives reload — track by identity, not row index
+- [x] Selection survives reload — by identity, not row index. `Task::identity`
+      is the section and the title, and it is the same one the `.ics` UID is
+      built from, so "the same task" has one definition
 - [x] A toggled task does not change position until the next reload
 - [x] Empty state with the file path and a worked example
 - [x] `?` help overlay — only the keys that are built, and `esc` closes it

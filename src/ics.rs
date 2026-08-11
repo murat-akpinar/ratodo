@@ -71,11 +71,9 @@ fn ics_priority(p: Priority) -> u8 {
 /// tasks that are genuinely identical get an occurrence number mixed in, because
 /// two VTODOs sharing a UID is one entry as far as any client is concerned.
 fn uid(task: &Task, seen: &mut HashMap<String, u32>) -> String {
-    let base = format!(
-        "{}\u{1}{}",
-        task.section.as_deref().unwrap_or(""),
-        task.title
-    );
+    // The same identity the cursor holds on to across a reload — one definition
+    // of "the same task", so the two cannot drift apart. See model.rs.
+    let base = task.identity();
 
     let nth = seen.entry(base.clone()).or_insert(0);
     *nth += 1;
