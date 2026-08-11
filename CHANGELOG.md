@@ -36,6 +36,8 @@ The keys `lf`, `ranger` and `yazi` users arrive with: `h` collapses the group un
 `d` removes the selected task immediately and `u` puts it back — the trade docs/tui.md makes, where a confirmation prompt would tax every delete to catch the rare wrong one.
 - *(ui)* Input mode, with a live parse preview ([59cdbd0](https://github.com/murat-akpinar/ratodo/commit/59cdbd006044488a68f1608e69f4d4c12fce1673))
 `a` and `o` open a field on the bottom line and `⏎` opens it already holding the selected task. While it is open the keyboard belongs to it — `q` and `d` are letters in there, which is what makes "you can never be in a mode you did not open" true by construction. `esc` and `ctrl-c` both cancel, and `ctrl-c` in here never quits: somebody half-way through a sentence loses the sentence, not the session.
+- *(ui)* Keep the selection on the task, not on its line ([14dfde6](https://github.com/murat-akpinar/ratodo/commit/14dfde60e5e9c43fe8c359bd8757900a372be211))
+The cursor followed the raw line, so anything that rewrote it let go: a `ratodo done` in the next pane, a tag arriving over `git pull`, a date moved. The line is not the task.
 
 ### 🐛 Bug Fixes
 
