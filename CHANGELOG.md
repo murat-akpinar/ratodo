@@ -1,3 +1,26 @@
+## [0.2.0] - 2026-08-11
+
+### 🚀 Features
+
+- *(cli)* [**breaking**] Read every list in the config directory as one agenda ([c08c96b](https://github.com/murat-akpinar/ratodo/commit/c08c96ba3bdfc7019fd541d03261238f9bfe2a2c))
+Somebody who keeps work.md, personal.md and 2026.md apart on disk still wants one screen. Every `*.md` in the config directory is now a list; `--file` and `$RATODO_FILE` still name exactly one.
+- *(format)* [**breaking**] A third state, a completion date, and p to put one off ([fd38a23](https://github.com/murat-akpinar/ratodo/commit/fd38a23309f65f02796e4a00ced507094e76c50e))
+Four things the list could not say, and one it said too quietly.
+
+### 🐛 Bug Fixes
+
+- *(ui)* Colour the parse preview field by field ([7173a34](https://github.com/murat-akpinar/ratodo/commit/7173a34619999c5d6d1d439a77d10ef37c9412a4))
+The row under the input was one accent-coloured string, which said the parser had understood all of it equally: the resolved date and the tag came out the same colour in the one row whose job is telling them apart.
+
+### 📚 Documentation
+
+- The three states, the stamp, p, and two reversals ([3e57ca4](https://github.com/murat-akpinar/ratodo/commit/3e57ca4a7d5caae490d34fd3b0a0624e8c44546b))
+format.md gains the state and stamp rows plus the two sections behind them; tui.md gains the `p` box, the finished-row colour and date, and an adaptive hint bar in place of a fixed six. decisions.md records three settled decisions and three reversals — grey to green, `x` staying unbound while `X` takes the job, and `:` `/` leaving the overlay to make room.
+
+### 🧪 Testing
+
+- *(cli)* Pin what Live knows about its files ([4c122de](https://github.com/murat-akpinar/ratodo/commit/4c122de870e115e311c6f70013c723cc0cfd0364))
+- *(cli)* Pin that the loop only reads the disk when the watcher spoke ([07be08a](https://github.com/murat-akpinar/ratodo/commit/07be08a3c36782475957e1523d114d95ac7f0be0))
 ## [0.1.0] - 2026-08-11
 
 ### 🚀 Features
