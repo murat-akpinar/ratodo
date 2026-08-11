@@ -46,6 +46,8 @@ The right-aligned block only reads down its edge when every row ends in the same
 OVERDUE is ours and Work came out of the file, and as the same bold word plus the same rule nothing on the screen said which was which. The user's headings now keep the ## they already carry in the file: no second colour, no third level of hierarchy, and it survives the ASCII fallback.
 - *(ui)* Give !high the weight the user meant by it ([22ef83d](https://github.com/murat-akpinar/ratodo/commit/22ef83d25f5378c5b8413a8289de4a0f4ea8aa60))
 The one field somebody typed to mean urgent sat in the same grey as the date and the tags. It is bold now, in the row's own colour — weight rather than a twelfth theme role, so it still reads under NO_COLOR and does not collide with overdue on the rows that have both. !med and !low stay quiet, and a ticked task is not urgent however it was filed.
+- *(ui)* Colour the date only when it presses ([e520b4a](https://github.com/murat-akpinar/ratodo/commit/e520b4aff0c3c682ca864dcd7b68f426a8e4eb59))
+The date column is where the lateness is, and it was the one field saying so in grey while the title beside it went red. It takes overdue for a late task and today for one due today — the two roles the title already uses, so nothing new to theme — and stays dim for everything else. A finished task's date is dim whatever it says: it is neither late nor due.
 
 ### 🐛 Bug Fixes
 
