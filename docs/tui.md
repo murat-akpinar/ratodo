@@ -208,19 +208,19 @@ nothing is given up, and the box lands where the eye already is:
  ⏎ save   esc cancel
 ```
 
-**The box opens with today's date already in it**, and the caret after it:
+**The box opens with today's date already in it, behind the caret:**
 
 ```
-│  │ add ▏@2026-08-12 ▏                                    │ │
+│  │ add ▏▏ @2026-08-12                                    │ │
 │  ├───────────────────────────────────────────────────────┤ │
 │  │      due today (2026-08-12)                           │ │
 ```
 
 Today is the date a new task has more often than every other date put together,
 and the box is the cheapest place in the tool to change one — `tab` and the
-arrows, or four keystrokes over the digits. Type the title straight on; the
-fields come out in canonical order when it is written, so a date at the front of
-the box is a date at the back of the line.
+arrows, or four keystrokes over the digits. **Behind** the caret because the date
+is the field the tool guessed and the title is the one you came to type: it goes
+first, where the written line has it and where the row on the screen reads it.
 
 **A date you type takes that one's place.** `capture` gives the line to the
 first `@`, and the first one here is the one nobody typed — so the shorthand

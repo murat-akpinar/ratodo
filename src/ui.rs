@@ -376,9 +376,15 @@ impl Input {
     /// Pre-filled with today, because that is the date a new task has more often
     /// than every other date put together, and the box is where it is cheapest
     /// to change — docs/tui.md#adding.
+    ///
+    /// **Behind the caret, not in front of it.** The date is the field the tool
+    /// guessed; the title is the one the user came to type, and it goes where
+    /// the line puts it — first, the way the written line has it and the way the
+    /// row on the screen reads.
     pub fn adding(today: NaiveDate) -> Self {
-        let opening = format!("@{today} ");
+        let opening = format!(" @{today}");
         Input {
+            at: 0,
             opened_with: Some(opening.clone()),
             ..Input::new(opening, Purpose::Add)
         }
@@ -4070,8 +4076,10 @@ mod tests {
     #[test]
     fn adding_opens_with_todays_date_in_the_box() {
         let input = Input::adding(today());
-        assert_eq!(input.text, "@2026-08-10 ");
-        assert_eq!(input.at, input.text.len());
+        // Behind the caret: the title is typed where the written line has it,
+        // and the date the tool guessed sits after it.
+        assert_eq!(input.text, " @2026-08-10");
+        assert_eq!(input.at, 0);
 
         // And it is a real date to everything downstream, not decoration: the
         // preview reads it, and `capture` takes it out of the title.
@@ -4116,7 +4124,7 @@ mod tests {
         for c in "milk".chars() {
             plain.insert(c);
         }
-        assert_eq!(plain.text, "@2026-08-10 milk");
+        assert_eq!(plain.text, "milk @2026-08-10");
     }
 
     /// `y` fills the box the same way `⏎` does and then means something else by

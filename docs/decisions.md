@@ -354,11 +354,14 @@ thing that ever carried the meaning — the colour only ever made someone glance
 `tab` opened the date field on today, which is the same answer two keystrokes
 further away and behind a key most people never press.
 
-**Now:** the box opens with `@2026-08-12 ` in it and the caret after it. Today is
-the date a new task has more often than every other date put together, and this
-is the one field the tool can guess right most of the time. Guessing it in the
-*box* rather than at the write is what keeps it honest: it is on the screen,
-under the preview, and one backspace from gone.
+**Now:** the box opens with ` @2026-08-12` in it and the caret **in front of
+it**. Today is the date a new task has more often than every other date put
+together, and this is the one field the tool can guess right most of the time.
+Guessing it in the *box* rather than at the write is what keeps it honest: it is
+on the screen, under the preview, and a few keystrokes from gone. The date sits
+behind the caret and not in front of it because it is the field the tool
+guessed — the title is the one the user came to type, and it goes where the
+written line and the row on the screen both put it, first.
 
 **What it decides on the way past:**
 
