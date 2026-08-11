@@ -48,6 +48,10 @@ Four defects that two audience design reviews turned up in code that was already
 - *(cli)* Stop panicking when the reader closes the pipe ([6b8219c](https://github.com/murat-akpinar/ratodo/commit/6b8219c5d7f6429502d6cbea865e4ba8299906a6))
 `ratodo list | head -3` closed the pipe half way through and `println!` turned the next write into a panic — a backtrace and exit 101 for a command that did nothing wrong, and `| head` is the first thing this audience types. Found by running the binary, not by a test.
 
+### 🚜 Refactor
+
+- *(parse)* Drop line_no, which nothing read and nothing kept true ([53ce4ed](https://github.com/murat-akpinar/ratodo/commit/53ce4ed00eda86d57936296f0d2ecdfbcbd1ae23))
+
 ### 📚 Documentation
 
 - Restructure the design record into a docs/ directory ([81aba9d](https://github.com/murat-akpinar/ratodo/commit/81aba9d1ee5bf9700ed26ebbbfd334abe2c3ad40))
