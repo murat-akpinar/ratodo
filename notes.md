@@ -127,12 +127,5 @@ surface.
   record, and replacing it with "4 wakeups a second" is a change to a claim we
   have made in public.
 
-- **chezmoi.** `chezmoi apply` will overwrite a live `todo.md` from its stale
-  source copy. stow and bare-git symlinks are fine. This needs a README
-  paragraph, not code — but it needs one, because the docs promise dotfiles
-  integration and currently say nothing about it.
-- **nvim clobbering ratodo, not the other way round.**
-  [docs/architecture.md](docs/architecture.md#concurrent-editing) covers inotify
-  telling ratodo about an outside edit. The reverse — their nvim is already open
-  on the file in another pane, ratodo writes, then they `:w` — is not covered.
-  `set autoread` in the README is probably the whole answer.
+*(chezmoi and `set autoread` moved out of here on 2026-08-11: both are README
+sections now.)*

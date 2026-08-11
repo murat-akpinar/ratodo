@@ -155,11 +155,13 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
 
 ## 7 — Release
 
-- [ ] README: khal and Thunderbird subscription steps
-- [ ] README: `set autoread` for people with nvim open on the file in another pane
-- [ ] README: a `.chezmoiignore` note — `chezmoi apply` overwrites a live `todo.md`
-- [ ] `completions/ratodo.{bash,zsh,fish}` — hand-written, no `clap_complete`
-- [ ] Time a cold start; the `$mod+t` scratchpad makes it a spec, aim under 50 ms
+- [x] README: khal and Thunderbird subscription steps
+- [x] README: `set autoread` for people with nvim open on the file in another pane
+- [x] README: a `.chezmoiignore` note — `chezmoi apply` overwrites a live `todo.md`
+- [x] `completions/ratodo.{bash,zsh,fish}` — hand-written, no `clap_complete`, and a
+      test asks the binary what it answers to so they cannot rot quietly
+- [x] Time a cold start; the `$mod+t` scratchpad makes it a spec, aim under 50 ms
+      — measured 1.2 ms median for `list`, 20 runs
 - [ ] `cargo publish --dry-run`
 - [ ] Tag `v0.1.0`, generate the changelog with git-cliff
 - [ ] `flake.nix` (`rustPlatform.buildRustPackage`) and an AUR `PKGBUILD` — a tag

@@ -1074,6 +1074,63 @@ fn an_empty_no_color_is_not_a_request_for_no_colour() {
     );
 }
 
+/// Hand-written completions rot: a seventh subcommand lands in `clap` and
+/// nobody remembers the three files in `completions/`. This asks the binary
+/// what it answers to and checks each shell was told.
+#[test]
+fn every_subcommand_and_flag_reaches_all_three_shells() {
+    let help = String::from_utf8_lossy(&run(&["--help"]).stdout).into_owned();
+
+    // clap prints the subcommands one per line, indented, under "Commands:".
+    let commands: Vec<String> = help
+        .lines()
+        .skip_while(|l| !l.starts_with("Commands:"))
+        .skip(1)
+        .take_while(|l| l.starts_with("  ") && !l.trim().is_empty())
+        .filter_map(|l| l.split_whitespace().next())
+        .filter(|name| *name != "help")
+        .map(str::to_string)
+        .collect();
+
+    assert!(
+        commands.len() >= 6,
+        "did not find the subcommands in --help: {commands:?}"
+    );
+
+    let list_flags = String::from_utf8_lossy(&run(&["list", "--help"]).stdout).into_owned();
+    let flags: Vec<String> = list_flags
+        .split_whitespace()
+        .filter(|w| w.starts_with("--") && w.len() > 2)
+        .map(|w| w.trim_end_matches(',').to_string())
+        .collect();
+
+    for shell in ["bash", "zsh", "fish"] {
+        let script = fs::read_to_string(format!(
+            "{}/completions/ratodo.{shell}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap_or_else(|e| panic!("completions/ratodo.{shell}: {e}"));
+
+        for command in &commands {
+            assert!(
+                script.contains(command.as_str()),
+                "{shell} does not know about `{command}`"
+            );
+        }
+        for flag in &flags {
+            // fish spells a long option `-l name`, not `--name`.
+            let spelling = match shell {
+                "fish" => format!("-l {}", flag.trim_start_matches('-')),
+                _ => flag.clone(),
+            };
+            assert!(
+                script.contains(&spelling),
+                "{shell} does not know about `{flag}` (looked for {spelling:?})"
+            );
+        }
+    }
+}
+
 #[test]
 fn unknown_arguments_fail_loudly() {
     let out = run(&["--nonsense"]);

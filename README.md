@@ -202,7 +202,59 @@ they differ a lot:
 | GNOME Calendar | ⚠️ mostly wants `webcal://` |
 | Google Calendar | ❌ ignores VTODO entirely |
 
-Details and subscription steps: [`docs/calendar.md`](docs/calendar.md).
+Subscribing:
+
+```console
+$ khal                      # ~/.config/khal/config
+[[calendars]]
+[[[todo]]]
+path = ~/.local/share/ratodo/todo.ics
+type = calendar
+```
+
+Thunderbird: **New Calendar → On My Computer**, then point it at the same file.
+Both read it; neither writes back, which is the whole design.
+
+Details: [`docs/calendar.md`](docs/calendar.md).
+
+## Living in your dotfiles
+
+`todo.md` is meant to be symlinked into your dotfiles repo. Two things are worth
+knowing before you do it:
+
+**chezmoi will overwrite your list.** `chezmoi apply` writes its source copy over
+the live file, and its source copy is whatever it was when you last added it — so
+every task captured since then disappears. Add it to `.chezmoiignore`:
+
+```
+.config/ratodo/todo.md
+```
+
+and let ratodo own the file. `stow` and a bare git repo have no such problem; they
+symlink, and a symlink is exactly what ratodo expects.
+
+**If you keep the file open in nvim**, ratodo's writes land underneath you and
+`:w` will put your stale buffer back over them. `set autoread` fixes it:
+
+```vim
+set autoread
+autocmd FocusGained,BufEnter * checktime
+```
+
+The reverse direction is already handled — ratodo watches the file and picks up
+anything you save from an editor on its own.
+
+## Completions
+
+Hand-written, in [`completions/`](completions/):
+
+```bash
+cp completions/ratodo.bash ~/.local/share/bash-completion/completions/ratodo
+cp completions/ratodo.zsh  ~/.zfunc/_ratodo          # with ~/.zfunc on $fpath
+```
+```fish
+cp completions/ratodo.fish ~/.config/fish/completions/ratodo.fish
+```
 
 ## Install
 
