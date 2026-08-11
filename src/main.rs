@@ -996,6 +996,13 @@ fn run(
                             }
                             None => notice = ui::Notice::Said("nothing to edit here".to_string()),
                         },
+                        ui::Action::Duplicate => match live.screen.task() {
+                            Some(task) => {
+                                input = Some(ui::Input::duplicating(task, today));
+                                helping = false;
+                            }
+                            None => notice = ui::Notice::Said("nothing to copy here".to_string()),
+                        },
                         ui::Action::Postpone => match live.screen.task() {
                             Some(task) => {
                                 input = Some(ui::Input::postponing(task));

@@ -10,9 +10,19 @@ that is actually open is the short list directly under this line.
 
 ## What is left
 
-Four items. One is code in the product and came out of a day of real use; the
+Four open. One is code in the product and came out of a day of real use; the
 other three are packaging. Nothing here blocks anything else, so the order is by
-reach rather than by dependency.
+reach rather than by dependency. The ticked one at the top came out of the same
+day of use and is kept here rather than moved down, because the reasoning in it
+is about a key that was asked for and does not exist.
+
+- [x] **Copying a task means retyping it.** A task that is nearly one you already
+      have — same tag, same shape, different day — had no way in but `a` and the
+      whole line again. `y` opens the input box pre-filled with the selected
+      task, as a new one, and `⏎` saves it. Asked for as `y`/`p` with a register;
+      `p` is taken and the register bought nothing, because a capture lands in
+      the capture target wherever the cursor is. See
+      [docs/decisions.md](docs/decisions.md#settled)
 
 - [ ] **A date that does not exist is accepted in silence.** Found in use on
       2026-08-11: `@2026-13-45` resolves to nothing, so the whole word falls

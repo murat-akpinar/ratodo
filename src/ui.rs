@@ -27,11 +27,16 @@ pub enum Action {
     Add,
     /// `⏎` — the same input, pre-filled with the selected task.
     Change,
+    /// `y` — the same input again, pre-filled with a *copy* of the selected
+    /// task, so a near-duplicate is an edit rather than a retype. What comes
+    /// back is a new task: nothing is written until `⏎`, and the file is not
+    /// touched at all if the box is cancelled.
+    Duplicate,
     /// `h` `l` `z` — collapse or open the group under the cursor.
     Fold(Fold),
-    /// `d` — immediately, with `u` to take it back.
+    /// `X` — immediately, with `u` to take it back.
     Delete,
-    /// `X` — decided against rather than finished. `- [-]` in the file.
+    /// `d` — decided against rather than finished. `- [-]` in the file.
     Cancel,
     /// `p` — opens the input to ask how long for, and moves the date alone.
     Postpone,
@@ -90,6 +95,7 @@ pub fn action(key: KeyEvent) -> Action {
         // one that asks for shift. `d` is the reversible neighbour — docs/tui.md#keys.
         KeyCode::Char('X') => Action::Delete,
         KeyCode::Char('p') => Action::Postpone,
+        KeyCode::Char('y') => Action::Duplicate,
         KeyCode::Char('e') => Action::Edit,
         KeyCode::Char('r') => Action::Reload,
         KeyCode::Char('?') => Action::Help,
@@ -181,6 +187,19 @@ impl Input {
     /// make the common case *delete* something before typing.
     pub fn postponing(task: &Task) -> Self {
         Input::new(String::new(), Purpose::Postpone(task.raw.clone()))
+    }
+
+    /// Pre-filled the same way as an edit, but as a new task: `Purpose::Add`,
+    /// so `⏎` captures instead of rewriting the line it was copied from.
+    ///
+    /// The copy is re-opened first, which is what takes the completion stamp
+    /// back off: `capture` has never heard of `✓2026-08-11` and would have left
+    /// it sitting in the new task's title. Reusing `set_state` rather than
+    /// stripping the word here keeps one definition of where the stamp lives.
+    pub fn duplicating(task: &Task, today: NaiveDate) -> Self {
+        let mut copy = task.clone();
+        copy.set_state(State::Open, today);
+        Input::new(copy.body().to_string(), Purpose::Add)
     }
 
     pub fn insert(&mut self, c: char) {
@@ -1111,13 +1130,14 @@ pub enum Notice {
 fn hints(width: usize, glyphs: Glyphs) -> String {
     const SEP: &str = "  ";
     let tail = format!("{SEP}? keys{SEP}q quit");
-    let keys: [(&str, &str); 6] = [
+    let keys: [(&str, &str); 7] = [
         ("j k", "move"),
         ("spc", "done"),
         ("a", "add"),
         (glyphs.enter(), "edit"),
         ("d", "cancel"),
         ("p", "put off"),
+        ("y", "copy"),
     ];
 
     let mut out = String::new();
@@ -1509,7 +1529,13 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
         ("g G".to_string(), "top / bottom"),
         ("ctrl-d ctrl-u".to_string(), "half page"),
         ("spc".to_string(), "toggle done"),
-        (format!("a o  {}", render.glyphs.enter()), "add / edit"),
+        // Three to this row rather than an eleventh: at ten keys plus a border
+        // the box still fits a fourteen-row pane, and `y` is a third way into
+        // the same input box, so it belongs beside the other two anyway.
+        (
+            format!("a o  {}  y", render.glyphs.enter()),
+            "add / edit / copy",
+        ),
         ("X  u".to_string(), "delete / undo"),
         ("d  p".to_string(), "cancel / put off"),
         ("h l  z".to_string(), "fold this group"),
@@ -1954,7 +1980,7 @@ mod tests {
                 "│▌ !│  g G            top / bottom         │ago│",
                 "│   │  ctrl-d ctrl-u  half page            │   │",
                 "│   │  spc            toggle done          │   │",
-                "│   │  a o  ⏎         add / edit           │   │",
+                "│   │  a o  ⏎  y      add / edit / copy    │   │",
                 "│   │  X  u           delete / undo        │   │",
                 "│   │  d  p           cancel / put off     │   │",
                 "│   │  h l  z         fold this group      │   │",
@@ -2079,6 +2105,10 @@ mod tests {
         // `x` is unbound and `d` is the reversible neighbour.
         assert_eq!(action(press(KeyCode::Char('X'))), Action::Delete);
         assert_eq!(action(press(KeyCode::Char('x'))), Action::Ignore);
+        // `y` is the vim yank the hand goes for; `p` is not free to be the
+        // paste, because it has put a date off since v0.2.0.
+        assert_eq!(action(press(KeyCode::Char('y'))), Action::Duplicate);
+        assert_eq!(action(press(KeyCode::Char('p'))), Action::Postpone);
     }
 
     /// Windows sends a release for every press. Acting on both moves the cursor
@@ -3500,6 +3530,54 @@ mod tests {
         assert_eq!(Input::adding().purpose, Purpose::Add);
         // At the end, so a retype carries on from where the line stops.
         assert_eq!(input.at, input.text.len());
+    }
+
+    /// `y` fills the box the same way `⏎` does and then means something else by
+    /// it: what comes back is a new task, so the line it was copied from is not
+    /// the thing `⏎` rewrites.
+    #[test]
+    fn a_copy_starts_from_the_task_and_saves_as_a_new_one() {
+        let doc = crate::parse::parse("  * [ ] wash up @2026-08-12 #home !high\n");
+        let task = doc.tasks().next().unwrap();
+
+        let input = Input::duplicating(task, today());
+        assert_eq!(input.text, "wash up @2026-08-12 #home !high");
+        assert_eq!(input.purpose, Purpose::Add);
+        assert_eq!(input.purpose.raw(), None, "a copy rewrites no line");
+        assert_eq!(input.at, input.text.len());
+    }
+
+    /// The completion stamp is the field `capture` has never heard of, so a copy
+    /// of a finished task would have carried `✓2026-08-11` into the new one's
+    /// *title*. Copying something to do it again is the whole point of `y` on a
+    /// ticked row.
+    #[test]
+    fn a_copy_of_a_finished_task_does_not_carry_the_stamp() {
+        let doc = crate::parse::parse("- [x] ship the release @2026-08-08 ✓2026-08-10 #ops\n");
+        let task = doc.tasks().next().unwrap();
+
+        let input = Input::duplicating(task, today());
+        assert_eq!(input.text, "ship the release @2026-08-08 #ops");
+
+        // And it comes back open, not ticked: the copy is work to do.
+        let fresh = crate::capture::capture(&input.text, today());
+        assert_eq!(fresh.state, State::Open);
+        assert_eq!(fresh.done_on, None);
+    }
+
+    /// A cancelled task copies too, and the `[-]` does not come with it — the
+    /// state lives in the checkbox, and the copy is a fresh open one.
+    #[test]
+    fn a_copy_of_a_cancelled_task_comes_back_open() {
+        let doc = crate::parse::parse("- [-] learn the flute #someday\n");
+        let task = doc.tasks().next().unwrap();
+
+        let input = Input::duplicating(task, today());
+        assert_eq!(input.text, "learn the flute #someday");
+        assert_eq!(
+            crate::capture::capture(&input.text, today()).state,
+            State::Open
+        );
     }
 
     /// A field you can only append to is not a field: the fix for a typo four

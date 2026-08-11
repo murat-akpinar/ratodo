@@ -62,11 +62,12 @@ keymap and the way out both stay — and everything before them goes in until th
 next one would not fit. The order is how often a key is reached for:
 
 ```
-move · done · add · edit · cancel · put off
+move · done · add · edit · cancel · put off · copy
 ```
 
 So sixty columns, the narrowest pane that still counts as wide, gets through
-`⏎ edit`; a little wider brings `d cancel`, and eighty brings `p put off`. `X`
+`⏎ edit`; a little wider brings `d cancel`, eighty brings `p put off`, and
+`y copy` goes in after it on a pane wide enough for both. `X`
 and `e` are not on it at any width — delete and `$EDITOR` are both a keystroke
 away in `?`, and neither is what somebody glancing at a side pane is about to
 press. Below the wide threshold the bar drops to bare keys, `j k  spc  a  d  p
@@ -309,6 +310,42 @@ a week is still half past nine — and a task with no date at all gets one, whic
 is the only sense `p` can make of it. Before this, moving a date meant reopening
 the whole line with `⏎` and retyping it, which is a lot of keys for "not today".
 
+### Copying — `y`
+
+The third key into the same box, and for the same reason the second one was: a
+task that is nearly a task you already have should be an edit, not a retype.
+
+```
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │ add ▏water the plants @2026-08-12 #home                │ │
+│  ├───────────────────────────────────────────────────────┤ │
+│  │      due Wednesday (2026-08-12)  ·  #home             │ │
+│  └───────────────────────────────────────────────────────┘ │
+```
+
+It says `add`, and that is the whole design. `y` fills the box the way `⏎` does
+and then means something else by it: what comes back is a **new** task, so the
+line it was copied from is not the line `⏎` rewrites. Nothing is written until
+`⏎`, and a cancelled box leaves the file exactly as it was — which is the
+difference between this and a copy that lands first and is edited afterwards.
+
+Two things do not come with the copy. The **completion stamp** goes, because
+`capture` has never heard of `✓2026-08-11` and would have left it sitting in the
+new task's title — and copying a finished task to do it again is most of the
+point of `y` on a ticked row. The **state** goes with it: a copy of a `[x]` or a
+`[-]` comes back as `[ ]`, since a copy is work to do.
+
+The copy is written as a fresh capture, so its fields come out in the canonical
+order rather than where they sat in the original line. Round-trip fidelity is a
+promise about lines the tool did not touch; this is a line the tool is writing.
+
+**There is no `p` to pair it with, and no register.** `p` has put a date off
+since v0.2.0, and the paste half would have had nowhere useful to go: a capture
+lands in the capture target regardless of where the cursor is, so "paste here"
+and "paste there" would have been the same key doing the same thing. One key
+that copies the task under the cursor is the whole of what the two would have
+bought. See [decisions.md](decisions.md#settled).
+
 ## Editing
 
 `⏎` on a selected task opens the same input, pre-filled with the task's text as
@@ -447,6 +484,7 @@ is where they teach anything at all; the row they were costing is what keeps
 | `u` | undo the last change | |
 | `X` | delete | Immediate, with `u` to undo. **Capital**: the one key that takes a line out of the file is the one that asks for shift, and see the note on `x` under [Deliberately unbound](#deliberately-unbound) |
 | `p` | put the date off | Opens the input box to ask how long — `2`, `3d`, `1w`, `fri` — and moves `@` alone. Retyping the whole line through `⏎` was the only way to move a date, which is a lot of keys for "not today" |
+| `y` | copy the selected task | Opens the input box pre-filled with it, as a **new** task — edit it and `⏎` saves a second one. The vim yank the hand reaches for, and there is no `p` to pair it with. See [Copying — `y`](#copying--y) |
 | `h` / `l` | fold / unfold the group under the cursor | Not "fold LATER". In `lf`, `ranger` and `yazi` — which this audience uses daily — `h` and `l` collapse and expand *what is under the cursor*, and that muscle memory arrives with them |
 | `z` | the same, as one toggle | `z` is the vim fold prefix |
 | `e` | open `$EDITOR` | The escape hatch — a settled decision, see [product.md](product.md#product-decisions) |

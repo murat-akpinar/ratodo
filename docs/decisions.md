@@ -208,6 +208,18 @@ Three lists: what is settled, what was rejected, and what is still open.
   field-by-field date entry is the other half and is still
   [a proposal](../notes.md#the-date-field--a-proposal-not-a-decision-2026-08-11).
   See [tui.md](tui.md#adding).
+- ✅ **`y` copies a task, and there is no paste** *(2026-08-11)*. Asked for as
+  yank-and-paste with a register: `y` here, `p` there. Two things were in the
+  way. `p` has put a date off since v0.2.0 and is not free. More to the point, a
+  capture lands in the capture target no matter where the cursor is, so
+  "paste here" and "paste there" would have been one key doing one thing — the
+  register was buying nothing. What is left is `y`: the input box, pre-filled
+  with the selected task, as a new one. The completion stamp and the state do
+  not come with it. Rejected along the way: pasting a copy into the file first
+  and editing it afterwards, which is two writes, two mtime checks, and a stretch
+  where two tasks share a title — and `Task::identity` is the title, so it is
+  also a stretch where they share an `.ics` UID. See
+  [tui.md](tui.md#copying--y).
 
 ## Rejected
 
