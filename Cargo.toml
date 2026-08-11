@@ -10,6 +10,18 @@ readme = "README.md"
 keywords = ["todo", "tui", "markdown", "cli", "productivity"]
 categories = ["command-line-utilities"]
 
+# `docs/` stays in — it is the decision record, it is what this project is, and
+# `docs/examples/todo.md` is the fixture a test keeps in sync. What goes is the
+# machinery of working *on* it, which nobody installing the binary needs.
+exclude = [
+    ".vscode/",
+    "CLAUDE.md",
+    "cliff.toml",
+    "notes.md",
+    "scripts/",
+    "todo.md",
+]
+
 # Dependencies are added when the step that needs them arrives, so the build
 # stays fast while the pure-function core is being written. The full approved
 # list — and what is deliberately absent — is in docs/architecture.md.

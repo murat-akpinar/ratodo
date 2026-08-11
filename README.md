@@ -51,13 +51,21 @@ Then, when you want the overview, `ratodo` opens the agenda:
 │                                                            │
 └────────────────────────────────────────────────────────────┘
 
- j k move   spc done   a add   ⏎ edit   d del   e $EDITOR   ? keys   q quit
+ j k move   spc done   a add   ⏎ edit   ? keys   q quit
 ```
 
-Vim keys, no vim modes: `j` `k` `g` `G` `ctrl-d` to move, one key per action, and
-`?` for the rest. Nothing pops over the list, deleting is undoable with `u`
-instead of asking you to confirm, and it degrades to a 34-column pane in a tiling
-layout. Every screen: [`docs/tui.md`](docs/tui.md).
+Vim keys, no vim modes: `j` `k` `g` `G` `ctrl-d` to move, `spc` to tick, `a` to
+add and `⏎` to edit, `d` to delete and `u` to take it back, `h` `l` `z` to fold a
+group, `e` for `$EDITOR` — one key per action, and `?` for the rest.
+
+Adding and editing are the only thing that opens a second mode, and `esc` or
+`ctrl-c` always closes it — in there `ctrl-c` costs you the sentence, never the
+session. While you type, the line under the field shows what it will become, so
+`@thu` becomes a real date in front of you.
+
+Nothing pops over the list, deleting is undoable with `u` instead of asking you
+to confirm, and it degrades to a 34-column pane in a tiling layout. Every screen:
+[`docs/tui.md`](docs/tui.md).
 
 ## Why
 

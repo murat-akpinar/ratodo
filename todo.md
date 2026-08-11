@@ -56,9 +56,11 @@ the abandonment risk in [docs/risks.md](docs/risks.md).
 - [x] `main.rs`: `$RATODO_FILE` between `--file` and the XDG default
 - [x] Single-quote every shell example in the README and docs: `!high` inside
       `"…"` is history expansion in bash and zsh, and the add never happens
-- [ ] Colour off when stdout is not a TTY — `std::io::IsTerminal`, stdlib.
-      **Nothing to gate yet:** the CLI prints no colour at all until step 6, so
-      this is written down in [docs/cli.md](docs/cli.md) and implemented there
+- [x] Colour off when stdout is not a TTY. **Nothing to gate:** `ratodo list`
+      prints no colour at all — the same bytes down a pipe as on a screen — and
+      the only thing that emits any is the TUI, which already opens on a TTY and
+      nowhere else. Settled and written up in [docs/cli.md](docs/cli.md);
+      colouring `list` would be a feature, not this rule
 
 ## 3 — agenda + the scriptable surface (no terminal needed)
 
@@ -166,7 +168,9 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
       test asks the binary what it answers to so they cannot rot quietly
 - [x] Time a cold start; the `$mod+t` scratchpad makes it a spec, aim under 50 ms
       — measured 1.2 ms median for `list`, 20 runs
-- [ ] `cargo publish --dry-run`
+- [x] `cargo publish --dry-run` — 44 files, 157 KiB compressed. `exclude` keeps
+      the machinery of working on the project out of it (`CLAUDE.md`, `.vscode`,
+      `cliff.toml`, `scripts/`, `notes.md`, `todo.md`); `docs/` stays
 - [ ] Tag `v0.1.0`, generate the changelog with git-cliff
 - [ ] `flake.nix` (`rustPlatform.buildRustPackage`) and an AUR `PKGBUILD` — a tag
       has to exist first, so this is genuinely last

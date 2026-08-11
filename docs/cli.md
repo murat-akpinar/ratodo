@@ -43,6 +43,15 @@ not have to be retrofitted:
 - **Colour is for terminals.** `NO_COLOR=1` disables it, and so does stdout not
   being a TTY (`std::io::IsTerminal`, no dependency). The `○ ✓ !` symbols carry
   the meaning without it.
+
+  In v1 that rule costs nothing to keep, because **`ratodo list` prints no
+  colour at all** — `[ ] [x] [!]`, plain text, the same bytes down a pipe as on
+  a screen. The only thing in the product that emits colour is the TUI, and the
+  TUI already opens on a TTY and nowhere else, so the gate is the one below
+  rather than an `IsTerminal` check in `list`. Making `list` colourful would
+  hand `text.rs` a `Theme` and give the command a second rendering path, which
+  is a feature and not a Unix-behaviour rule — see
+  [product.md](product.md#out-of-scope).
 - **stdout carries data, stderr carries talk.** "nothing here yet", warnings and
   conflict notices go to stderr, so `ratodo list | wc -l` counts tasks and
   nothing else.
