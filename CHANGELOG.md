@@ -1,11 +1,21 @@
 ## [unreleased]
 
+### 🚀 Features
+
+- *(ui)* Open the input box on today's date ([c57e559](https://github.com/murat-akpinar/ratodo/commit/c57e5597e0d053dc4d3293465b34382b7c26fbb6))
+`a` gave you an empty line, and the date was the one field the tool can guess right most of the time. The box now opens with `@today ` in it and the caret after it, one backspace from gone.
+
 ### 📚 Documentation
 
 - Record a demo gif for the readme ([b392334](https://github.com/murat-akpinar/ratodo/commit/b39233479513e7e649519f32c8db5a14ac3f21a4))
 scripts/demo.py drives a release build on a pty inside one throwaway kitty window and lets menyoki record it, against a throwaway XDG tree so the real ~/.config/ratodo is never in scope. The window size is the compositor's call under a tiling WM, so the pty is sized from the window rather than the other way round, and the session ends by closing the pty rather than with q — a quit tears the alternate screen down, and a bare prompt is the frame a looping gif rests on.
 - Put !high back in the readme's agenda mockup ([b5dcca8](https://github.com/murat-akpinar/ratodo/commit/b5dcca821820870b8c01c78a241d982ae30422d0))
 Rendered the mockup's own scenario through TestBackend at its own 62 columns: the overdue row carries `!high` between the date and the tags and the mockup did not, and the date field opened on `[11]` where the page's today is the 10th. Everything else — the frame, the progress bar, the hint bar at that width, both input boxes — came back byte-identical.
+
+### 🎨 Styling
+
+- *(ui)* Light every input box label, not only copy ([9cbe9d0](https://github.com/murat-akpinar/ratodo/commit/9cbe9d0f2a3fade342312ca3be8cab9f94602a66))
+The box is a mode and the label is what names it, so a mode whose name is the dimmest thing in it is a mode you have to look for. `copy` keeps its job on the word alone, which is the only thing that ever carried the meaning - the colour only ever made somebody glance.
 
 ### ⚙️ Miscellaneous Tasks
 
