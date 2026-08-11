@@ -60,6 +60,8 @@ Four defects that two audience design reviews turned up in code that was already
 The input field only ever appended: backspace took the last character and there was no way to reach any other one, so a typo four words back meant retyping four words. The caret now moves with the arrows, home and end, inserts and deletes where it stands, and the field scrolls with the caret rather than with the end of the line.
 - *(ui)* Stop calling a finished task late ([55affb0](https://github.com/murat-akpinar/ratodo/commit/55affb0598cc4ffc376b5d76b6330db999ab4b1f))
 A ticked line showing "1d ago" states something that stopped being true when the box was ticked, and contradicts the counts, which already leave finished work out of overdue. It falls through to the plain date instead. The task keeps its place in OVERDUE: membership there is positional.
+- *(ui)* Take the ascii fallback into the help overlay ([de11fa8](https://github.com/murat-akpinar/ratodo/commit/de11fa898d9412094c62a4bf176f0af3edc07a73))
+The overlay had the arrows and the enter symbol written into its key list as literals, so the one screen somebody opens because they are lost was the one screen the fallback did not reach. The buffer test never caught it because it does not open the overlay; it now opens the overlay, the input and its preview together and asserts the whole buffer is ASCII.
 
 ### 🚜 Refactor
 
