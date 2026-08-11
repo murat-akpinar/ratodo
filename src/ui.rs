@@ -261,17 +261,26 @@ pub fn rows(groups: &[Group<'_>]) -> Vec<Row> {
         if !out.is_empty() {
             out.push(Row::Spacer);
         }
-        if let Some(title) = group.kind.title() {
-            // `OVERDUE` is ours and `## Work` is the user's, and until now they
-            // were the same bold word plus the same rule. The markdown marker
-            // the heading already carries in the file is what tells them apart
-            // — it costs no colour and no third level of hierarchy, and it says
-            // "this line is yours" to anyone who has seen the file
-            // — docs/tui.md#main-screen.
-            match group.kind {
-                Kind::Section(_) => out.push(Row::header(&format!("## {title}"))),
-                _ => out.push(Row::header(title)),
+        // `OVERDUE` is ours and `## Work` is the user's, and until now they were
+        // the same bold word plus the same rule. The markdown marker the heading
+        // already carries in the file is what tells them apart — it costs no
+        // colour and no third level of hierarchy, and it says "this line is
+        // yours" to anyone who has seen the file — docs/tui.md#main-screen.
+        //
+        // The file joins it when several lists are open, and it is the whole of
+        // what says where a task lives: `## Work` in two files is two headings.
+        // A file's run of tasks above its first heading gets a header of nothing
+        // but the name, or it would look like more of the file before it.
+        let header = match group.kind {
+            // The marker goes on what the user wrote, and a heading that is
+            // nothing but a file name is not something they wrote.
+            Kind::Section { name: Some(_), .. } => {
+                group.kind.heading().map(|shown| format!("## {shown}"))
             }
+            _ => group.kind.heading(),
+        };
+        if let Some(header) = header {
+            out.push(Row::header(&header));
         }
         out.extend(group.tasks.iter().map(|t| Row::Task((*t).clone())));
     }

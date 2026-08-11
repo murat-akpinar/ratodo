@@ -174,9 +174,8 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
 - [x] `cargo publish --dry-run` — 44 files, 157 KiB compressed. `exclude` keeps
       the machinery of working on the project out of it (`CLAUDE.md`, `.vscode`,
       `cliff.toml`, `scripts/`, `notes.md`, `todo.md`); `docs/` stays
-- [x] Tag `v0.1.0`, generate the changelog with git-cliff
-- [ ] `flake.nix` (`rustPlatform.buildRustPackage`) and an AUR `PKGBUILD` — a tag
-      has to exist first, so this is genuinely last
+- [x] Tag `v0.1.0`, generate the changelog with git-cliff — tagged, and a
+      GitHub release with the binary attached
 
 ## 8 — Visual polish (deliberately last, and blocks nothing)
 
@@ -231,6 +230,17 @@ side pane turns into a dashboard nobody leaves open.
       **done**: `down up` and `ret`, and the test now opens the overlay. Two more
       escapes went with it: the `…` on a cut title and the `·` in the input
       preview. `LC_ALL=C` now puts nothing non-ASCII on the screen
+
+## After v0.1.0
+
+- [x] **Several lists in one agenda** — every `*.md` in the config directory is
+      read, the undated headings say which file they came from, a change goes
+      back to the file it came from with that file's own mtime check and backup,
+      and a capture goes to `todo.md`. The file is attached to a task only when
+      there is more than one, so a single-file setup keeps its identities and its
+      calendar UIDs. See [docs/cli.md](docs/cli.md#several-lists)
+- [ ] `cargo publish` — blocked on a verified email address on crates.io
+- [ ] `flake.nix` (`rustPlatform.buildRustPackage`) and an AUR `PKGBUILD`
 
 ## Open questions blocking nothing
 

@@ -80,11 +80,35 @@ pub enum Kind<'a> {
     ThisWeek,
     Later,
     /// Undated, under the file's own heading. `None` is the run of tasks above
-    /// the first one.
-    Section(Option<&'a str>),
+    /// the first one, and `file` is set only when more than one list is open.
+    Section {
+        file: Option<&'a str>,
+        name: Option<&'a str>,
+    },
 }
 
 impl<'a> Kind<'a> {
+    /// The heading as it is shown: the name, and the file it came out of while
+    /// several lists are open. `None` when there is nothing to say — the run of
+    /// tasks above a single file's first heading gets no heading, rather than a
+    /// "(no section)" nobody wrote.
+    ///
+    /// One composition for the screen and the printed list, or `## Work` from
+    /// two files would be told apart in one of them and not the other.
+    pub fn heading(self) -> Option<String> {
+        match self {
+            Kind::Section { file, name } => match (file, name) {
+                (Some(file), Some(name)) => Some(format!("{name} ({file})")),
+                // A file's tasks above its own first heading still need saying
+                // whose they are, or they read as more of the file before them.
+                (Some(file), None) => Some(format!("({file})")),
+                (None, Some(name)) => Some(name.to_string()),
+                (None, None) => None,
+            },
+            other => other.title().map(str::to_string),
+        }
+    }
+
     /// `None` for tasks above the first heading: a file with no headings gets no
     /// headings, rather than a "(no section)" nobody wrote.
     pub fn title(self) -> Option<&'a str> {
@@ -93,7 +117,7 @@ impl<'a> Kind<'a> {
             Kind::Today => Some("TODAY"),
             Kind::ThisWeek => Some("THIS WEEK"),
             Kind::Later => Some("LATER"),
-            Kind::Section(name) => name,
+            Kind::Section { name, .. } => name,
         }
     }
 }
@@ -124,7 +148,10 @@ pub fn agenda<'a>(tasks: &'a [Task], today: NaiveDate) -> Vec<Group<'a>> {
         let Some(due) = task.due else {
             // Contiguous runs, never merged across the file: two `## Work`
             // headings stay two groups rather than one that pulls tasks upwards.
-            let kind = Kind::Section(task.section.as_deref());
+            let kind = Kind::Section {
+                file: task.file.as_deref(),
+                name: task.section.as_deref(),
+            };
             match sections.last_mut() {
                 Some(group) if group.kind == kind => group.tasks.push(task),
                 _ => sections.push(Group {
@@ -171,6 +198,40 @@ mod tests {
 
     fn today() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 8, 10).unwrap()
+    }
+
+    /// Undated tasks group by heading, and with several lists open the heading
+    /// is not the whole answer: `## Work` in two files is two headings, or one
+    /// file's tasks would be pulled up under the other's.
+    #[test]
+    fn the_same_heading_in_two_files_stays_two_groups() {
+        let mut tasks = [capture("review", today()), capture("deploy", today())];
+        for (task, file) in tasks.iter_mut().zip(["work.md", "2026.md"]) {
+            task.section = Some("Work".into());
+            task.file = Some(file.to_string());
+        }
+
+        let groups = agenda(&tasks, today());
+        assert_eq!(groups.len(), 2, "{groups:?}");
+        assert_eq!(
+            groups.iter().map(|g| g.kind).collect::<Vec<_>>(),
+            [
+                Kind::Section {
+                    file: Some("work.md"),
+                    name: Some("Work")
+                },
+                Kind::Section {
+                    file: Some("2026.md"),
+                    name: Some("Work")
+                }
+            ]
+        );
+
+        // And one list is still one group, however many headings say the same.
+        for task in &mut tasks {
+            task.file = None;
+        }
+        assert_eq!(agenda(&tasks, today()).len(), 1);
     }
 
     fn task(text: &str) -> Task {

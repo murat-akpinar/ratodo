@@ -114,6 +114,12 @@ Details that are decisions, not drawing:
   in the file, it costs no second colour and no third level of hierarchy
   ([design.md](design.md#rules)), and it survives the ASCII fallback unchanged.
   Dated groups come first, then the user's own sections in file order.
+- **With several lists open the heading says which one**: `## Sprint (work.md)`.
+  The dated groups stay mixed — an overdue task is overdue whichever file it is
+  in, and that is the whole point of one screen — but two files can hold a
+  `## Work`, and merging them would pull one file's tasks up under the other's
+  heading. Nothing else on the row changes, so a single list looks exactly as it
+  did. `e` opens the file the cursor is in. See [cli.md](cli.md#several-lists).
 - The date is relative where that reads better (`2d ago`, `Thu 09:30`) and
   absolute where it does not (`Aug 20`). At this width it is right-aligned, so
   the eye reads down the right edge; past eighty columns it becomes a real

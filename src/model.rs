@@ -75,6 +75,11 @@ pub struct Task {
     pub tags: Vec<String>,
     pub priority: Option<Priority>,
     pub section: Option<String>,
+    /// Which file it was read from — `work.md` — and `None` when only one list
+    /// is open, which is the whole of what tells the two apart. A single-file
+    /// setup therefore keeps the identities, and so the calendar UIDs, it had
+    /// before several files were a thing. See docs/cli.md#several-lists.
+    pub file: Option<String>,
     /// While false, `raw` is authoritative and is written back untouched.
     pub dirty: bool,
     /// Byte index into `raw` of the character between the brackets.
@@ -97,6 +102,7 @@ impl Task {
             tags,
             priority,
             section: None,
+            file: None,
             dirty: false,
             checkbox: 3,
         };
@@ -113,6 +119,7 @@ impl Task {
             tags: Vec::new(),
             priority: None,
             section: None,
+            file: None,
             dirty: false,
             checkbox,
         }
@@ -166,14 +173,24 @@ impl Task {
     /// of it there would be letting go on every edit. Deliberately not the row
     /// number either, which is the thing a reload has just rearranged.
     ///
-    /// `\u{1}` between the two because it cannot occur in either: a section
-    /// called `a` holding `b#c` must not collide with `a#c` holding `b`.
+    /// `\u{1}` between the parts because it cannot occur in any of them: a
+    /// section called `a` holding `b#c` must not collide with `a#c` holding `b`.
+    ///
+    /// The file joins them when there is more than one, or `## Work` in
+    /// `work.md` and `## Work` in `2026.md` would be one section to the cursor,
+    /// to `done` and to the calendar.
     pub fn identity(&self) -> String {
-        format!(
+        let of = format!(
             "{}\u{1}{}",
             self.section.as_deref().unwrap_or(""),
             self.title
-        )
+        );
+        // Nothing is prefixed when there is one list, so a setup that never grows
+        // a second file keeps the identities it has always had.
+        match &self.file {
+            Some(file) => format!("{file}\u{1}{of}"),
+            None => of,
+        }
     }
 
     /// A completed task is never overdue, however long ago it was due.
@@ -269,6 +286,31 @@ mod task_tests {
         assert_eq!(task.title, "wash up tonight");
         assert_eq!(task.due, None, "the date was dropped, so it goes");
         assert_eq!(task.priority, Some(Priority::High));
+    }
+}
+
+#[cfg(test)]
+mod line_tests {
+    /// A line index is not a task number, and the two callers that hold one — the
+    /// ambiguity list `done` prints, and the tick that follows it — get `None`
+    /// for anything that is not a task rather than the wrong line.
+    #[test]
+    fn a_line_index_only_answers_for_a_line_that_is_a_task() {
+        let mut doc = crate::parse::parse("## Work\n- [ ] first\n> a note\n");
+
+        assert_eq!(
+            doc.task_at(1).map(|t| t.title.clone()),
+            Some("first".to_string())
+        );
+        assert_eq!(
+            doc.task_at_mut(1).map(|t| t.title.clone()),
+            Some("first".to_string())
+        );
+
+        for not_a_task in [0, 2, 9] {
+            assert!(doc.task_at(not_a_task).is_none(), "line {not_a_task}");
+            assert!(doc.task_at_mut(not_a_task).is_none(), "line {not_a_task}");
+        }
     }
 }
 
@@ -605,6 +647,13 @@ impl Doc {
 
     pub fn task_count(&self) -> usize {
         self.tasks().count()
+    }
+
+    pub fn task_at(&self, line: usize) -> Option<&Task> {
+        match &self.lines.get(line)?.item {
+            Item::Task(t) => Some(t),
+            Item::Text(_) => None,
+        }
     }
 
     pub fn task_at_mut(&mut self, line: usize) -> Option<&mut Task> {

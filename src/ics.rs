@@ -283,6 +283,24 @@ mod tests {
         assert_eq!(uid(&before), uid(&after), "the date is not the identity");
     }
 
+    /// The same title in two files is two tasks, and two calendar entries. It is
+    /// the identity that carries that, which is why there is only one of them.
+    #[test]
+    fn the_same_task_in_two_files_gets_two_entries() {
+        let mut tasks = [
+            task("fix the tap @2026-08-12"),
+            task("fix the tap @2026-08-12"),
+        ];
+        for (task, file) in tasks.iter_mut().zip(["work.md", "home.md"]) {
+            task.file = Some(file.to_string());
+        }
+
+        let ics = calendar(&tasks, now());
+        let uids = uids(&ics);
+        assert_eq!(uids.len(), 2, "{ics}");
+        assert_ne!(uids[0], uids[1], "one entry for two files: {uids:?}");
+    }
+
     /// Two VTODOs with one UID is one entry to every client, so the second task
     /// would simply vanish.
     fn uids(ics: &str) -> Vec<String> {

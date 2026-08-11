@@ -28,10 +28,6 @@ The task-by-task breakdown is in [../todo.md](../todo.md).
 - `config.toml` arrives here (and with it, `serde`)
 - Theme hot reload — `theme.conf` joins the `notify` watch list
 - `--as-events` flag for calendar clients that ignore VTODO
-- **Several files in one agenda** — `work.md`, `personal.md`, `2026.md` kept
-  apart on disk and read together on screen. See the open question in
-  [decisions.md](decisions.md#open-questions): the view is the easy half, the
-  write-back is not.
 
 ## v3 — Recurrence and deferral
 

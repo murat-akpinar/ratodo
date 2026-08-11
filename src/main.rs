@@ -1,5 +1,6 @@
 //! Subcommands and terminal setup. See docs/cli.md.
 
+use std::ffi::OsStr;
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -105,22 +106,19 @@ fn is_broken_pipe(error: &anyhow::Error) -> bool {
 
 fn dispatch() -> Result<ExitCode> {
     let cli = Cli::parse();
-    let path = match cli.file {
-        Some(p) => p,
-        None => env_path().map_or_else(default_path, Ok)?,
-    };
+    let paths = lists(cli.file)?;
 
     match cli.command {
-        Some(Command::Add { text }) => add(&path, &text.join(" "))?,
-        Some(Command::Done { text }) => return done(&path, &text.join(" ")),
-        Some(Command::List(args)) => list(&path, &args)?,
-        Some(Command::Sync) => sync(&path, true)?,
+        Some(Command::Add { text }) => add(&paths, &text.join(" "))?,
+        Some(Command::Done { text }) => return done(&paths, &text.join(" ")),
+        Some(Command::List(args)) => list(&paths, &args)?,
+        Some(Command::Sync) => sync(&paths, true)?,
         Some(Command::Theme { what }) => theme_command(what, cli.theme.as_deref())?,
-        Some(Command::Status { json }) => return status(&path, json),
+        Some(Command::Status { json }) => return status(&paths, json),
         // `ratodo | wc -l` and `ratodo > out.txt` still have to mean something,
         // and a TUI down a pipe means nothing at all.
-        None if std::io::stdout().is_terminal() => return tui(&path, cli.theme.as_deref()),
-        None => list(&path, &ListArgs::default())?,
+        None if std::io::stdout().is_terminal() => return tui(&paths, cli.theme.as_deref()),
+        None => list(&paths, &ListArgs::default())?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -139,6 +137,103 @@ fn env_path() -> Option<PathBuf> {
 
 fn default_path() -> Result<PathBuf> {
     Ok(dirs()?.config_dir().join("todo.md"))
+}
+
+/// Which lists are open, in the order they are read.
+///
+/// `--file` and `$RATODO_FILE` each name exactly one, and that is what keeps
+/// every existing setup and every script working. With neither of them, **every
+/// `*.md` in the config directory is a list** — `work.md`, `2026.md`,
+/// `personal.md` are one agenda, and a new list is a new file and no
+/// configuration at all. See docs/cli.md#several-lists.
+///
+/// Never empty: with nothing there yet it is the default path, which is also the
+/// file the empty screen names.
+fn lists(flag: Option<PathBuf>) -> Result<Vec<PathBuf>> {
+    if let Some(path) = flag.or_else(env_path) {
+        return Ok(vec![path]);
+    }
+
+    let dir = dirs()?.config_dir().to_path_buf();
+    let mut found: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension() == Some(OsStr::new("md")) && path.is_file())
+        .collect();
+    // A directory hands its entries over in whatever order it likes, and a list
+    // that reorders itself between two runs is not a list.
+    found.sort();
+
+    if found.is_empty() {
+        found.push(default_path()?);
+    }
+    Ok(found)
+}
+
+/// Where a captured task lands: `todo.md` when it is one of the lists, the first
+/// of them otherwise. A fixed answer on purpose — `a` must not mean a different
+/// file depending on what the cursor happens to be over. `--file` picks another.
+///
+/// `lists` never returns an empty vector, which is what makes the fallback safe.
+fn capture_target(paths: &[PathBuf]) -> &Path {
+    paths
+        .iter()
+        .find(|path| path.file_name() == Some(OsStr::new("todo.md")))
+        .unwrap_or(&paths[0])
+}
+
+/// One open list: the file, what is in it, and enough to tell our own writes
+/// apart from somebody else's.
+struct Open {
+    path: PathBuf,
+    doc: ratodo::model::Doc,
+    mtime: Option<std::time::SystemTime>,
+    /// The exact bytes the file had when we last read or wrote it. Every save
+    /// wakes the watcher, and re-reading our own write would throw away the
+    /// in-place update that keeps a ticked task from jumping.
+    ///
+    /// It is a render rather than the text that was read, because for an
+    /// untouched document those are the same string — that is the round-trip
+    /// guarantee, tested in tests/fidelity.rs.
+    seen: String,
+}
+
+/// Reads every list.
+///
+/// The file name is stamped on to each task **only when there is more than
+/// one**, and that single condition is the whole of the difference: a
+/// single-file setup produces exactly the tasks it always did, with the
+/// identities and so the calendar UIDs it always had.
+fn open_all(paths: &[PathBuf]) -> Result<Vec<Open>> {
+    let several = paths.len() > 1;
+    paths
+        .iter()
+        .map(|path| {
+            let loaded = write::load(path)?;
+            let mut doc = loaded.doc;
+            if several {
+                let name = path.file_name().unwrap_or(path.as_os_str());
+                let name = name.to_string_lossy().into_owned();
+                for task in doc.tasks_mut() {
+                    task.file = Some(name.clone());
+                }
+            }
+            Ok(Open {
+                seen: write::render(&doc),
+                path: path.clone(),
+                doc,
+                mtime: loaded.mtime,
+            })
+        })
+        .collect()
+}
+
+/// Every task on every list, in file order. A todo list is small; `agenda` wants
+/// a slice, and this is not worth a lifetime.
+fn all_tasks(open: &[Open]) -> Vec<ratodo::model::Task> {
+    open.iter().flat_map(|o| o.doc.tasks().cloned()).collect()
 }
 
 /// Derived, so it never lands in the user's dotfiles. `state_dir` is `None` off
@@ -227,9 +322,8 @@ fn ics_path() -> Result<PathBuf> {
 /// A failure here never fails the command that triggered it. The `.ics` is a
 /// convenience and the task is already safely in the file — refusing to capture
 /// because a calendar export went wrong would be the tail wagging the dog.
-fn sync(path: &Path, loud: bool) -> Result<()> {
-    let doc = write::load(path)?.doc;
-    let tasks: Vec<_> = doc.tasks().cloned().collect();
+fn sync(paths: &[PathBuf], loud: bool) -> Result<()> {
+    let tasks = all_tasks(&open_all(paths)?);
     let out = ics_path()?;
 
     if let Some(parent) = out.parent() {
@@ -250,26 +344,27 @@ fn sync(path: &Path, loud: bool) -> Result<()> {
     Ok(())
 }
 
-fn add(path: &Path, input: &str) -> Result<()> {
+fn add(paths: &[PathBuf], input: &str) -> Result<()> {
     let today = Local::now().date_naive();
     let task = capture::capture(input, today);
     let summary = text::added(&task, today);
 
+    let path = capture_target(paths);
     let loaded = write::load(path)?;
     let mut doc = loaded.doc;
     doc.push_task(task);
     write::save(path, &doc, loaded.mtime, &backup_dir()?)?;
 
     writeln!(std::io::stdout(), "{summary}")?;
-    quietly_sync(path);
+    quietly_sync(paths);
     Ok(())
 }
 
 /// The capture already succeeded and said so. Whatever the calendar export
 /// makes of it, the user's list is written and this is not the moment to make
 /// noise about a derived file.
-fn quietly_sync(path: &Path) {
-    let _ = sync(path, false);
+fn quietly_sync(paths: &[PathBuf]) {
+    let _ = sync(paths, false);
 }
 
 /// Whether a directory event is about our list. Watching the directory means
@@ -288,92 +383,120 @@ fn touches(event: &notify::Event, name: &std::ffi::OsStr) -> bool {
 ///
 /// The channel carries nothing but "it changed": the loop reads keys itself and
 /// this is the only other thing that can happen.
-fn watch(path: &Path, tx: std::sync::mpsc::Sender<()>) -> Option<notify::RecommendedWatcher> {
+fn watch(paths: &[PathBuf], tx: std::sync::mpsc::Sender<()>) -> Option<notify::RecommendedWatcher> {
     use notify::Watcher;
 
-    let dir = path.parent()?;
-    let name = path.file_name()?.to_os_string();
+    let names: Vec<std::ffi::OsString> = paths
+        .iter()
+        .filter_map(|p| p.file_name().map(std::ffi::OsStr::to_os_string))
+        .collect();
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-        if event.iter().any(|e| touches(e, &name)) {
+        if event
+            .iter()
+            .any(|e| names.iter().any(|name| touches(e, name)))
+        {
             let _ = tx.send(());
         }
     })
     .ok()?;
 
+    // Every directory holding a list, deduplicated: `--file` can point somewhere
+    // else entirely, and watching one directory twice is two events per save.
+    //
     // A directory that is not there yet cannot be watched, and that is not worth
     // refusing to open the list over.
-    watcher
-        .watch(dir, notify::RecursiveMode::NonRecursive)
-        .ok()?;
+    let mut dirs: Vec<&Path> = paths.iter().filter_map(|p| p.parent()).collect();
+    dirs.sort();
+    dirs.dedup();
+    for dir in dirs {
+        let _ = watcher.watch(dir, notify::RecursiveMode::NonRecursive);
+    }
     Some(watcher)
 }
 
-fn tui(path: &Path, theme_flag: Option<&str>) -> Result<ExitCode> {
-    let shown_path = path.display().to_string();
+fn tui(paths: &[PathBuf], theme_flag: Option<&str>) -> Result<ExitCode> {
+    // The capture target, because it is the file the empty screen is teaching
+    // you to put your first task in.
+    let shown_path = capture_target(paths).display().to_string();
     let render = ui::Render {
         colours: active_theme(theme_flag),
         glyphs: ui::Glyphs::for_locale(locale().as_deref()),
         today: Local::now().date_naive(),
         path: &shown_path,
     };
-    let mut live = Live::read(path, render.today)?;
+    let mut live = Live::read(paths, render.today)?;
 
     let (tx, rx) = std::sync::mpsc::channel();
     // Kept alive for as long as the TUI runs: dropping it stops the watch.
-    let _watcher = watch(path, tx);
+    let _watcher = watch(paths, tx);
 
     // `try_init` installs a panic hook that turns raw mode off and leaves the
     // alternate screen before chaining to the default one, and `Terminal`'s own
     // Drop puts the cursor back. That is the whole of invariant 5, and it is the
     // library's, so it cannot drift out of step with the setup it undoes.
     let mut terminal = ratatui::try_init()?;
-    let result = run(&mut terminal, &mut live, path, &rx, render);
+    let result = run(&mut terminal, &mut live, paths, &rx, render);
     ratatui::restore();
     result
 }
 
-/// The open list: the document, what the screen is showing of it, and enough to
-/// tell our own writes apart from somebody else's.
+/// The open lists, what the screen is showing of them, and one level of undo.
+///
+/// Every file is read into its own `Open`, and every change goes back to the
+/// file its task came from: a write never touches a list the user was not
+/// editing — docs/cli.md#several-lists.
 struct Live {
-    doc: ratodo::model::Doc,
-    mtime: Option<std::time::SystemTime>,
-    /// The exact bytes we last put on disk. Every save wakes the watcher, and
-    /// re-reading our own write would undo the in-place update that keeps a
-    /// ticked task from jumping.
-    written: Option<String>,
-    /// The document as it was before the last change, and what to call it.
+    files: Vec<Open>,
+    /// The document as it was before the last change, which file it belongs to,
+    /// and what to call it.
     ///
     /// One level, which is what docs/tui.md promises: "undoes the last change in
     /// this session". A whole `Doc` per change is a few kilobytes and buys an
     /// undo that cannot be subtly wrong about what it is putting back.
-    undo: Option<(ratodo::model::Doc, String)>,
+    undo: Option<(usize, ratodo::model::Doc, String)>,
     screen: ui::Screen,
     counts: agenda::Counts,
 }
 
 impl Live {
-    fn read(path: &Path, today: chrono::NaiveDate) -> Result<Self> {
-        let loaded = write::load(path)?;
-        let tasks: Vec<_> = loaded.doc.tasks().cloned().collect();
+    fn read(paths: &[PathBuf], today: chrono::NaiveDate) -> Result<Self> {
+        let files = open_all(paths)?;
+        let tasks = all_tasks(&files);
         Ok(Live {
             counts: agenda::Counts::of(&tasks, today),
             screen: ui::Screen::new(ui::rows(&agenda::agenda(&tasks, today))),
-            doc: loaded.doc,
-            mtime: loaded.mtime,
-            written: None,
+            files,
             undo: None,
         })
     }
 
-    fn reload(&mut self, path: &Path, today: chrono::NaiveDate) -> Result<()> {
-        let loaded = write::load(path)?;
-        let tasks: Vec<_> = loaded.doc.tasks().cloned().collect();
-        self.counts = agenda::Counts::of(&tasks, today);
-        self.screen
-            .replace(ui::rows(&agenda::agenda(&tasks, today)));
-        self.doc = loaded.doc;
-        self.mtime = loaded.mtime;
-        self.written = None;
+    fn paths(&self) -> Vec<PathBuf> {
+        self.files.iter().map(|f| f.path.clone()).collect()
+    }
+
+    /// What goes on a task captured into list `which`: the file name while
+    /// several are open, and nothing at all while one is.
+    fn stamp(&self, which: usize) -> Option<String> {
+        (self.files.len() > 1)
+            .then(|| self.files[which].path.file_name())
+            .flatten()
+            .map(|name| name.to_string_lossy().into_owned())
+    }
+
+    /// Which list a task on screen came from. `None` is the single-file case,
+    /// where the answer is the only list there is.
+    fn which(&self, file: Option<&str>) -> usize {
+        file.and_then(|name| {
+            self.files
+                .iter()
+                .position(|f| f.path.file_name().is_some_and(|had| had == name))
+        })
+        .unwrap_or(0)
+    }
+
+    fn reload(&mut self, paths: &[PathBuf], today: chrono::NaiveDate) -> Result<()> {
+        self.files = open_all(paths)?;
+        self.rebuild(today);
         Ok(())
     }
 
@@ -387,14 +510,21 @@ impl Live {
     /// `crossterm::event::read` would be reading the same terminal as vim, and
     /// would eat its keystrokes; `poll` in one thread has nobody to compete
     /// with. See docs/decisions.md#reversed.
+    ///
+    /// It opens the file under the cursor, which with several lists is the only
+    /// answer that is not a guess.
     fn edit(
         &mut self,
         terminal: &mut ratatui::DefaultTerminal,
-        path: &Path,
+        paths: &[PathBuf],
         today: chrono::NaiveDate,
     ) -> Result<ui::Notice> {
         let Some(command) = editor() else {
             return Ok(ui::Notice::Warned("no $EDITOR or $VISUAL set".to_string()));
+        };
+        let path = match self.selected() {
+            Some((which, _)) => self.files[which].path.clone(),
+            None => capture_target(paths).to_path_buf(),
         };
 
         // The screen is handed back and taken again around the same `Terminal`,
@@ -407,7 +537,7 @@ impl Live {
 
         let outcome = std::process::Command::new(&command[0])
             .args(&command[1..])
-            .arg(path)
+            .arg(&path)
             .status();
 
         crossterm::execute!(
@@ -428,8 +558,8 @@ impl Live {
 
         // Read it back whatever the editor said: somebody who saves and then
         // exits non-zero still saved.
-        self.reload(path, today)?;
-        quietly_sync(path);
+        self.reload(paths, today)?;
+        quietly_sync(paths);
 
         Ok(match outcome {
             Ok(_) => ui::Notice::Said("re-read after $EDITOR".to_string()),
@@ -437,16 +567,16 @@ impl Live {
         })
     }
 
-    /// Rebuilds the rows and the counts from the document already in memory.
+    /// Rebuilds the rows and the counts from the documents already in memory.
     /// `reload` is this plus a read; a change made here does not need the read.
     fn rebuild(&mut self, today: chrono::NaiveDate) {
-        let tasks: Vec<_> = self.doc.tasks().cloned().collect();
+        let tasks = all_tasks(&self.files);
         self.counts = agenda::Counts::of(&tasks, today);
         self.screen
             .replace(ui::rows(&agenda::agenda(&tasks, today)));
     }
 
-    /// Writes what is in memory, and on a refusal puts the document back.
+    /// Writes list `which`, and on a refusal puts its document back.
     ///
     /// `Some(notice)` means the write was refused and the caller should show it
     /// and change nothing else. `None` means it went through. Every change goes
@@ -457,49 +587,54 @@ impl Live {
     /// clears the slot, which is what an undo itself does.
     fn write_back(
         &mut self,
-        path: &Path,
+        which: usize,
         before: ratodo::model::Doc,
         undo: Option<String>,
     ) -> Result<Option<ui::Notice>> {
-        match write::save(path, &self.doc, self.mtime, &backup_dir()?) {
+        let backup = backup_dir()?;
+        let file = &mut self.files[which];
+        match write::save(&file.path, &file.doc, file.mtime, &backup) {
             Ok(()) => {
-                self.written = Some(write::render(&self.doc));
-                self.mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-                self.undo = undo.map(|what| (before, what));
-                quietly_sync(path);
+                file.seen = write::render(&file.doc);
+                file.mtime = std::fs::metadata(&file.path)
+                    .and_then(|m| m.modified())
+                    .ok();
+                self.undo = undo.map(|what| (which, before, what));
+                quietly_sync(&self.paths());
                 Ok(None)
             }
             // The file still says otherwise, and a screen that disagrees with
             // disk is how the *next* write loses data.
             Err(e) if e.downcast_ref::<write::Conflict>().is_some() => {
-                self.doc = before;
+                file.doc = before;
                 Ok(Some(ui::Notice::Warned(
                     "changed on disk - nothing was written.  r reload".to_string(),
                 )))
             }
             Err(e) => {
-                self.doc = before;
+                file.doc = before;
                 Err(e)
             }
         }
     }
 
-    /// The raw line of the selected task, which is how a row on screen is found
-    /// again in the document.
-    fn selected_raw(&self) -> Option<String> {
-        self.screen.task().map(|t| t.raw.clone())
+    /// The list and the raw line of the selected task, which is how a row on
+    /// screen is found again in the document it came from.
+    fn selected(&self) -> Option<(usize, String)> {
+        let task = self.screen.task()?;
+        Some((self.which(task.file.as_deref()), task.raw.clone()))
     }
 
-    /// Ticks the selected task, in the document and on the screen, and writes.
+    /// Ticks the selected task, in its document and on the screen, and writes.
     ///
     /// The row is updated in place rather than regrouped: a task marked done
     /// stays where it is until the next reload. Nothing else on screen moves.
-    fn toggle(&mut self, path: &Path, today: chrono::NaiveDate) -> Result<ui::Notice> {
-        let Some(raw) = self.selected_raw() else {
+    fn toggle(&mut self, today: chrono::NaiveDate) -> Result<ui::Notice> {
+        let Some((which, raw)) = self.selected() else {
             return Ok(ui::Notice::Said("nothing to tick here".to_string()));
         };
-        let before = self.doc.clone();
-        let Some(task) = self.doc.tasks_mut().find(|t| t.raw == raw) else {
+        let before = self.files[which].doc.clone();
+        let Some(task) = self.files[which].doc.tasks_mut().find(|t| t.raw == raw) else {
             return Ok(ui::Notice::Said("nothing to tick here".to_string()));
         };
 
@@ -513,12 +648,12 @@ impl Live {
         let undo_label = format!("{} {title}", if done { "ticking" } else { "unticking" });
         let said = format!("{}: {title}", if done { "done" } else { "reopened" });
 
-        if let Some(refused) = self.write_back(path, before, Some(undo_label))? {
+        if let Some(refused) = self.write_back(which, before, Some(undo_label))? {
             return Ok(refused);
         }
 
         self.screen.update_selected(updated);
-        let tasks: Vec<_> = self.doc.tasks().cloned().collect();
+        let tasks = all_tasks(&self.files);
         self.counts = agenda::Counts::of(&tasks, today);
         Ok(ui::Notice::Said(format!("{said}    u undo")))
     }
@@ -528,11 +663,11 @@ impl Live {
     /// A prompt taxes every delete to protect against the rare wrong one; `u`
     /// inverts that, so deleting costs one key and the mistake costs one more.
     /// See docs/tui.md#deleting--no-confirmation-dialog.
-    fn delete(&mut self, path: &Path, today: chrono::NaiveDate) -> Result<ui::Notice> {
-        let Some(raw) = self.selected_raw() else {
+    fn delete(&mut self, today: chrono::NaiveDate) -> Result<ui::Notice> {
+        let Some((which, raw)) = self.selected() else {
             return Ok(ui::Notice::Said("nothing to delete here".to_string()));
         };
-        let Some(at) = self
+        let Some(at) = self.files[which]
             .doc
             .lines
             .iter()
@@ -541,14 +676,14 @@ impl Live {
             return Ok(ui::Notice::Said("nothing to delete here".to_string()));
         };
 
-        let before = self.doc.clone();
-        let Some(gone) = self.doc.remove_task(at) else {
+        let before = self.files[which].doc.clone();
+        let Some(gone) = self.files[which].doc.remove_task(at) else {
             return Ok(ui::Notice::Said("nothing to delete here".to_string()));
         };
         let title = text::plain(&gone.title);
 
         if let Some(refused) =
-            self.write_back(path, before, Some(format!("deleting \"{title}\"")))?
+            self.write_back(which, before, Some(format!("deleting \"{title}\"")))?
         {
             return Ok(refused);
         }
@@ -560,12 +695,15 @@ impl Live {
     /// Saves what was typed on the input line: a new task, or the selected one
     /// rewritten.
     ///
+    /// A new task goes to the capture target; an edit goes back to the file the
+    /// task it is rewriting came from.
+    ///
     /// An edit replaces the line's body and keeps its prefix byte for byte, so
     /// the indentation and the bullet the user chose survive being retyped —
     /// docs/architecture.md#round-trip-fidelity.
     fn save_typed(
         &mut self,
-        path: &Path,
+        paths: &[PathBuf],
         today: chrono::NaiveDate,
         input: &ui::Input,
     ) -> Result<ui::Notice> {
@@ -574,13 +712,29 @@ impl Live {
             return Ok(ui::Notice::Said("nothing typed".to_string()));
         }
 
-        let fields = capture::capture(typed, today);
+        let mut fields = capture::capture(typed, today);
         let title = text::plain(&fields.title);
-        let before = self.doc.clone();
+
+        let which = match &input.editing {
+            Some(raw) => self
+                .files
+                .iter()
+                .position(|f| f.doc.tasks().any(|t| &t.raw == raw)),
+            None => self
+                .files
+                .iter()
+                .position(|f| f.path == capture_target(paths)),
+        };
+        let Some(which) = which else {
+            return Ok(ui::Notice::Warned(
+                "that task is not there any more.  esc, then look again".to_string(),
+            ));
+        };
+        let before = self.files[which].doc.clone();
 
         let what = match &input.editing {
             Some(raw) => {
-                let Some(task) = self.doc.tasks_mut().find(|t| &t.raw == raw) else {
+                let Some(task) = self.files[which].doc.tasks_mut().find(|t| &t.raw == raw) else {
                     return Ok(ui::Notice::Warned(
                         "that task is not there any more.  esc, then look again".to_string(),
                     ));
@@ -592,20 +746,23 @@ impl Live {
                 "edited"
             }
             None => {
-                self.doc.push_task(fields);
+                // Stamped like the tasks around it, or the new one would group
+                // under a heading of its own until the next reload moved it.
+                fields.file = self.stamp(which);
+                self.files[which].doc.push_task(fields);
                 "added"
             }
         };
 
         if self
-            .write_back(path, before, Some(format!("{what}: {title}")))?
+            .write_back(which, before, Some(format!("{what}: {title}")))?
             .is_some()
         {
             // Refused. Re-read here rather than leaving it to `r`, because the
             // caller is going to hand the sentence straight back to the field
             // and the next `⏎` has to go against the file as it now is.
             // Nothing is merged and nothing is overwritten — docs/tui.md#write-conflict.
-            self.reload(path, today)?;
+            self.reload(paths, today)?;
             return Ok(ui::Notice::Warned(
                 "changed on disk - re-read, then save again".to_string(),
             ));
@@ -615,26 +772,35 @@ impl Live {
         Ok(ui::Notice::Said(format!("{what}: {title}    u undo")))
     }
 
-    /// Puts the document back the way it was before the last change.
+    /// Puts a document back the way it was before the last change.
     ///
     /// One level, and the whole document rather than an inverse operation: an
     /// undo that reconstructs what a change did is an undo that can be subtly
     /// wrong about it, and this one cannot.
-    fn undo(&mut self, path: &Path, today: chrono::NaiveDate) -> Result<ui::Notice> {
+    fn undo(&mut self, today: chrono::NaiveDate) -> Result<ui::Notice> {
         // Cloned rather than taken: if the write is refused the slot has to
         // still be there, or a refusal that changed nothing has cost the user
         // their undo.
-        let Some((restored, what)) = self.undo.clone() else {
+        let Some((which, restored, what)) = self.undo.clone() else {
             return Ok(ui::Notice::Said("nothing to undo".to_string()));
         };
 
-        let current = std::mem::replace(&mut self.doc, restored);
-        if let Some(refused) = self.write_back(path, current, None)? {
+        let current = std::mem::replace(&mut self.files[which].doc, restored);
+        if let Some(refused) = self.write_back(which, current, None)? {
             return Ok(refused);
         }
 
         self.rebuild(today);
         Ok(ui::Notice::Said(format!("undone: {what}")))
+    }
+
+    /// Whether any list on disk says something other than what we last read or
+    /// wrote there. Our own save wakes the watcher too, and re-reading it would
+    /// throw away the in-place update that keeps a ticked task from jumping.
+    fn stale(&self) -> bool {
+        self.files
+            .iter()
+            .any(|file| std::fs::read_to_string(&file.path).is_ok_and(|text| text != file.seen))
     }
 }
 
@@ -650,7 +816,7 @@ const IDLE: std::time::Duration = std::time::Duration::from_millis(500);
 fn run(
     terminal: &mut ratatui::DefaultTerminal,
     live: &mut Live,
-    path: &Path,
+    paths: &[PathBuf],
     rx: &std::sync::mpsc::Receiver<()>,
     render: ui::Render<'_>,
 ) -> Result<ExitCode> {
@@ -702,7 +868,7 @@ fn run(
                         }
                         ui::Typed::Save => {
                             let typed = input.take().expect("the input was open a line ago");
-                            notice = live.save_typed(path, today, &typed)?;
+                            notice = live.save_typed(paths, today, &typed)?;
                             // A refusal keeps the field, and the sentence in it.
                             // Losing it is the one thing docs/tui.md promises
                             // will not happen.
@@ -723,9 +889,9 @@ fn run(
                         }
                         ui::Action::Top => live.screen.top(),
                         ui::Action::Bottom => live.screen.bottom(),
-                        ui::Action::Toggle => notice = live.toggle(path, today)?,
-                        ui::Action::Delete => notice = live.delete(path, today)?,
-                        ui::Action::Undo => notice = live.undo(path, today)?,
+                        ui::Action::Toggle => notice = live.toggle(today)?,
+                        ui::Action::Delete => notice = live.delete(today)?,
+                        ui::Action::Undo => notice = live.undo(today)?,
                         // The overlay comes down with it: a box over the list
                         // while a line is being typed covers the thing the line
                         // is about.
@@ -746,10 +912,10 @@ fn run(
                             }
                         }
                         ui::Action::Edit => {
-                            notice = live.edit(terminal, path, today)?;
+                            notice = live.edit(terminal, paths, today)?;
                         }
                         ui::Action::Reload => {
-                            live.reload(path, today)?;
+                            live.reload(paths, today)?;
                             notice = ui::Notice::Said("reloaded".to_string());
                         }
                         ui::Action::Help => helping = !helping,
@@ -772,63 +938,83 @@ fn run(
             changed = true;
         }
 
-        if changed {
-            // Our own save wakes the watcher too. Re-reading it would throw away
-            // the in-place update and let the ticked task jump.
-            let on_disk = std::fs::read_to_string(path).ok();
-            if on_disk.is_none() || on_disk != live.written {
-                live.reload(path, today)?;
-                redraw = true;
-            }
+        if changed && live.stale() {
+            live.reload(paths, today)?;
+            redraw = true;
         }
     }
 }
 
 /// Exit 2 — "asked, could not answer" — for both no match and too many, and in
-/// neither case is the file opened for writing.
-fn done(path: &Path, input: &str) -> Result<ExitCode> {
-    let loaded = write::load(path)?;
-    let mut doc = loaded.doc;
+/// neither case is a file opened for writing.
+///
+/// Across every open list, because the whole point of several of them is that
+/// they are one list to the person using them. Two files holding the same title
+/// is the ambiguous case, not a race between them.
+fn done(paths: &[PathBuf], input: &str) -> Result<ExitCode> {
+    let mut open = open_all(paths)?;
 
-    let at = match doc.find_open(input) {
-        Lookup::One(at) => at,
-        Lookup::AlreadyDone(title) => {
+    let mut hits: Vec<(usize, usize)> = Vec::new();
+    let mut candidates: Vec<String> = Vec::new();
+    let mut already: Option<String> = None;
+
+    for (which, list) in open.iter().enumerate() {
+        match list.doc.find_open(input) {
+            Lookup::One(at) => hits.push((which, at)),
+            Lookup::Several(mut found) => candidates.append(&mut found),
+            Lookup::AlreadyDone(title) => already = Some(title),
+            Lookup::None => {}
+        }
+    }
+
+    // A single hit anywhere, and nothing else close to it, is the only case that
+    // writes. The titles of the other hits join the candidate list, or a task
+    // that lost by being in the second file would never be shown to the user.
+    if hits.len() + candidates.len() > 1 {
+        let mut all = candidates;
+        for (which, at) in hits {
+            if let Some(task) = open[which].doc.task_at(at) {
+                all.push(task.title.clone());
+            }
+        }
+        all.sort();
+        eprintln!("{}", text::ambiguous(input, &all));
+        return Ok(ExitCode::from(2));
+    }
+
+    let Some((which, at)) = hits.pop() else {
+        if let Some(title) = already {
             eprintln!("already done: {}", text::plain(&title));
             return Ok(ExitCode::SUCCESS);
         }
-        Lookup::Several(candidates) => {
-            eprintln!("{}", text::ambiguous(input, &candidates));
-            return Ok(ExitCode::from(2));
-        }
-        Lookup::None => {
-            eprintln!("no open task matches '{}'", text::plain(input));
-            return Ok(ExitCode::from(2));
-        }
+        eprintln!("no open task matches '{}'", text::plain(input));
+        return Ok(ExitCode::from(2));
     };
 
-    let task = doc
+    let list = &mut open[which];
+    let task = list
+        .doc
         .task_at_mut(at)
         .context("the matched line stopped being a task")?;
     task.set_done(true);
     let summary = text::marked_done(task);
 
-    write::save(path, &doc, loaded.mtime, &backup_dir()?)?;
+    write::save(&list.path, &list.doc, list.mtime, &backup_dir()?)?;
     writeln!(std::io::stdout(), "{summary}")?;
-    quietly_sync(path);
+    quietly_sync(paths);
     Ok(ExitCode::SUCCESS)
 }
 
-fn list(path: &Path, args: &ListArgs) -> Result<()> {
-    let doc = write::load(path)?.doc;
+fn list(paths: &[PathBuf], args: &ListArgs) -> Result<()> {
+    let open = open_all(paths)?;
     let today = Local::now().date_naive();
     let filter = agenda::Filter {
         tags: &args.tag,
         prio: args.prio,
     };
 
-    // `agenda` wants a slice and the tasks live scattered through `doc.lines`,
-    // so they are copied out. A todo list is small; this is not worth a lifetime.
-    let tasks: Vec<_> = doc.tasks().filter(|t| filter.matches(t)).cloned().collect();
+    let all = all_tasks(&open);
+    let tasks: Vec<_> = all.iter().filter(|t| filter.matches(t)).cloned().collect();
     let groups = agenda::agenda(&tasks, today);
 
     // Locked once. Every write can fail — the reader may be a `head` that has
@@ -846,9 +1032,9 @@ fn list(path: &Path, args: &ListArgs) -> Result<()> {
 
     // stderr, not stdout: `ratodo list | wc -l` has to count tasks and nothing else.
     if tasks.is_empty() {
-        if doc.task_count() == 0 {
+        if all.is_empty() {
             eprintln!("nothing here yet — try: ratodo add 'buy milk @tomorrow #home'");
-            eprintln!("file: {}", path.display());
+            eprintln!("file: {}", capture_target(paths).display());
         } else {
             eprintln!("no task matches that filter");
         }
@@ -856,8 +1042,8 @@ fn list(path: &Path, args: &ListArgs) -> Result<()> {
     }
 
     for group in &groups {
-        if let Some(title) = group.kind.title() {
-            writeln!(out, "\n{}", text::plain(title))?;
+        if let Some(heading) = group.kind.heading() {
+            writeln!(out, "\n{}", text::plain(&heading))?;
         }
         for task in &group.tasks {
             writeln!(out, "{}", text::list_line(task, today))?;
@@ -877,10 +1063,9 @@ fn list(path: &Path, args: &ListArgs) -> Result<()> {
 
 /// Exits non-zero when something is overdue, which is the whole reason
 /// `ratodo status || notify-send "$(ratodo status)"` needs no extra flag.
-fn status(path: &Path, json: bool) -> Result<ExitCode> {
-    let doc = write::load(path)?.doc;
+fn status(paths: &[PathBuf], json: bool) -> Result<ExitCode> {
     let today = Local::now().date_naive();
-    let tasks: Vec<_> = doc.tasks().cloned().collect();
+    let tasks = all_tasks(&open_all(paths)?);
     let counts = agenda::Counts::of(&tasks, today);
 
     writeln!(
@@ -980,7 +1165,7 @@ mod tests {
         let path = dir.join("todo.md");
         std::fs::write(&path, text).unwrap();
 
-        let live = Live::read(&path, a_day()).unwrap();
+        let live = Live::read(std::slice::from_ref(&path), a_day()).unwrap();
         (path, live)
     }
 
@@ -995,7 +1180,7 @@ mod tests {
         let before = "# My list\n\n## Work\n- [ ] first\n- [ ] second\n\n> a note\n";
         let (path, mut live) = open("delete", before);
 
-        let notice = live.delete(&path, a_day()).unwrap();
+        let notice = live.delete(a_day()).unwrap();
         assert!(
             matches!(&notice, ui::Notice::Said(s) if s.contains("deleted \"first\"") && s.contains("u undo")),
             "{notice:?}"
@@ -1028,7 +1213,7 @@ mod tests {
 
         // The temp file the atomic write needs cannot be created in here.
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
-        let outcome = live.toggle(&path, a_day());
+        let outcome = live.toggle(a_day());
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         let error = outcome.expect_err("a permission failure came back as a notice");
@@ -1047,8 +1232,8 @@ mod tests {
         let before = "## Work\n- [ ] first\n- [ ] second\n";
         let (path, mut live) = open("undo", before);
 
-        live.delete(&path, a_day()).unwrap();
-        let notice = live.undo(&path, a_day()).unwrap();
+        live.delete(a_day()).unwrap();
+        let notice = live.undo(a_day()).unwrap();
 
         assert!(
             matches!(&notice, ui::Notice::Said(s) if s.contains("undone")),
@@ -1058,7 +1243,7 @@ mod tests {
 
         // One level, and it is spent.
         assert!(
-            matches!(live.undo(&path, a_day()).unwrap(), ui::Notice::Said(s) if s.contains("nothing to undo"))
+            matches!(live.undo(a_day()).unwrap(), ui::Notice::Said(s) if s.contains("nothing to undo"))
         );
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
@@ -1069,10 +1254,10 @@ mod tests {
         let before = "- [ ] first\n";
         let (path, mut live) = open("undo-toggle", before);
 
-        live.toggle(&path, a_day()).unwrap();
+        live.toggle(a_day()).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "- [x] first\n");
 
-        live.undo(&path, a_day()).unwrap();
+        live.undo(a_day()).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
@@ -1091,7 +1276,7 @@ mod tests {
 
         let notice = live
             .save_typed(
-                &path,
+                std::slice::from_ref(&path),
                 a_day(),
                 &typed("call the bank @tomorrow #work", None),
             )
@@ -1106,7 +1291,7 @@ mod tests {
         );
         assert_eq!(live.counts.open, 2, "the screen did not catch up");
 
-        live.undo(&path, a_day()).unwrap();
+        live.undo(a_day()).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
@@ -1121,7 +1306,7 @@ mod tests {
 
         let notice = live
             .save_typed(
-                &path,
+                std::slice::from_ref(&path),
                 a_day(),
                 &typed(
                     "wash up properly !high",
@@ -1149,7 +1334,9 @@ mod tests {
         let (path, mut live) = open("input-nothing", before);
 
         for input in [typed("   ", None), typed("first", Some("- [ ] first"))] {
-            let notice = live.save_typed(&path, a_day(), &input).unwrap();
+            let notice = live
+                .save_typed(std::slice::from_ref(&path), a_day(), &input)
+                .unwrap();
             assert!(matches!(&notice, ui::Notice::Said(_)), "{notice:?}");
             assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
             assert!(
@@ -1173,7 +1360,9 @@ mod tests {
         std::fs::write(&path, "- [ ] first\n- [ ] theirs\n").unwrap();
 
         let input = typed("mine", None);
-        let refused = live.save_typed(&path, a_day(), &input).unwrap();
+        let refused = live
+            .save_typed(std::slice::from_ref(&path), a_day(), &input)
+            .unwrap();
         assert!(
             matches!(&refused, ui::Notice::Warned(w) if w.contains("changed on disk")),
             "{refused:?}"
@@ -1186,7 +1375,8 @@ mod tests {
 
         // The sentence is still the caller's to keep, and now it lands — on top
         // of the other writer's line, not instead of it.
-        live.save_typed(&path, a_day(), &input).unwrap();
+        live.save_typed(std::slice::from_ref(&path), a_day(), &input)
+            .unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             "- [ ] first\n- [ ] theirs\n- [ ] mine\n"
@@ -1203,7 +1393,11 @@ mod tests {
         let (path, mut live) = open("input-vanished", "- [ ] first\n");
 
         let notice = live
-            .save_typed(&path, a_day(), &typed("whatever", Some("- [ ] gone")))
+            .save_typed(
+                std::slice::from_ref(&path),
+                a_day(),
+                &typed("whatever", Some("- [ ] gone")),
+            )
             .unwrap();
         assert!(
             matches!(&notice, ui::Notice::Warned(w) if w.contains("not there any more")),
@@ -1219,13 +1413,13 @@ mod tests {
     #[test]
     fn a_refused_undo_keeps_the_undo() {
         let (path, mut live) = open("undo-conflict", "- [ ] first\n- [ ] second\n");
-        live.delete(&path, a_day()).unwrap();
+        live.delete(a_day()).unwrap();
 
         // Somebody else gets there first.
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&path, "- [ ] theirs\n").unwrap();
 
-        let refused = live.undo(&path, a_day()).unwrap();
+        let refused = live.undo(a_day()).unwrap();
         assert!(matches!(&refused, ui::Notice::Warned(w) if w.contains("changed on disk")));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "- [ ] theirs\n");
         assert!(
@@ -1241,10 +1435,10 @@ mod tests {
         let (path, mut live) = open("empty-actions", "> just a note\n");
 
         assert!(
-            matches!(live.delete(&path, a_day()).unwrap(), ui::Notice::Said(s) if s.contains("nothing to delete"))
+            matches!(live.delete(a_day()).unwrap(), ui::Notice::Said(s) if s.contains("nothing to delete"))
         );
         assert!(
-            matches!(live.undo(&path, a_day()).unwrap(), ui::Notice::Said(s) if s.contains("nothing to undo"))
+            matches!(live.undo(a_day()).unwrap(), ui::Notice::Said(s) if s.contains("nothing to undo"))
         );
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "> just a note\n");
 
@@ -1264,14 +1458,14 @@ mod tests {
 
         let today = chrono::NaiveDate::from_ymd_opt(2026, 8, 11).unwrap();
         std::fs::write(&path, "- [ ] mine\n").unwrap();
-        let mut live = Live::read(&path, today).unwrap();
+        let mut live = Live::read(std::slice::from_ref(&path), today).unwrap();
 
         // Somebody else gets there first. The sleep is for filesystems whose
         // mtime resolution is coarser than two writes in a row.
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&path, "- [ ] mine\n- [ ] theirs\n").unwrap();
 
-        let notice = live.toggle(&path, today).unwrap();
+        let notice = live.toggle(today).unwrap();
         assert!(
             matches!(&notice, ui::Notice::Warned(w) if w.contains("changed on disk")),
             "{notice:?}"
@@ -1284,7 +1478,7 @@ mod tests {
         // And the in-memory document went back, so the screen does not sit there
         // claiming a task is done that the file says is not.
         assert!(
-            live.doc.tasks().all(|t| !t.done),
+            live.files[0].doc.tasks().all(|t| !t.done),
             "the model kept a change the file refused"
         );
 
@@ -1300,5 +1494,237 @@ mod tests {
             .add_path(PathBuf::from("/home/you/.config/ratodo/todo.md.new"))
             .add_path(PathBuf::from("/home/you/.config/ratodo/todo.md"));
         assert!(touches(&rename, name));
+    }
+
+    /// A scratch directory holding several lists, and a `Live` open on all of
+    /// them in the order `lists` would hand them over.
+    fn open_several(tag: &str, files: &[(&str, &str)]) -> (PathBuf, Vec<PathBuf>, Live) {
+        let dir = std::env::temp_dir().join(format!("ratodo-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut paths: Vec<PathBuf> = files
+            .iter()
+            .map(|(name, text)| {
+                let path = dir.join(name);
+                std::fs::write(&path, text).unwrap();
+                path
+            })
+            .collect();
+        paths.sort();
+
+        let live = Live::read(&paths, a_day()).unwrap();
+        (dir, paths, live)
+    }
+
+    /// The point of the feature: files kept apart on disk, one agenda on screen,
+    /// and a change that goes back to the file it came from and nowhere else.
+    #[test]
+    fn several_lists_are_one_agenda_and_a_write_touches_one_file() {
+        let work = "## Sprint\n- [ ] deploy the thing @2026-08-09\n- [ ] write the notes\n";
+        let home = "## House\n- [ ] fix the tap\n";
+        let (dir, paths, mut live) =
+            open_several("several", &[("work.md", work), ("home.md", home)]);
+
+        // Both files are on screen, and each undated heading says which file it
+        // came out of.
+        let tasks = all_tasks(&live.files);
+        let titles: Vec<String> = ui::rows(&agenda::agenda(&tasks, a_day()))
+            .iter()
+            .filter_map(|row| match row {
+                ui::Row::Header { title, .. } => Some(title.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            titles.contains(&"## Sprint (work.md)".to_string()),
+            "{titles:?}"
+        );
+        assert!(
+            titles.contains(&"## House (home.md)".to_string()),
+            "{titles:?}"
+        );
+        assert_eq!(live.counts.open, 3);
+
+        // The cursor starts on the overdue task, which lives in work.md.
+        live.toggle(a_day()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(paths.iter().find(|p| p.ends_with("work.md")).unwrap())
+                .unwrap(),
+            "## Sprint\n- [x] deploy the thing @2026-08-09\n- [ ] write the notes\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(paths.iter().find(|p| p.ends_with("home.md")).unwrap())
+                .unwrap(),
+            home,
+            "the other list was rewritten by a change that had nothing to do with it"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Two files can hold the same heading and the same title, and they are not
+    /// the same task: the groups stay apart and so do the identities.
+    #[test]
+    fn the_same_heading_in_two_files_is_two_groups() {
+        let (dir, _, live) = open_several(
+            "same-heading",
+            &[
+                ("a.md", "## Work\n- [ ] review\n"),
+                ("b.md", "## Work\n- [ ] review\n"),
+            ],
+        );
+
+        let tasks = all_tasks(&live.files);
+        let headers: Vec<String> = ui::rows(&agenda::agenda(&tasks, a_day()))
+            .iter()
+            .filter_map(|row| match row {
+                ui::Row::Header { title, .. } => Some(title.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(headers, ["## Work (a.md)", "## Work (b.md)"], "{headers:?}");
+
+        let ids: Vec<String> = tasks.iter().map(|t| t.identity()).collect();
+        assert_ne!(ids[0], ids[1], "two files, one identity: {ids:?}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// One list is stamped with nothing at all, so every identity — and so every
+    /// calendar UID — is the one it was before several files were a thing.
+    #[test]
+    fn one_list_is_stamped_with_nothing() {
+        let (path, live) = open("one-list", "## Work\n- [ ] review\n");
+        let task = all_tasks(&live.files).remove(0);
+
+        assert_eq!(task.file, None);
+        assert_eq!(task.identity(), format!("Work\u{1}review"));
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// `a` means the same file wherever the cursor is. The task the cursor was
+    /// over is in work.md; the capture still lands in todo.md.
+    #[test]
+    fn a_capture_lands_in_todo_md_whatever_the_cursor_is_over() {
+        let (dir, paths, mut live) = open_several(
+            "capture",
+            &[("todo.md", "- [ ] mine\n"), ("work.md", "- [ ] theirs\n")],
+        );
+
+        live.save_typed(&paths, a_day(), &typed("buy milk", None))
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("todo.md")).unwrap(),
+            "- [ ] mine\n- [ ] buy milk\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("work.md")).unwrap(),
+            "- [ ] theirs\n"
+        );
+        // And it is stamped like the tasks around it, or it would sit under a
+        // heading of its own until the next reload moved it.
+        let added = all_tasks(&live.files)
+            .into_iter()
+            .find(|t| t.title == "buy milk")
+            .expect("the captured task is not on screen");
+        assert_eq!(added.file.as_deref(), Some("todo.md"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// With no `todo.md` among them the capture goes to the first list rather
+    /// than nowhere.
+    #[test]
+    fn without_a_todo_md_the_capture_target_is_the_first_list() {
+        let dir = std::env::temp_dir().join(format!("ratodo-target-{}", std::process::id()));
+        let paths = [dir.join("a.md"), dir.join("b.md")];
+        assert_eq!(capture_target(&paths), paths[0]);
+
+        let with_todo = [dir.join("a.md"), dir.join("todo.md")];
+        assert_eq!(capture_target(&with_todo), with_todo[1]);
+    }
+
+    /// `done` reads every list, so a title in the second file is found — and a
+    /// title in *both* is ambiguous rather than a race between them.
+    #[test]
+    fn done_matches_across_every_list() {
+        let (dir, paths, _) = open_several(
+            "done-across",
+            &[
+                ("work.md", "- [ ] fix the tap\n- [ ] ship the tag\n"),
+                ("home.md", "- [ ] fix the tap\n"),
+            ],
+        );
+        let before: Vec<String> = paths
+            .iter()
+            .map(|p| std::fs::read_to_string(p).unwrap())
+            .collect();
+
+        // In both files: nothing is written and it says so with exit 2.
+        let code = done(&paths, "fix the tap").unwrap();
+        assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::from(2)));
+        for (path, was) in paths.iter().zip(&before) {
+            assert_eq!(&std::fs::read_to_string(path).unwrap(), was, "{path:?}");
+        }
+
+        // In one file only: ticked there, and the other list is untouched.
+        done(&paths, "ship the tag").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("work.md")).unwrap(),
+            "- [ ] fix the tap\n- [x] ship the tag\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("home.md")).unwrap(),
+            "- [ ] fix the tap\n"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Every `*.md` in the config directory is a list, sorted, and nothing else
+    /// in there is. `--file` and `$RATODO_FILE` still name exactly one.
+    #[test]
+    fn which_files_count_as_lists() {
+        let dir = std::env::temp_dir().join(format!("ratodo-lists-{}", std::process::id()));
+        let config = dir.join("ratodo");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&config).unwrap();
+        for name in ["work.md", "2026.md", "theme.conf", "notes.txt"] {
+            std::fs::write(config.join(name), "").unwrap();
+        }
+        std::fs::create_dir_all(config.join("archive.md")).unwrap();
+
+        let was = std::env::var_os("XDG_CONFIG_HOME");
+        // SAFETY: single-threaded within this test, and put back before it ends.
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", &dir) };
+
+        let found = lists(None).unwrap();
+        let names: Vec<String> = found
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["2026.md", "work.md"], "sorted, and only the lists");
+
+        // A named file is the only file, whatever else is in the directory.
+        let one = lists(Some(PathBuf::from("/tmp/elsewhere.md"))).unwrap();
+        assert_eq!(one, [PathBuf::from("/tmp/elsewhere.md")]);
+
+        // An empty directory still answers with the default path, which is the
+        // file the empty screen teaches you to put your first task in.
+        std::fs::remove_dir_all(&config).unwrap();
+        std::fs::create_dir_all(&config).unwrap();
+        assert_eq!(lists(None).unwrap(), [config.join("todo.md")]);
+
+        // SAFETY: as above.
+        unsafe {
+            match was {
+                Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

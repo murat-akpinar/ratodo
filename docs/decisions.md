@@ -148,6 +148,21 @@ Three lists: what is settled, what was rejected, and what is still open.
   drawn as text inside the block, so the two cells where it meets the frame are
   set to `├` and `┤` afterwards — a rule butting into `│` reads as a frame that
   broke. See [tui.md](tui.md#adding).
+- ✅ **Every `*.md` in the config directory is a list** *(2026-08-11)*. Somebody
+  who keeps `work.md`, `personal.md` and `2026.md` apart on disk still wants one
+  screen, and the alternative — a manifest naming the lists — is a second config
+  file plus a step to forget every time a file is added. Reading them was the
+  easy half. What the decision actually cost:
+  a `Task` carries the file it came from, so a change goes back to that file with
+  its own mtime check and its own backup; `Kind::Section` carries it too, so
+  `## Work` in two files is two headings rather than one that pulls tasks
+  upwards; and `Task::identity` gains it, or two files holding `- [ ] fix the
+  tap` are one task to `done`, to the cursor and to the calendar UID.
+  **The file is attached only when there is more than one**, which is what keeps
+  every single-file setup — its identities, its UIDs, its `done` — exactly as it
+  was. A capture goes to `todo.md` rather than to whatever the cursor is over:
+  `a` meaning a different file depending on the scroll position is the kind of
+  surprise that loses a task. See [cli.md](cli.md#several-lists).
 - ✅ **A reader that closes the pipe is not an error** *(2026-08-11)*.
   `ratodo list | head` made `println!` panic. Every stdout write goes through
   `writeln!`, and `BrokenPipe` alone exits 0. See
@@ -377,17 +392,6 @@ views and `ratodo archive` are all still v2.
       developer with one list per repository need `ratodo` to walk up the tree
       looking for a `TODO.md`? *Leaning: the env var buys most of it — `direnv`
       already solves per-directory. Ship that, then find out.*
-- [ ] **Should several files be readable in one agenda?** Somebody who keeps
-      `work.md`, `personal.md` and `2026.md` apart on disk may still want one
-      screen (raised 2026-08-11). Reading is the easy half — `agenda` already
-      takes a `&[Task]` from anywhere. The cost is everything downstream of it:
-      a `Task` would have to carry which `Doc` it came from so a write goes back
-      to the right file with the right mtime check and the right `.bak`;
-      `Task::identity` is section plus title, so two files with a `- [ ] fix the
-      tap` become the same task to `done`, to the cursor and to the `.ics` UID;
-      and a capture needs a rule for which file it lands in. *Leaning: v2, and
-      only if it survives the identity question — the fix is probably that
-      identity gains the file, which changes every UID once.*
 - [ ] Where does a captured task go in a file that ends with a table, a rule or a
       paragraph? Appending at EOF puts it outside every `##` section.
       *Leaning: insert after the last recognised task, fall back to EOF.*

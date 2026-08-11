@@ -27,13 +27,52 @@ Global flags:
 
 | Flag | Meaning |
 |---|---|
-| `--file <path>` | Use a different file instead of `~/.config/ratodo/todo.md`. The escape hatch for "work list separate, personal list separate" |
+| `--file <path>` | Work on exactly this file, and nothing else |
 | `--theme <name>` | Run once with a different theme, overriding `theme.conf`. See [theming.md](theming.md) |
 | `--help` / `--version` | clap defaults |
 
-Path precedence: `--file` → `$RATODO_FILE` → `$XDG_CONFIG_HOME/ratodo/todo.md`.
-The environment variable exists so that `direnv` can give a repository its own
-list without an alias per checkout.
+Path precedence: `--file` → `$RATODO_FILE` → **every `*.md` in
+`$XDG_CONFIG_HOME/ratodo/`**. The environment variable exists so that `direnv`
+can give a repository its own list without an alias per checkout.
+
+## Several lists
+
+Some people keep one list. Others keep `work.md`, `personal.md` and `2026.md`,
+because that is how they think about it — and they still want one screen.
+
+**Every `*.md` in the config directory is a list.** No setting, no manifest: a
+new list is a new file, and deleting one is deleting the file.
+
+```console
+$ ls ~/.config/ratodo/
+2026.md  personal.md  theme.conf  work.md
+
+$ ratodo                    # all three, one agenda
+$ ratodo --file work.md     # only this one
+```
+
+Four rules, and they are the whole feature:
+
+1. **The dated groups mix.** `OVERDUE` is overdue, whichever file it came out
+   of — that is the point of one screen.
+2. **The undated headings say where they are from**: `## Sprint (work.md)`. Two
+   files can hold a `## Work`, and they stay two headings rather than merging
+   into one that pulls tasks upwards.
+3. **A change goes back to the file it came from**, with that file's own mtime
+   check and its own backup. A write never touches a list you were not editing.
+4. **A capture goes to `todo.md`** — or to the first list alphabetically when
+   there is no `todo.md`. It is a fixed answer on purpose: `a` must not mean a
+   different file depending on what the cursor happens to be over. Somewhere
+   else is `ratodo --file work.md add '...'`.
+
+`done '<text>'` reads every list, so a title in the second file is found. A
+title in *two* files is ambiguous — it prints both and writes nothing, which is
+the same rule as two matches in one file.
+
+**With one list, nothing changes.** The file name is attached to a task only
+when there is more than one, so a single-file setup produces exactly the tasks
+it always did — same headings, same `done` behaviour, and the same calendar
+UIDs. Growing a second list is what re-issues them, once.
 
 ## Behaving like a Unix program
 

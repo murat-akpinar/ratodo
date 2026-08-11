@@ -4,17 +4,17 @@
 
 **A todo TUI, built with ratatui — one Markdown file, no cloud, no account.**
 
-[![release](https://img.shields.io/badge/release-v0.1.0-green)](https://github.com/murat-akpinar/ratodo/releases)
+[![release](https://img.shields.io/badge/release-v0.2.0-green)](https://github.com/murat-akpinar/ratodo/releases)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.88%2B-orange)](https://www.rust-lang.org)
 
 </div>
 
-> **v0.1.0.** The command line and the TUI are built and tested — capture,
-> editing, undo, folding, themes and the `.ics` export. It is not on crates.io
-> or the AUR yet, so [build it](#install) from the tag. Reasoning behind every
-> decision is in [`docs/`](docs/README.md), what comes next in
-> [`todo.md`](todo.md).
+> **v0.2.0.** The command line and the TUI are built and tested — capture,
+> editing, undo, folding, themes, the `.ics` export, and several lists in one
+> agenda. It is not on crates.io or the AUR yet, so [build it](#install) from the
+> tag. Reasoning behind every decision is in [`docs/`](docs/README.md), what
+> comes next in [`todo.md`](todo.md).
 
 ## What it is
 
@@ -114,6 +114,23 @@ When adding, shorthand is allowed — `@today`, `@tomorrow`, `@mon`…`@sun`, `@
 | Your tasks | `~/.config/ratodo/todo.md` — in your dotfiles, versioned with your own git |
 | Calendar export | `~/.local/share/ratodo/todo.ics` |
 
+**Several lists, one screen.** Every `*.md` in that directory is a list, so
+keeping work and home apart on disk costs nothing and shows up as one agenda:
+
+```console
+$ ls ~/.config/ratodo/
+2026.md  personal.md  theme.conf  work.md
+
+$ ratodo                    # all three, one agenda
+$ ratodo --file work.md     # only this one
+```
+
+Dated groups mix — overdue is overdue, whichever file it came from — and undated
+headings say where they are from (`## Sprint (work.md)`). A change is written
+back to the file it came out of and nowhere else; a capture goes to `todo.md`,
+or `ratodo --file work.md add '...'` to put it elsewhere. Full rules:
+[`docs/cli.md`](docs/cli.md#several-lists).
+
 Sync is your git. There is no account, no server, no telemetry, and nothing
 leaves the machine.
 
@@ -130,7 +147,7 @@ leaves the machine.
 | `ratodo status` | `3 open · 1 overdue`, for your bar — also `--json` |
 | `ratodo sync` | regenerate `todo.ics` |
 | `ratodo theme list` / `dump` | list built-in themes / print the active one |
-| `--file <path>` | use a different list — or set `$RATODO_FILE` |
+| `--file <path>` | work on exactly this list — or set `$RATODO_FILE` |
 | `--theme <name>` | run with a different theme |
 
 **Use `'single quotes'`, not `"double"`.** In bash and zsh, `!high` inside double
@@ -273,7 +290,7 @@ Rust 1.88 or newer, and no other build dependency:
 
 ```console
 $ git clone https://github.com/murat-akpinar/ratodo && cd ratodo
-$ git checkout v0.1.0
+$ git checkout v0.2.0
 $ cargo install --path .        # → ~/.cargo/bin/ratodo
 ```
 
