@@ -23,6 +23,9 @@ format.md gains the state and stamp rows plus the two sections behind them; tui.
 - *(calendar)* Khal does not show these, todoman does ([26858dd](https://github.com/murat-akpinar/ratodo/commit/26858dd7794d3bb71c301db93409986b26cee0de))
 The `.ics` had been verified as *parseable* — by Python's icalendar, a different implementation of the same RFC — and never as *displayed*. todo.md had that open as "the one that catches a client quietly ignoring VTODO", and it caught one on the first try.
 - *(calendar)* Todoman verified against a packaged install ([9709e4d](https://github.com/murat-akpinar/ratodo/commit/9709e4dc3e6c995d7efeddc435e2ffdb7681d49b))
+- *(roadmap)* Why --as-events is worth building, with the evidence ([838c073](https://github.com/murat-akpinar/ratodo/commit/838c07326a49ad203d45c8f47262f354042ea2ee))
+It was a one-line entry reading "for calendar clients that ignore VTODO", which is a guess until somebody checks. Somebody checked: khal shows none of a generated todo.ics, and a hand-written VEVENT dropped into the same directory under the same config appears — so it is the entry type being ignored, not our output being malformed.
+- *(docs)* Move the four questions the code already answered to resolved ([1c2df3f](https://github.com/murat-akpinar/ratodo/commit/1c2df3fdada5c5458b97456fc497ba487e0f7fbc))
 
 ### 🧪 Testing
 
