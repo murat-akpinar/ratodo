@@ -1,5 +1,9 @@
 ## [unreleased]
 
+### 📚 Documentation
+
+- Stop a release for a human look before cargo publish ([063c924](https://github.com/murat-akpinar/ratodo/commit/063c9242b130cbbf210c711d5092328bfcb87e84))
+
 ### ⚙️ Miscellaneous Tasks
 
 - Point the PKGBUILD at v0.7.0 ([1801138](https://github.com/murat-akpinar/ratodo/commit/1801138859cbe09a6a533d433d5e78edd5a30956))
