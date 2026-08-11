@@ -1106,10 +1106,10 @@ fn the_input_mode_captures_a_task_and_ctrl_c_only_cancels_it() {
     assert!(screen.contains("added: milk"), "{screen}");
     assert!(screen.contains("u undo"), "{screen}");
 
-    // `ctrl-c` in the input cancels it. The `d` afterwards is what proves the
+    // `ctrl-c` in the input cancels it. The `X` afterwards is what proves the
     // session is still there and back in the list: if ctrl-c had quit, nothing
     // would have been deleted.
-    let (_, _, file) = run(b"amilk @tomorrow\x03dq");
+    let (_, _, file) = run(b"amilk @tomorrow\x03Xq");
     assert_eq!(
         file, "",
         "ctrl-c took the session down instead of the sentence, or wrote the line"

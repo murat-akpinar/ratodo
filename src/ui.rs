@@ -77,7 +77,7 @@ pub fn action(key: KeyEvent) -> Action {
         KeyCode::Char('G') => Action::Bottom,
         KeyCode::Char('d') if ctrl => Action::Move(10),
         KeyCode::Char('u') if ctrl => Action::Move(-10),
-        KeyCode::Char('d') => Action::Delete,
+        KeyCode::Char('d') => Action::Cancel,
         KeyCode::Char('u') => Action::Undo,
         KeyCode::Char(' ') => Action::Toggle,
         KeyCode::Char('a') | KeyCode::Char('o') => Action::Add,
@@ -86,7 +86,9 @@ pub fn action(key: KeyEvent) -> Action {
         KeyCode::Char('l') | KeyCode::Right => Action::Fold(Fold::Open),
         // `z` is the vim fold prefix, and here it is the whole of it.
         KeyCode::Char('z') => Action::Fold(Fold::Toggle),
-        KeyCode::Char('X') => Action::Cancel,
+        // Delete is the only irreversible-looking key on the list, so it is the
+        // one that asks for shift. `d` is the reversible neighbour — docs/tui.md#keys.
+        KeyCode::Char('X') => Action::Delete,
         KeyCode::Char('p') => Action::Postpone,
         KeyCode::Char('e') => Action::Edit,
         KeyCode::Char('r') => Action::Reload,
@@ -1114,7 +1116,7 @@ fn hints(width: usize, glyphs: Glyphs) -> String {
         ("spc", "done"),
         ("a", "add"),
         (glyphs.enter(), "edit"),
-        ("X", "cancel"),
+        ("d", "cancel"),
         ("p", "put off"),
     ];
 
@@ -1145,10 +1147,10 @@ impl Notice {
             // is not implemented yet is a worse lie than no hint bar.
             Notice::Hints if height < 10 => (" ?".to_string(), colours.dim),
             Notice::Hints if size == Size::Wide => (hints(width, glyphs), colours.dim),
-            // Keys only, no words. `d` and `e` gave up their slots here: delete
+            // Keys only, no words. `X` and `e` gave up their slots here: delete
             // and `$EDITOR` are both reachable from `?`, and neither is what
             // somebody glancing at a narrow pane is about to press.
-            Notice::Hints => (" j k  spc  a  X  p  ?  q".to_string(), colours.dim),
+            Notice::Hints => (" j k  spc  a  d  p  ?  q".to_string(), colours.dim),
             Notice::Said(text) => (format!(" {text}"), colours.dim),
             Notice::Warned(text) => {
                 let mark = match glyphs {
@@ -1496,8 +1498,8 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
         ("ctrl-d ctrl-u".to_string(), "half page"),
         ("spc".to_string(), "toggle done"),
         (format!("a o  {}", render.glyphs.enter()), "add / edit"),
-        ("d  u".to_string(), "delete / undo"),
-        ("X  p".to_string(), "cancel / put off"),
+        ("X  u".to_string(), "delete / undo"),
+        ("d  p".to_string(), "cancel / put off"),
         ("h l  z".to_string(), "fold this group"),
         // Two keys to a row, so that the box still fits a fourteen-row pane.
         // At twelve rows of keys the border takes `q  ctrl-c` off the bottom,
@@ -1941,14 +1943,14 @@ mod tests {
                 "│   │  ctrl-d ctrl-u  half page            │   │",
                 "│   │  spc            toggle done          │   │",
                 "│   │  a o  ⏎         add / edit           │   │",
-                "│   │  d  u           delete / undo        │   │",
-                "│   │  X  p           cancel / put off     │   │",
+                "│   │  X  u           delete / undo        │   │",
+                "│   │  d  p           cancel / put off     │   │",
                 "│   │  h l  z         fold this group      │   │",
                 "│   │  e  r           $EDITOR / re-read    │   │",
                 "│   │  q  ctrl-c      quit                 │   │",
                 "│   └───────── esc or ? to close ──────────┘   │",
                 "└──────────────────────────────────────────────┘",
-                " j k  spc  a  X  p  ?  q                        ",
+                " j k  spc  a  d  p  ?  q                        ",
             ]
         );
     }
@@ -2058,11 +2060,13 @@ mod tests {
             action(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL)),
             Action::Move(-10)
         );
-        // Without the modifier they are delete and undo. The pair is easy to
-        // cross: `ctrl-d` scrolling and `d` deleting share a letter on purpose,
-        // because that is what vim does.
-        assert_eq!(action(press(KeyCode::Char('d'))), Action::Delete);
+        // Without the modifier they are cancel and undo.
+        assert_eq!(action(press(KeyCode::Char('d'))), Action::Cancel);
         assert_eq!(action(press(KeyCode::Char('u'))), Action::Undo);
+        // Delete is the shifted one, and the bare letter must never reach it:
+        // `x` is unbound and `d` is the reversible neighbour.
+        assert_eq!(action(press(KeyCode::Char('X'))), Action::Delete);
+        assert_eq!(action(press(KeyCode::Char('x'))), Action::Ignore);
     }
 
     /// Windows sends a release for every press. Acting on both moves the cursor
@@ -2346,7 +2350,7 @@ mod tests {
                 "│                                                            │",
                 "│                                                            │",
                 "└────────────────────────────────────────────────────────────┘",
-                " j k move  spc done  a add  ⏎ edit  X cancel  ? keys  q quit  ",
+                " j k move  spc done  a add  ⏎ edit  d cancel  ? keys  q quit  ",
             ]
         );
     }
@@ -3368,7 +3372,7 @@ mod tests {
         // The three states and the date, once there is room for them. A user
         // who never opens `?` has to be able to find them.
         let wide = shown(&Notice::Hints, Size::Wide, 80, 20, Glyphs::Unicode);
-        for named in ["spc done", "X cancel", "p put off"] {
+        for named in ["spc done", "d cancel", "p put off"] {
             assert!(wide.contains(named), "{named} is not on the bar: {wide}");
         }
 

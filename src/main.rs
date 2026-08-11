@@ -1358,7 +1358,7 @@ mod tests {
         live.cancel(a_day()).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
 
-        // And the two are not the same door: `X` on a ticked task cancels it
+        // And the two are not the same door: `d` on a ticked task cancels it
         // rather than reopening it, and takes the stamp with it.
         let (path, mut live) = open("tick-then-cancel", before);
         live.toggle(a_day()).unwrap();

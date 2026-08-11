@@ -45,17 +45,18 @@ Then, when you want the overview, `ratodo` opens the agenda:
 │  LATER ─────────────────────────────────────────────────── │
 │  ○ write the release notes                           Aug 20│
 └────────────────────────────────────────────────────────────┘
- j k move  spc done  a add  ⏎ edit  X cancel  ? keys  q quit
+ j k move  spc done  a add  ⏎ edit  d cancel  ? keys  q quit
 ```
 
 Vim keys, no vim modes: `j` `k` `g` `G` `ctrl-d` to move, `spc` to tick, `a` to
-add and `⏎` to edit, `d` to delete and `u` to take it back, `X` to cancel and `p`
-to put a date off, `h` `l` `z` to fold a group, `e` for `$EDITOR` — one key per
-action, and `?` for the rest.
+add and `⏎` to edit, `d` to cancel and `p` to put a date off, `X` to delete and
+`u` to take it back, `h` `l` `z` to fold a group, `e` for `$EDITOR` — one key per
+action, and `?` for the rest. Delete is the only shifted key: it is the one that
+takes a line out of the file.
 
 Ticking something turns the row green and records the day in the file
 (`✓2026-08-11`); the row then shows when it was finished rather than when it was
-due. `X` is the third state — decided against, not done — which stays on the list
+due. `d` is the third state — decided against, not done — which stays on the list
 as `- [-]` in red instead of being deleted, out of the counts and never overdue. `p`
 asks how long (`2`, `3d`, `1w`, `fri`) and moves the date alone, keeping the time
 and everything else on the line.

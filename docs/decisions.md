@@ -219,6 +219,27 @@ no. Reopening one requires new information.
 
 ## Reversed
 
+### `d` deletes and `X` cancels → `d` cancels and `X` deletes (2026-08-11)
+
+**Was:** `d` deleted the task under the cursor and `X` marked it cancelled. The
+capital was on cancel because "cancelling should be harder to reach than
+finishing" — see [the entry below](#x-unbound--still-unbound-and-x-cancels-2026-08-11).
+
+**Now:** the two are swapped. `d` cancels, `X` deletes. `x` stays unbound, and
+the reasoning for that is unchanged.
+
+**Why:** the old pairing put the shift on the wrong key. Cancelling is
+reversible — `d` again takes it back, the row stays in the file, and the state
+is one of the three the format already carries. Deleting takes a line out of the
+user's file, and `u` is one level of undo that a `q` or a crash spends. The key
+that costs the most is the one that should cost a shift, and `d` sitting one row
+from `j` and `k` made the cheap key the destructive one.
+
+The cost: `d` no longer means what it means in vim, and that is a real loss for
+the audience this keymap is aimed at. It was accepted because `X` still points
+at vim's `x`, only shifted, and because the wrong keystroke on `d` now costs a
+second `d` rather than an undo.
+
 ### Red — only for overdue, then for the negative outcome (2026-08-11)
 
 **Was:** "**Red is only for overdue.** Nowhere else." A cancelled row was drawn
@@ -271,6 +292,9 @@ key already pulling two ways is worse than either of them. `X` took the job.
 **Why:** the capital reads as a bigger version of the tick it is related to, it
 was free, and shift makes it the deliberate act that "decided against" ought to
 be. Cancelling should be harder to reach than finishing.
+
+*Superseded the same day: `X` now deletes and `d` cancels — see the entry at the
+top of this section. `x` is still unbound, on the grounds given here.*
 
 ### The help overlay — `:` and `/` listed, then not (2026-08-11)
 

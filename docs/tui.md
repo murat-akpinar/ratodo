@@ -66,10 +66,10 @@ move · done · add · edit · cancel · put off
 ```
 
 So sixty columns, the narrowest pane that still counts as wide, gets through
-`⏎ edit`; a little wider brings `X cancel`, and eighty brings `p put off`. `d`
+`⏎ edit`; a little wider brings `d cancel`, and eighty brings `p put off`. `X`
 and `e` are not on it at any width — delete and `$EDITOR` are both a keystroke
 away in `?`, and neither is what somebody glancing at a side pane is about to
-press. Below the wide threshold the bar drops to bare keys, `j k  spc  a  X  p
+press. Below the wide threshold the bar drops to bare keys, `j k  spc  a  d  p
 ?  q`.
 
 This replaced a fixed list of six, which had to be re-argued every time a key
@@ -100,7 +100,7 @@ twenty columns on a wide one.
 │                                                            │
 └────────────────────────────────────────────────────────────┘
 
- j k move  spc done  a add  ⏎ edit  X cancel  ? keys  q quit
+ j k move  spc done  a add  ⏎ edit  d cancel  ? keys  q quit
 ```
 
 Details that are decisions, not drawing:
@@ -308,7 +308,8 @@ changing it writes nothing at all and does not spend the undo.
 
 A confirmation prompt is the wrong trade here. It stops the flow on **every**
 delete to protect against the rare mistaken one. Undo inverts that: deleting
-costs one key, and the mistake costs one more.
+costs one key, and the mistake costs one more. The shift on `X` does the rest —
+it is not a dialog, but it is not a key you land on by accident either.
 
 `u` undoes the last change in this session — a delete, a toggle, or an edit. The
 `.bak` file is the backstop underneath it. See
@@ -387,8 +388,8 @@ the file is yours — you should be told where it is on day one.
 │  ctrl-d ctrl-u   half page             │
 │  spc             toggle done           │
 │  a o  ⏎          add / edit            │
-│  d  u            delete / undo         │
-│  X  p            cancel / put off      │
+│  X  u            delete / undo         │
+│  d  p            cancel / put off      │
 │  h l  z          fold this group       │
 │  e  r            $EDITOR / re-read     │
 │  q  ctrl-c       quit                  │
@@ -408,7 +409,7 @@ and exactly that.
 Only keys that are built are listed — which is why `:` and `/` are **not** here
 any more. They do nothing, pressing either answers in the status line, and that
 is where they teach anything at all; the row they were costing is what keeps
-`X  p` inside the same twelve.
+`d  p` inside the same twelve.
 
 ## Keys
 
@@ -420,9 +421,9 @@ is where they teach anything at all; the row they were costing is what keeps
 | `spc` | toggle done | |
 | `a` / `o` | add | `o` because a vim user will reach for it to open a new line |
 | `⏎` | edit the selected task | |
-| `d` | delete | Immediate, with `u` to undo |
+| `d` | cancel — decided against | `- [-]` in the file; `d` again takes it back, the same way `spc` does. Out of the counts, never overdue, not exported. See [format.md](format.md#the-three-states) |
 | `u` | undo the last change | |
-| `X` | cancel — decided against | `- [-]` in the file; `X` again takes it back, the same way `spc` does. Out of the counts, never overdue, not exported. **Capital**, and see the note on `x` under [Deliberately unbound](#deliberately-unbound). See [format.md](format.md#the-three-states) |
+| `X` | delete | Immediate, with `u` to undo. **Capital**: the one key that takes a line out of the file is the one that asks for shift, and see the note on `x` under [Deliberately unbound](#deliberately-unbound) |
 | `p` | put the date off | Opens the input box to ask how long — `2`, `3d`, `1w`, `fri` — and moves `@` alone. Retyping the whole line through `⏎` was the only way to move a date, which is a lot of keys for "not today" |
 | `h` / `l` | fold / unfold the group under the cursor | Not "fold LATER". In `lf`, `ranger` and `yazi` — which this audience uses daily — `h` and `l` collapse and expand *what is under the cursor*, and that muscle memory arrives with them |
 | `z` | the same, as one toggle | `z` is the vim fold prefix |
@@ -434,11 +435,10 @@ is where they teach anything at all; the row they were costing is what keeps
 ### Deliberately unbound
 
 - **`x`** — in vim it deletes a character, in a checklist it means "tick the box".
-  Two strong and opposite intuitions on one key, so it still gets neither. When
-  cancelling needed a key it was the obvious candidate and was rejected for the
-  same reason: a *third* meaning on a key already pulling two ways is worse than
-  either. `X` took it instead — plainly related to the tick, and the shift makes
-  it the deliberate act that "decided against" ought to be.
+  Two strong and opposite intuitions on one key, so it gets neither. `X` takes
+  the vim half a shift away: the shift is the point, since delete is the only
+  key that takes a line out of the file, and a bare letter next to `j` and `k`
+  is too cheap for that.
 - **`esc` in list mode** — does nothing. It must never quit. Someone hitting
   `esc` out of habit should not lose the pane.
 - **`:`** — there is no command mode. Pressing it prints `no command mode — ? for
@@ -446,8 +446,8 @@ is where they teach anything at all; the row they were costing is what keeps
 - **`/`** — search arrives in v2. Until then it says so, rather than doing
   nothing: `search comes in v2`. A key that appears broken is worse than one that
   explains itself.
-- **`dd`** — `d` is enough, and a pending-operator state is exactly the vim-ness
-  we decided not to import.
+- **`dd`** — one `d` is enough for what `d` does, and a pending-operator state is
+  exactly the vim-ness we decided not to import.
 
 ## Width
 
