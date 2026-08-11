@@ -1,5 +1,10 @@
 ## [unreleased]
 
+### 🎨 Styling
+
+- *(ui)* Draw the priority in the accent, in two weights ([571577f](https://github.com/murat-akpinar/ratodo/commit/571577f5316b679195a9e3c267ae9b34436c6c4d))
+`!high` is the accent and bold, `!med` the accent, `!low` stays dim. Three levels the eye can sort without reading them, which is what the column is for.
+
 ### ⚙️ Miscellaneous Tasks
 
 - Point the PKGBUILD at v0.6.0 ([596d654](https://github.com/murat-akpinar/ratodo/commit/596d654e56cb8f190d906090dc0d3622edfb4195))
