@@ -9,6 +9,11 @@
 - *(ui)* Copy the selected task with y ([4e0e6fd](https://github.com/murat-akpinar/ratodo/commit/4e0e6fd709e617eb06193c9fb0a25a85f17d707a))
 A task that is nearly one already on the list had no way in but `a` and the whole line again. `y` opens the input box pre-filled with the task under the cursor, as a new one: edit it, `⏎` saves a second task, `esc` writes nothing.
 
+### 🐛 Bug Fixes
+
+- *(ui)* Fit y copy on the hint bar at eighty columns ([1322b1d](https://github.com/murat-akpinar/ratodo/commit/1322b1dc6ace46f3942ee55bed4f1af175b29cb9))
+The bar takes keys until one does not fit, so `y copy` needed 81 columns and eighty is the width a terminal opens at unless somebody moved it. The newest key was invisible at the one width most people run.
+
 ### 📚 Documentation
 
 - Put what is left at the top of todo.md ([bb63dcb](https://github.com/murat-akpinar/ratodo/commit/bb63dcb23567cdef37025ca82ff00ab96055ab78))
