@@ -17,7 +17,9 @@ exclude = [
     ".vscode/",
     "CLAUDE.md",
     "cliff.toml",
+    "flake.nix",
     "notes.md",
+    "packaging/",
     "scripts/",
     "todo.md",
 ]

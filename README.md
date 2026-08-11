@@ -332,7 +332,24 @@ Or take the binary from the [release
 page](https://github.com/murat-akpinar/ratodo/releases) — x86_64 Linux, built
 against the system glibc.
 
-A `flake.nix` and an AUR `PKGBUILD` are next.
+**Arch.** A `PKGBUILD` is in the repository, so the package builds with the
+completions, the licence and the docs where `pacman` expects them:
+
+```console
+$ cd packaging && makepkg -si
+```
+
+It is not on the AUR yet — that is a submission, not a file.
+
+**Nix.** A flake is in the repository:
+
+```console
+$ nix profile install github:murat-akpinar/ratodo
+```
+
+Honest caveat: there is no `nix` on the machine this was written on, so the
+`PKGBUILD` above was built and installed and the flake was not. A report either
+way is welcome.
 
 ## Documentation
 

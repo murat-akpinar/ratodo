@@ -142,6 +142,16 @@ Three lists: what is settled, what was rejected, and what is still open.
   — the two roles the title already uses, so nothing new to theme. Colouring
   every date was the alternative and it flattens the row: the right-hand fields
   are secondary on purpose. See [tui.md](tui.md#main-screen).
+- ✅ **The packaging lives in this repository, and neither file carries a
+  version** *(2026-08-11)*. `flake.nix` reads the version out of `Cargo.toml`
+  with `fromTOML` and pins its dependencies with `cargoLock.lockFile`; the
+  `PKGBUILD` carries `pkgver` and the tarball's `sha256`, because that is what
+  `makepkg` is. A `cargoHash` in the flake was the alternative and it is a
+  second copy of what the lock already says — the copy that rots. There is **no
+  `flake.lock`**: it cannot be generated on a machine with no `nix`, and an
+  invented one would be worse than none. The AUR package is a `PKGBUILD` in
+  `packaging/`, not a submission — submitting is an account and a push, and it
+  is somebody's decision rather than a build step.
 - ✅ **A length of time stops at a year** *(2026-08-11)*. Reported from use: a
   keyboard that stutters turns `22` into `2222` in the `p` box, and both are
   perfectly good arithmetic — twenty-two days and six years — so the file took

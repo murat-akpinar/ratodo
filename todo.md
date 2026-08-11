@@ -116,10 +116,26 @@ and a box split into fields.
       [docs/calendar.md](docs/calendar.md) is finished or still guessing. It is
       also what tells us how big an audience `--as-events` would actually buy,
       and that flag is already on the [v2 roadmap](docs/roadmap.md)
-- [ ] **`flake.nix` and an AUR `PKGBUILD`** — `rustPlatform.buildRustPackage` and
+- [x] **`flake.nix` and an AUR `PKGBUILD`** — `rustPlatform.buildRustPackage` and
       a `PKGBUILD` against the tag. NixOS users will not `cargo install` into a
       profile, and Arch is the platform this was written on. Both pin a released
-      version, which is why they come after the tag rather than before it
+      version, which is why they came after the tag rather than before it —
+      **done, and the two are not equally verified.**
+      `packaging/PKGBUILD` was **built here**: `makepkg` against the `v0.3.0`
+      tarball and its real sha256, `check()` running the suite, and the resulting
+      package holding the binary, the three completions, the licence and the
+      docs where `pacman` expects them. It also left `~/.local` alone, which is
+      the failure this project has had once before. `.SRCINFO` is generated and
+      committed beside it. What is **not** done is the AUR submission itself —
+      that is an account and a push to `aur.archlinux.org`, not a file.
+      `flake.nix` is **written and unbuilt**: there is no `nix` on this machine
+      and no container runtime to borrow one from, so it has never been
+      evaluated. It reads the version out of `Cargo.toml` and pins dependencies
+      with `cargoLock.lockFile` so neither can rot; there is no `flake.lock`,
+      for the same reason there is no build. The README says so rather than
+      claiming otherwise. First person with `nix` closes this
+      - [ ] **`nix build` once, by somebody who has nix.** Then the caveat comes
+            out of the README and a `flake.lock` goes in
 
 Open questions that block none of the above are in
 [docs/decisions.md](docs/decisions.md#open-questions).
