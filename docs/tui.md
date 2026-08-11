@@ -94,8 +94,10 @@ Details that are decisions, not drawing:
 
 - **`▌` is the selection**, in `accent`, with the row on `selection` background.
   A colour alone is not enough — see [design.md](design.md#rules).
-- **Group headers get a rule to the right edge.** In a narrow pane the eye needs
-  a horizontal anchor to find where a group starts; a bare word does not give it.
+- **Group headers get a rule.** In a narrow pane the eye needs a horizontal
+  anchor to find where a group starts; a bare word does not give it. Here it
+  runs to the right edge; past eighty columns it stops at the title column
+  instead — [below](#width).
 - **`LATER (3)` stays collapsed** and shows its count and its key. A collapsed
   group that does not say how to open it is a dead end.
 
@@ -111,8 +113,10 @@ Details that are decisions, not drawing:
   arrangement.
 - **`SOMEDAY` is a `##` heading from the user's file**, not one of ours. Dated
   groups come first, then the user's own sections in file order.
-- The date column is right-aligned and relative where that reads better
-  (`2d ago`, `Thu 09:30`), absolute where it does not (`Aug 20`).
+- The date is relative where that reads better (`2d ago`, `Thu 09:30`) and
+  absolute where it does not (`Aug 20`). At this width it is right-aligned, so
+  the eye reads down the right edge; past eighty columns it becomes a real
+  left-aligned column — [below](#width).
 - Counts in the title bar are the same numbers a waybar module will show in v4
   ([roadmap.md](roadmap.md)). Same wording, one source.
 - **What is finished sits on the right of the title rule**, as eight cells and a
@@ -305,9 +309,51 @@ reading.
 ## Width
 
 This tool lives in a column of a tiling layout, so narrow is the normal case,
-not the edge case. Three breakpoints:
+not the edge case. Four breakpoints:
 
-**Wide (≥ 60 columns)** — the main screen above.
+**Roomy (≥ 80 columns)** — the right-hand fields become **columns**. The date,
+the priority and the tags each start in the same place on every row, and the
+title column is as wide as the widest title in the list:
+
+```
+┌ ratodo — 5 open · 1 overdue ─────────────────────────────────── ▰▱▱▱▱▱▱▱ 1/6 ┐
+│  OVERDUE ───────────────────────────                                         │
+│  ! rotate the backup keys              2d ago           #ops                 │
+│                                                                              │
+│  TODAY ─────────────────────────────                                         │
+│  ○ pay the invoice                     today            #home                │
+│  ○ review the deploy PR                16:00            #work                │
+│                                                                              │
+│  THIS WEEK ─────────────────────────                                         │
+│  ○ book a dentist appointment          Thu 09:30        #health              │
+│  ✓ migrate the server                  Thu                                   │
+│                                                                              │
+│  SOMEDAY ───────────────────────────                                         │
+│▌ ○ finish chapter 13 of the Rust book             !low                       │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Why this is a breakpoint and not simply the layout: **a column costs every row
+its width, whether or not that row uses it.** One `!low` in the whole list buys
+a priority column that every other row then carries as blank space. Past eighty
+columns there is room to spend; below it the packed right-aligned block fits
+more onto the row, and fitting more on wins when there is not much row.
+
+Three things follow from the columns, and they are decisions:
+
+- **The group rule stops at the title column** instead of running to the right
+  edge. At this width a rule to the edge is the heaviest thing on the screen and
+  says nothing; one that ends where the titles end draws the column instead.
+- **The title column is measured over the whole list, not the visible rows.** A
+  column that resizes as you scroll past a long title is not a column.
+- **Tags get no column of their own.** They are last and ragged, so nothing
+  lines up after them, and reserving the widest row's worth would cut every
+  title to pay for tags most rows do not have. They spend what is left of the
+  row, and a tag that does not fit is dropped whole — `#hea…` is not a filter,
+  it is a riddle.
+
+**Wide (60–79 columns)** — the main screen above: no columns, the right-hand
+fields packed against the right edge.
 
 **Narrow (34–59 columns)** — blank spacer rows and the hint bar shrink first:
 
@@ -328,11 +374,15 @@ not the edge case. Three breakpoints:
 
 What is given up, in order, as the width shrinks:
 
-1. blank spacer rows between groups
-2. tags
-3. priority
-4. the date shortens (`Thu 09:30` → `Thu` → `2d`)
-5. the title is truncated with `…` — **last, and never below 12 characters**
+1. the columns — the right-hand fields pack against the right edge again
+2. blank spacer rows between groups
+3. tags
+4. priority
+5. the date shortens (`Thu 09:30` → `Thu` → `2d`)
+6. the title is truncated with `…` — **last, and never below 12 characters**
+
+Inside the columns the same order applies to a single row that runs out of
+width: its tags go before its title is cut.
 
 Tags go before dates because a date is actionable and a tag is a filter you do
 not have in v1 anyway. The title is sacred: a row you cannot identify is not a

@@ -116,6 +116,37 @@ no. Reopening one requires new information.
 
 ## Reversed
 
+### The right-hand fields — right-aligned, then columns past eighty (2026-08-11)
+
+**Was:** "the date column is right-aligned … the eye reads down it", and group
+headers get "a rule to the right edge". One layout at every width above sixty.
+
+**Now:** a fourth breakpoint. Past eighty columns the date, the priority and the
+tags become real left-aligned columns starting in the same place on every row,
+the title column is sized to the widest title in the list, and the group rule
+stops where that column ends. Below eighty nothing changes.
+
+**Why:** the right-aligned block only reads down its edge when the rows all end
+in the same field. They do not — `3d ago  !high  #ops` and `1d ago  #home` are
+right-aligned as a blob, so the dates land in a different place on every row and
+the eye gets a ragged list rather than a table. On a wide pane the middle of the
+screen was also fifty columns of nothing, growing with the terminal: past sixty
+the layout had no use for the width and just stretched the gap.
+
+**Why a breakpoint and not the layout:** a column costs every row its width
+whether or not that row uses it. One `!low` in a list buys a priority column
+that every other row then carries as blank space, and at sixty columns paying
+for it meant cutting titles — the exact inversion of the drop order, where the
+title is the last thing to go. Eighty columns is where there is room to spend.
+
+**What it cost:** the `LATER (3)` fold key moved from the right edge to the end
+of the shortened rule, because a key stranded thirty columns past the rule it
+belongs to is not an instruction. Tags kept no reservation, so a row with more
+tags than room drops the last ones whole rather than cutting the title.
+
+Recorded against [tui.md](tui.md#width), which now carries all four
+breakpoints, and item 1 of step 8 in `todo.md`.
+
 ### The bottom line — one row, two while the input is open (2026-08-11)
 
 **Was:** "there is one reserved line under the frame … nothing shifts the layout,

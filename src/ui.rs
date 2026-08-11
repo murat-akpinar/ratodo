@@ -484,6 +484,18 @@ impl Glyphs {
         }
     }
 
+    /// Every mark in a set is the same width, and the column arithmetic is done
+    /// before there is a task to ask: `○` is one column and `[ ]` is three. A
+    /// test pins this against `mark` so the two cannot drift — get it wrong and
+    /// the ASCII screen budgets two columns it does not have, which shows up as
+    /// tags silently disappearing, not as a broken frame.
+    fn mark_width(self) -> usize {
+        match self {
+            Glyphs::Unicode => 1,
+            Glyphs::Ascii => 3,
+        }
+    }
+
     fn cursor(self) -> &'static str {
         match self {
             Glyphs::Unicode => "▌ ",
@@ -666,44 +678,161 @@ fn when(task: &Task, today: NaiveDate, size: Size) -> String {
     }
 }
 
-/// One task, laid out: mark, title, then whatever still fits on the right.
+/// The gap between two columns. Two, because one reads as a typo and three
+/// pulls the eye across a distance it does not need to travel.
+const GAP: usize = 2;
+
+/// Where the columns sit. Every entry is as wide as the widest thing in it, so
+/// a list with no priorities spends no width on a priority column, and the eye
+/// gets a straight edge to read down — docs/tui.md#width.
+///
+/// Computed once per draw from the **whole** list rather than the viewport: a
+/// column that changes width as you scroll past a long title is not a column.
+///
+/// `Columns::default()` — every field zero — is the narrow-pane signal, and it
+/// means "no columns, push the right-hand block to the edge the old way".
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct Columns {
+    /// Excludes the mark; the date and priority widths include their own gap.
+    title: usize,
+    date: usize,
+    prio: usize,
+}
+
+/// The fourth breakpoint, in columns of **row** — the frame and the selection
+/// marker are already off it, so it is four short of the terminal.
+///
+/// Columns have to be paid for: an empty priority column costs every row its
+/// width whether or not anything on screen uses one. Below this there is not
+/// enough row to buy alignment with, the old right-aligned block packs more
+/// onto it, and packing wins when there is not much to pack into.
+const COLUMNS_AT: usize = 76;
+
+impl Columns {
+    /// `size` is not consulted for the breakpoint: `COLUMNS_AT` is above the
+    /// widest pane either of the narrow sizes can be, so the width settles it
+    /// and a second test on the same fact would be a second thing to keep true.
+    fn of(rows: &[Row], width: usize, render: Render<'_>, size: Size) -> Self {
+        if width < COLUMNS_AT {
+            return Self::default();
+        }
+        let today = render.today;
+        let tasks = || {
+            rows.iter().filter_map(|r| match r {
+                Row::Task(t) => Some(t),
+                _ => None,
+            })
+        };
+        let title = tasks()
+            .map(|t| columns(&text::plain(&t.title)))
+            .max()
+            .unwrap_or(0);
+        let date = tasks()
+            .map(|t| columns(&when(t, today, size)))
+            .max()
+            .unwrap_or(0);
+        let prio = tasks()
+            .map(|t| t.priority.map_or(0, |p| columns(p.as_str())))
+            .max()
+            .unwrap_or(0);
+        // An empty column takes no gap either, or a list nobody tagged would
+        // still be drawn around a tag column that is not there.
+        let with_gap = |w: usize| if w == 0 { 0 } else { w + GAP };
+        let (date, prio) = (with_gap(date), with_gap(prio));
+
+        // The mark and its space — three columns wider under the ASCII
+        // fallback, and budgeting the Unicode figure there spends width the row
+        // does not have.
+        let mark = render.glyphs.mark_width() + 1;
+        // Tags get no reservation. They are last and ragged, so nothing lines
+        // up after them, and reserving the widest row's worth would cut every
+        // title to pay for tags most rows do not have — the exact inversion of
+        // the drop order in docs/tui.md#width. task_line spends what is left.
+        let room = width.saturating_sub(mark + date + prio);
+        Self {
+            title: title.min(room).max(12.min(width.saturating_sub(mark))),
+            date,
+            prio,
+        }
+    }
+}
+
+/// One task, laid out: mark, title, then the date, priority and tags. Past
+/// `COLUMNS_AT` those last three are fixed and left-aligned, so the dates line
+/// up under each other; below it there is not enough width to spend on
+/// alignment and the right-hand block is pushed to the edge instead.
 ///
 /// The drop order is the one in docs/tui.md#width — tags, then priority, then
 /// the date shortens, then the title is cut. Tags go before dates because a date
 /// is actionable and a tag is a filter.
-fn task_line(task: &Task, width: usize, render: Render<'_>, size: Size) -> Line<'static> {
+fn task_line(
+    task: &Task,
+    width: usize,
+    cols: Columns,
+    render: Render<'_>,
+    size: Size,
+) -> Line<'static> {
     let colour = task_colour(task, render.today, render.colours);
     let mark = render.glyphs.mark(task, render.today);
+    let mark_width = columns(mark) + 1;
+
+    let date = when(task, render.today, size);
+    let prio = task.priority.map(|p| p.as_str().to_string());
 
     let mut right: Vec<Span<'static>> = Vec::new();
-    let date = when(task, render.today, size);
-    if !date.is_empty() {
-        right.push(Span::styled(date, Style::default().fg(render.colours.dim)));
-    }
-    if size == Size::Wide {
-        if let Some(p) = task.priority {
-            right.push(Span::styled(
-                format!("  {}", p.as_str()),
-                Style::default().fg(render.colours.dim),
-            ));
+    // A column pads to its own width; without one the entry carries its gap.
+    let mut push = |text: String, column: usize, style: Style| {
+        if column == 0 {
+            if !text.is_empty() {
+                right.push(Span::styled(format!("{}{text}", " ".repeat(GAP)), style));
+            }
+            return;
         }
+        right.push(Span::raw(" ".repeat(GAP)));
+        let pad = column.saturating_sub(columns(&text) + GAP);
+        right.push(Span::styled(text, style));
+        right.push(Span::raw(" ".repeat(pad)));
+    };
+
+    // No guard on either: `push` draws nothing for an empty entry outside a
+    // column, and pads the full width for one inside it, which is exactly what
+    // an undated task in a dated list needs.
+    let dim = Style::default().fg(render.colours.dim);
+    push(date, cols.date, dim);
+    if size == Size::Wide {
+        push(prio.unwrap_or_default(), cols.prio, dim);
+        // What is left of the row after the columns. A tag that does not fit is
+        // dropped whole rather than cut: `#hea…` is not a filter, it is a
+        // riddle. Tags go before the title — docs/tui.md#width.
+        let mut room = match cols.title {
+            0 => usize::MAX,
+            title => width.saturating_sub(mark_width + title + cols.date + cols.prio),
+        };
         for tag in &task.tags {
-            right.push(Span::styled(
-                format!("  #{}", text::plain(tag)),
-                Style::default().fg(render.colours.tag),
-            ));
+            let span = format!("  #{}", text::plain(tag));
+            let Some(left) = room.checked_sub(columns(&span)) else {
+                break;
+            };
+            room = left;
+            right.push(Span::styled(span, Style::default().fg(render.colours.tag)));
         }
     }
 
-    let right_width: usize = right.iter().map(|s| columns(&s.content)).sum();
-    let mark_width = columns(mark) + 1;
-    // Twelve columns of title, always. Everything on the right gives way first.
-    let for_title = width
-        .saturating_sub(mark_width + right_width + 2)
-        .max(12.min(width.saturating_sub(mark_width)));
+    let (for_title, pad_to) = if cols.title > 0 {
+        (cols.title, cols.title)
+    } else {
+        // No `+ GAP` here: without a column to pad to, the first entry carries
+        // its own gap, and subtracting it a second time cuts the title two
+        // columns short of where docs/tui.md#width says it stops.
+        let right_width: usize = right.iter().map(|s| columns(&s.content)).sum();
+        let room = width
+            .saturating_sub(mark_width + right_width)
+            .max(12.min(width.saturating_sub(mark_width)));
+        (room, width.saturating_sub(mark_width + right_width))
+    };
 
     let title = shorten(&text::plain(&task.title), for_title);
-    let gap = width.saturating_sub(mark_width + columns(&title) + right_width);
+    let gap = pad_to.saturating_sub(columns(&title));
 
     let mut spans = vec![
         Span::styled(format!("{mark} "), Style::default().fg(colour)),
@@ -714,13 +843,19 @@ fn task_line(task: &Task, width: usize, render: Render<'_>, size: Size) -> Line<
     Line::from(spans)
 }
 
-/// A group heading with a rule out to the right edge. In a narrow pane the eye
-/// needs a horizontal anchor to find where a group starts; a bare word does not
-/// give it — docs/tui.md.
+/// A group heading with a rule after it. In a narrow pane the eye needs a
+/// horizontal anchor to find where a group starts; a bare word does not give it
+/// — docs/tui.md.
+///
+/// Where the rule **stops** is the title column once there is one: past
+/// `COLUMNS_AT` a rule to the right edge is the heaviest thing on the screen
+/// and says nothing, while one that ends with the titles draws the column
+/// instead. Below it there is no column to end at, so it runs to the edge.
 fn header_line(
     title: &str,
     hidden: Option<usize>,
     width: usize,
+    cols: Columns,
     render: Render<'_>,
 ) -> Line<'static> {
     // A collapsed group says how much it is hiding and which key opens it.
@@ -731,7 +866,14 @@ fn header_line(
     };
     let tail = if hidden.is_some() { " l" } else { "" };
 
-    let rule = width.saturating_sub(columns(&name) + columns(tail) + 2);
+    // Plus the mark the tasks below carry, so the rule ends with their titles
+    // rather than short of them — and it is `[ ]` under the ASCII fallback,
+    // which is two columns more than `○`.
+    let end = match cols.title {
+        0 => width,
+        title => (title + render.glyphs.mark_width() + 1).min(width),
+    };
+    let rule = end.saturating_sub(columns(&name) + columns(tail) + 2);
     Line::from(vec![
         Span::styled(name, Style::default().fg(render.colours.accent).bold()),
         Span::styled(
@@ -901,6 +1043,7 @@ pub fn draw(
     // is what is left after it.
     let cursor = render.glyphs.cursor();
     let width = (inner.width as usize).saturating_sub(columns(cursor));
+    let cols = Columns::of(&screen.rows, width, render, size);
 
     if screen.rows.iter().all(|r| !matches!(r, Row::Task(_))) {
         empty(frame, area, block, render);
@@ -910,9 +1053,9 @@ pub fn draw(
             .iter()
             .filter(|row| !(size < Size::Wide && matches!(row, Row::Spacer)))
             .map(|row| match row {
-                Row::Task(t) => ListItem::new(task_line(t, width, render, size)),
+                Row::Task(t) => ListItem::new(task_line(t, width, cols, render, size)),
                 Row::Header { title, hidden } => {
-                    ListItem::new(header_line(title, *hidden, width, render))
+                    ListItem::new(header_line(title, *hidden, width, cols, render))
                 }
                 Row::Spacer => ListItem::new(""),
             })
@@ -1964,20 +2107,279 @@ mod tests {
         );
     }
 
-    /// The right-hand column is right-aligned, which is the whole reason it is
-    /// a column: the eye reads down it.
+    /// The whole reason a column is a column: the eye reads *down* it. Two
+    /// titles of very different lengths have to put their dates in the same
+    /// place, or it is a ragged list wearing a table's name.
     #[test]
-    fn the_date_column_ends_at_the_right_edge() {
+    fn the_date_column_starts_at_the_same_place_on_every_row() {
         let tasks = tasks(&["short @2026-08-01", "a much longer title here @2026-08-01"]);
-        let screen = rendered(62, 8, &tasks);
+        let screen = rendered(90, 8, &tasks);
 
-        let ends: Vec<&str> = screen[2..4]
+        let at: Vec<usize> = screen[2..4]
             .iter()
-            .map(|row| row.trim_end_matches('│').trim_end())
+            .map(|row| at_column(row, "9d ago"))
             .collect();
-        for row in &ends {
-            assert!(row.ends_with("9d ago"), "{row:?}");
+        assert_eq!(at[0], at[1], "the dates do not line up: {screen:?}");
+
+        // And the column is the width of the widest title, not of the pane: a
+        // date shoved to the right edge is what this replaced.
+        assert!(at[0] < 40, "the date is still at the edge: {screen:?}");
+    }
+
+    /// Columns are the fourth breakpoint, not the third. A pane too narrow to
+    /// afford an empty priority column keeps the packed right-aligned block:
+    /// otherwise alignment is bought with the title, and docs/tui.md#width
+    /// calls the title sacred.
+    #[test]
+    fn a_pane_too_narrow_for_columns_does_not_get_them() {
+        let tasks = tasks(&["short @2026-08-01", "a much longer title here @2026-08-01"]);
+        // Two rows with the same right-hand block line up under either layout,
+        // so equality proves nothing here. Where the date *sits* does: packed
+        // against the right edge, or one gap past the longest title.
+        let at = |terminal: u16| at_column(&rendered(terminal, 8, &tasks)[2], "9d ago");
+
+        // Four columns of frame and selection marker sit between the terminal
+        // and the row that COLUMNS_AT measures.
+        let packed = COLUMNS_AT as u16 + 3;
+        assert!(
+            at(packed) > COLUMNS_AT - 10,
+            "columns one column too early: {:?}",
+            rendered(packed, 8, &tasks)
+        );
+        assert_eq!(
+            at(packed + 1),
+            1 + 2 + 2 + columns("a much longer title here") + GAP,
+            "columns one column too late: {:?}",
+            rendered(packed + 1, 8, &tasks)
+        );
+    }
+
+    /// The date column is the easy half: it starts right after the title, so
+    /// it lines up even if the padding after it is wrong. What proves the
+    /// padding is the column *behind* it — tags on rows whose dates and
+    /// priorities are all different lengths, including rows that have neither.
+    #[test]
+    fn every_column_pads_to_its_own_width_so_the_one_behind_it_lines_up() {
+        let tasks = tasks(&[
+            "long date and a priority @2026-08-14 09:30 !high #alpha",
+            "short date, no priority @2026-08-01 #bravo",
+            "no date at all !low #charlie",
+        ]);
+        let screen = rendered(90, 10, &tasks);
+
+        let at: Vec<usize> = ["#alpha", "#bravo", "#charlie"]
+            .iter()
+            .map(|tag| {
+                let row = screen
+                    .iter()
+                    .find(|r| r.contains(tag))
+                    .unwrap_or_else(|| panic!("{tag} is not on screen: {screen:?}"));
+                at_column(row, tag)
+            })
+            .collect();
+
+        assert_eq!(at[0], at[1], "a shorter date moved the tags: {screen:?}");
+        assert_eq!(at[1], at[2], "a missing date moved the tags: {screen:?}");
+    }
+
+    /// The column widths themselves, not the difference between two of them: a
+    /// budget that is wrong by the same amount everywhere still lines up.
+    #[test]
+    fn the_column_widths_are_what_the_arithmetic_says() {
+        let mut long = capture("a @2026-08-01 !high", today());
+        long.title = "x".repeat(80);
+        let rows = rows(&agenda(&[long], today()));
+        let cols = Columns::of(&rows, 86, render(crate::theme::MOCHA), Size::Wide);
+
+        // `9d ago` and `!high`, each plus its gap.
+        assert_eq!(cols.date, 6 + GAP, "the date column");
+        assert_eq!(cols.prio, 5 + GAP, "the priority column");
+        // 86 less the mark and its space, less both of those. The title asked
+        // for 80 and the row has this much to give it.
+        assert_eq!(
+            cols.title,
+            86 - 2 - (6 + GAP) - (5 + GAP),
+            "the title column"
+        );
+    }
+
+    /// A list where nothing has a priority spends no width on a priority
+    /// column — otherwise every screen pays for the busiest one it might ever
+    /// show.
+    #[test]
+    fn an_empty_column_costs_nothing() {
+        let bare = tasks(&["one @2026-08-01", "two @2026-08-01"]);
+        let cols = Columns::of(
+            &rows(&agenda(&bare, today())),
+            80,
+            render(crate::theme::MOCHA),
+            Size::Wide,
+        );
+        assert_eq!(cols.prio, 0, "a priority column nobody filled");
+
+        let some = tasks(&["one @2026-08-01 !high", "two @2026-08-01"]);
+        let cols = Columns::of(
+            &rows(&agenda(&some, today())),
+            80,
+            render(crate::theme::MOCHA),
+            Size::Wide,
+        );
+        assert_eq!(
+            cols.prio,
+            5 + GAP,
+            "one task with a priority buys the column"
+        );
+    }
+
+    /// Tags are the first thing to go when the row runs out, and they go whole:
+    /// `#hea…` is not a filter, it is a riddle. What must never happen is the
+    /// inverse — a title cut to pay for tags the row does not have room for.
+    #[test]
+    fn tags_give_way_before_the_title_does() {
+        // Both a date and a priority, so every term of the budget is non-zero
+        // and none of them can be dropped without the answer moving.
+        let mut task = capture("a @2026-08-01 !high #alpha #bravo #charlie #delta", today());
+        task.title = "a title long enough to leave the last tags nowhere to go".into();
+        let screen = rendered(96, 6, &[task]);
+
+        assert!(
+            screen[2].contains("a title long enough to leave the last tags nowhere to go"),
+            "the title was cut to pay for tags: {screen:?}"
+        );
+        assert!(
+            !screen[2].contains('…'),
+            "a tag was cut in half: {screen:?}"
+        );
+
+        // Where the budget runs out, to the column. The row is 92 wide; the
+        // mark, the 56-column title, the date column and the priority column
+        // spend 73 of it, and `#alpha` and `#bravo` are what the rest buys.
+        let title = columns("a title long enough to leave the last tags nowhere to go");
+        let budget = 92 - (2 + title + (6 + GAP) + (5 + GAP));
+        assert_eq!(
+            budget,
+            columns("  #alpha  #bravo") + 3,
+            "the tag budget moved"
+        );
+        assert!(screen[2].contains("#alpha"), "{screen:?}");
+        assert!(screen[2].contains("#bravo"), "{screen:?}");
+        for missing in ["#charlie", "#delta"] {
+            assert!(
+                !screen[2].contains(missing),
+                "{missing} was drawn past the budget: {screen:?}"
+            );
         }
+    }
+
+    /// A row is built to a width and ratatui clips whatever overruns it, so an
+    /// overspent budget is invisible on screen: the buffer looks the same
+    /// whether the tags stopped or were cut off by the frame. The line itself
+    /// is the only place the overrun exists, so it is where it gets measured.
+    #[test]
+    fn the_row_never_overruns_the_width_it_was_given() {
+        let mut task = capture("a @2026-08-01 !high #alpha #bravo #charlie #delta", today());
+        task.title = "a title long enough to leave the last tags nowhere to go".into();
+        let rows = rows(&agenda(std::slice::from_ref(&task), today()));
+        let render = render(crate::theme::MOCHA);
+
+        for width in [COLUMNS_AT, 82, 92, 140] {
+            let cols = Columns::of(&rows, width, render, Size::Wide);
+            let drawn = columns(&task_line(&task, width, cols, render, Size::Wide).to_string());
+            assert!(
+                drawn <= width,
+                "at {width} the row overran by {}",
+                drawn - width
+            );
+        }
+    }
+
+    /// The column is measured over the whole list, not the rows that happen to
+    /// be on screen — a column that resizes as you scroll is not a column.
+    #[test]
+    fn the_column_is_measured_over_the_whole_list_not_the_viewport() {
+        let tasks = tasks(&[
+            "short @2026-08-01",
+            "a very much longer title down here @2026-08-01",
+        ]);
+        let rows = rows(&agenda(&tasks, today()));
+        let wide = Columns::of(&rows, 86, render(crate::theme::MOCHA), Size::Wide);
+
+        // Two rows of list is not enough to show the second task at all.
+        let cramped = rendered(90, 5, &tasks);
+        assert!(cramped[2].contains("short"), "{cramped:?}");
+        // The frame, the cursor, the mark, then the title column and its gap.
+        assert_eq!(
+            at_column(&cramped[2], "9d ago"),
+            1 + 2 + 2 + wide.title + GAP,
+            "the visible row was measured on its own: {cramped:?}"
+        );
+    }
+
+    /// `Glyphs::mark_width` is arithmetic done before there is a task to ask,
+    /// so it has to agree with every mark `Glyphs::mark` can actually return.
+    #[test]
+    fn the_mark_width_matches_every_mark_in_its_set() {
+        let mut done = capture("done", today());
+        done.set_done(true);
+        let cases = [
+            capture("open", today()),
+            capture("late @2026-08-01", today()),
+            done,
+        ];
+
+        for glyphs in [Glyphs::Unicode, Glyphs::Ascii] {
+            for task in &cases {
+                assert_eq!(
+                    columns(glyphs.mark(task, today())),
+                    glyphs.mark_width(),
+                    "{glyphs:?} disagrees with itself about {:?}",
+                    task.title
+                );
+            }
+        }
+    }
+
+    /// `[ ]` is two columns wider than `○`, and the budget is struck before
+    /// there is a task to ask. Budget the Unicode figure under ASCII and every
+    /// row overspends by two — which the tag budget absorbs by dropping tags,
+    /// so it costs information rather than breaking the frame.
+    #[test]
+    fn the_column_budget_follows_the_glyph_set() {
+        let mut long = capture("a @2026-08-01", today());
+        long.title = "x".repeat(80);
+        let rows = rows(&agenda(&[long], today()));
+        let ascii = Render {
+            glyphs: Glyphs::Ascii,
+            ..render(crate::theme::MOCHA)
+        };
+
+        let unicode = Columns::of(&rows, 86, render(crate::theme::MOCHA), Size::Wide);
+        let wider = Columns::of(&rows, 86, ascii, Size::Wide);
+        assert_eq!(
+            unicode.title,
+            wider.title + 2,
+            "the wider mark bought no width back"
+        );
+
+        // The group rule ends with the titles, so it has to follow the mark
+        // too — under ASCII it would otherwise stop two columns short.
+        let rule = |cols: Columns, render: Render<'_>| {
+            columns(&header_line("Work", None, 86, cols, render).to_string())
+        };
+        assert_eq!(
+            rule(wider, ascii),
+            rule(unicode, render(crate::theme::MOCHA)),
+            "the rule and the titles disagree about the mark"
+        );
+    }
+
+    /// `str::find` answers in bytes, and a row starts with `│▌` — three bytes
+    /// each. A layout assertion that counts those is measuring the encoding.
+    fn at_column(row: &str, needle: &str) -> usize {
+        let byte = row
+            .find(needle)
+            .unwrap_or_else(|| panic!("{needle:?} is not in {row:?}"));
+        columns(&row[..byte])
     }
 
     /// The three breakpoints from docs/tui.md#width, and what each gives up.
@@ -2720,6 +3122,62 @@ mod tests {
                 "└──────────────────────────────────────────┘",
                 " ?                                          ",
             ]
+        );
+    }
+
+    /// The same header past sixty columns, where the rule now stops at the
+    /// title column. The `l` has to come with it — a key stranded at the right
+    /// edge of a rule that ended thirty columns ago is not an instruction, and
+    /// nothing else on the screen would have caught it.
+    #[test]
+    fn a_folded_header_keeps_its_key_beside_the_shortened_rule() {
+        let tasks = two_groups();
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        screen.fold(Fold::Close);
+
+        let counts = Counts::of(&tasks, today());
+        let mut terminal = Terminal::new(TestBackend::new(84, 6)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    counts,
+                    render(crate::theme::MOCHA),
+                    &Notice::Hints,
+                    false,
+                    None,
+                )
+            })
+            .unwrap();
+
+        let rows: Vec<String> = terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(84)
+            .map(|r| r.iter().map(|c| c.symbol()).collect())
+            .collect();
+
+        assert_eq!(
+            rows,
+            [
+                "┌ ratodo — 3 open · 0 overdue ─────────────────────────────────────────────────────┐",
+                "│▌ Work (2) ── l                                                                   │",
+                "│                                                                                  │",
+                "│  Home ────────                                                                   │",
+                "└──────────────────────────────────────────────────────────────────────────────────┘",
+                " ?                                                                                  ",
+            ]
+        );
+
+        // Both rules stop at the title column, and with only `plumber` left to
+        // measure that column is the twelve-column floor, not seven.
+        let visible = crate::ui::rows(&agenda(&tasks, today()));
+        assert_eq!(
+            Columns::of(&visible, 80, render(crate::theme::MOCHA), Size::Wide).title,
+            12
         );
     }
 

@@ -197,9 +197,13 @@ side pane turns into a dashboard nobody leaves open.
 
 - [x] Progress on the right of the title rule — the one already done, as the
       worked example of the standard above
-- [ ] **Wide panes waste their width.** Past 60 columns nothing new appears, the
+- [x] **Wide panes waste their width.** Past 60 columns nothing new appears, the
       gap in the middle just stretches. A fourth breakpoint could show the full
-      date and the section a dated task came from
+      date and the section a dated task came from —
+      **done as columns at ≥ 80**: date, priority and tags start in the same
+      place on every row and the group rule stops at the title column. The
+      section a task came from is still not shown; it is a second decision, not
+      part of this one. See [docs/decisions.md](docs/decisions.md#reversed)
 - [ ] **Dated groups and the file's own `##` sections look identical.** `OVERDUE`
       and `Work` are both a bold word plus a rule, though one is ours and one is
       the user's. Careful: "two levels of hierarchy, there is no third"
