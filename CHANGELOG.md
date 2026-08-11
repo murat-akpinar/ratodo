@@ -42,6 +42,8 @@ The cursor followed the raw line, so anything that rewrote it let go: a `ratodo 
 Eight cells and a `3/8` on the right of the top border. The screen had nothing to say about work that was done: `5 open · 1 overdue` counts what is left and stops there, which makes a todo list that never acknowledges the todo part.
 - *(ui)* Lay the right-hand fields out in columns past eighty ([1bd16ff](https://github.com/murat-akpinar/ratodo/commit/1bd16ff10e09cd3309e07d888b09a30e9244e72c))
 The right-aligned block only reads down its edge when every row ends in the same field, and they do not: `3d ago  !high  #ops` and `1d ago #home` are aligned as a blob, so the dates land somewhere different on every row. Past eighty columns the date, the priority and the tags become real columns, the title column is the widest title in the list, and the group rule stops where that column ends instead of running to an edge fifty columns away.
+- *(ui)* Keep the markdown marker on the user's own headings ([9d0d3cb](https://github.com/murat-akpinar/ratodo/commit/9d0d3cb0ebaad4f01a30e38a8029954e54636def))
+OVERDUE is ours and Work came out of the file, and as the same bold word plus the same rule nothing on the screen said which was which. The user's headings now keep the ## they already carry in the file: no second colour, no third level of hierarchy, and it survives the ASCII fallback.
 
 ### 🐛 Bug Fixes
 
