@@ -104,28 +104,7 @@ surface.
   `add` pushes, saves and exits — but the TUI in step 6 tracks selection by task
   identity, and this is exactly the kind of thing that quietly becomes that
   identity. Either renumber on insert or never let `line_no` outlive a parse.
-- **`e` and the reader thread are in each other's way, and one of them has to
-  give.** The event loop parks a thread in `crossterm::event::read`, which reads
-  `/dev/tty`. `e` opens `$EDITOR` on the same terminal. While the editor runs,
-  both processes are reading the same input, and the thread eats keystrokes
-  meant for vim — racily, so it would look like an intermittent bug rather than
-  a design mistake. There is no clean way to interrupt a thread parked in a
-  blocking read.
-
-  Three ways out, none free:
-  1. **Go back to `event::poll(timeout)`** in the main loop, `try_recv` for file
-     changes. `e` becomes trivial. Costs the thing
-     [docs/decisions.md](docs/decisions.md#settled) just recorded — a genuinely
-     idle loop — for a few wakeups a second. This is what lazygit and gitui do.
-  2. **Drop `e`.** It is a settled product decision
-     ([docs/product.md](docs/product.md#product-decisions)) and the escape hatch
-     for everything the tool cannot do, so this is the expensive one.
-  3. Something cleverer with `/dev/tty` and file descriptors. Suspect.
-
-  Leaning towards 1, and it needs writing down as a reversal rather than done
-  quietly — the 0% CPU measurement is in a commit message and in the decision
-  record, and replacing it with "4 wakeups a second" is a change to a claim we
-  have made in public.
-
 *(chezmoi and `set autoread` moved out of here on 2026-08-11: both are README
-sections now.)*
+sections now. The `e` / reader-thread question left on 2026-08-11 too — the
+answer was to go back to `poll`, and it is written up in
+[docs/decisions.md](docs/decisions.md#reversed).)*

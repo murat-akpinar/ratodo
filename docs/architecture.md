@@ -51,17 +51,22 @@ Two things are worth noticing about this pipeline:
 - **The panic hook restores the terminal.** A TUI that panics in raw mode leaves
   the user's terminal broken. `std::panic::set_hook` puts the screen back in
   every case. This gets written on day one, not later.
-- Event sources: **one channel, two senders.** A thread parked in
-  `crossterm::event::read` sends keys down it; `notify`'s watcher thread sends
-  file changes down the same one. The loop blocks on `recv`.
+- Event sources: **`crossterm::event::poll` with a 500 ms timeout, plus an mpsc
+  channel from `notify`.** One thread does everything.
 
-  This replaces an earlier plan to call `crossterm::event::poll` with a timeout
-  and check the channel on each wake-up, which reached the same place by a worse
-  road: a timeout short enough to keep file changes feeling instant is a timeout
-  that wakes the process several times a second forever, and a timeout long
-  enough to be genuinely idle makes an outside edit take that long to appear.
-  Blocking on one channel has neither problem and is fewer lines. See
-  [decisions.md](decisions.md#settled).
+  A key returns from `poll` the instant it arrives, so nothing the user does
+  waits on that timeout. It bounds one thing only: how stale an outside edit can
+  be before the screen catches up. Half a second on a `git pull` is invisible.
+
+  Drawing is still driven by events. A wake-up that finds nothing to do draws
+  nothing, so "no fixed FPS" survives the timeout intact.
+
+  **This reverses a design that parked a thread in `event::read` and blocked on
+  the channel** — genuinely idle, and unable to support `e`. Two readers of the
+  same terminal means the thread eating `$EDITOR`'s keystrokes, and a thread
+  parked in a blocking read cannot be interrupted to stop it. Measured after the
+  change: 40 wake-ups in 20 idle seconds, and zero CPU ticks accumulated at the
+  kernel's 10 ms accounting granularity. See [decisions.md](decisions.md#reversed).
 
 - **Watch the directory, not the file.** Every safe writer — vim, `git`, our own
   `write.rs` — replaces a file by creating a new one and renaming it over the
@@ -168,9 +173,9 @@ Seven crates, all of them required.
 Deliberately **absent**, and why:
 
 - **No `tokio`.** There is no need for async here — a single local file, and
-  blocking IO is more than enough. The event loop is one mpsc channel with a
-  reader thread on each end of it, which is the whole of the concurrency in this
-  program. An async runtime would grow compile times and binary size for free.
+  blocking IO is more than enough. The event loop is one `poll` and one channel;
+  `notify`'s own watcher thread is the whole of the concurrency in this program.
+  An async runtime would grow compile times and binary size for free.
 - **No `serde`.** We write the Markdown parser ourselves (it is the heart of the
   product anyway). `theme.conf` is a flat `key = value` file precisely so that it
   can be parsed in ~40 lines instead of pulling in serde + a TOML crate. serde

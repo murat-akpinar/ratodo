@@ -22,6 +22,9 @@ pub enum Action {
     Top,
     Bottom,
     Toggle,
+    /// Hand the terminal to `$EDITOR`. The escape hatch for everything the
+    /// tool cannot do — docs/product.md#product-decisions.
+    Edit,
     Reload,
     /// Opens the key help, and closes it again — the only overlay in the
     /// product, and the only place a popup is the right answer.
@@ -60,6 +63,7 @@ pub fn action(key: KeyEvent) -> Action {
         KeyCode::Char('d') if ctrl => Action::Move(10),
         KeyCode::Char('u') if ctrl => Action::Move(-10),
         KeyCode::Char(' ') => Action::Toggle,
+        KeyCode::Char('e') => Action::Edit,
         KeyCode::Char('r') => Action::Reload,
         KeyCode::Char('?') => Action::Help,
         // Bound to an answer rather than to nothing. A key that appears broken
@@ -439,10 +443,10 @@ impl Notice {
             // is not implemented yet is a worse lie than no hint bar.
             Notice::Hints if height < 10 => (" ?".to_string(), colours.dim),
             Notice::Hints if size == Size::Wide => (
-                " j k move   spc done   r reload   ? keys   q quit".to_string(),
+                " j k move   spc done   e $EDITOR   r reload   ? keys   q quit".to_string(),
                 colours.dim,
             ),
-            Notice::Hints => (" j k  spc  r  ?  q".to_string(), colours.dim),
+            Notice::Hints => (" j k  spc  e  r  ?  q".to_string(), colours.dim),
             Notice::Said(text) => (format!(" {text}"), colours.dim),
             Notice::Warned(text) => {
                 let mark = match glyphs {
@@ -566,11 +570,12 @@ pub fn draw(
 /// Only the keys that do something. A help screen listing keys that are not
 /// built yet teaches the wrong thing twice.
 fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
-    const KEYS: [(&str, &str); 8] = [
+    const KEYS: [(&str, &str); 9] = [
         ("j k  ↓ ↑", "move"),
         ("g G", "top / bottom"),
         ("ctrl-d ctrl-u", "half page"),
         ("spc", "toggle done"),
+        ("e", "open $EDITOR"),
         ("r", "re-read the file"),
         (":  /", "answer, for now"),
         ("? esc", "this, and away again"),
@@ -878,14 +883,14 @@ mod tests {
                 "│   │  g G            top / bottom         │   │",
                 "│   │  ctrl-d ctrl-u  half page            │   │",
                 "│   │  spc            toggle done          │   │",
+                "│   │  e              open $EDITOR         │   │",
                 "│   │  r              re-read the file     │   │",
                 "│   │  :  /           answer, for now      │   │",
                 "│   │  ? esc          this, and away again │   │",
                 "│   │  q  ctrl-c      quit                 │   │",
                 "│   │                                      │   │",
-                "│   └──────────────────────────────────────┘   │",
-                "└──────────────────────────────────────────────┘",
-                " j k  spc  r  ?  q                              ",
+                "└───└──────────────────────────────────────┘───┘",
+                " j k  spc  e  r  ?  q                           ",
             ]
         );
     }
@@ -954,7 +959,7 @@ mod tests {
             .map(|c| c.symbol())
             .collect();
 
-        for unbuilt in ["delete", "undo", "$EDITOR", "fold", "edit"] {
+        for unbuilt in ["delete", "undo", "fold"] {
             assert!(
                 !text.contains(unbuilt),
                 "{unbuilt} is advertised but absent"
@@ -966,6 +971,7 @@ mod tests {
     fn the_keys_that_change_the_list() {
         assert_eq!(action(press(KeyCode::Char(' '))), Action::Toggle);
         assert_eq!(action(press(KeyCode::Char('r'))), Action::Reload);
+        assert_eq!(action(press(KeyCode::Char('e'))), Action::Edit);
         assert_eq!(
             action(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL)),
             Action::Move(10)
@@ -1211,7 +1217,7 @@ mod tests {
                 "│                                                            │",
                 "│                                                            │",
                 "└────────────────────────────────────────────────────────────┘",
-                " j k move   spc done   r reload   ? keys   q quit             ",
+                " j k move   spc done   e $EDITOR   r reload   ? keys   q quit ",
             ]
         );
     }
@@ -1633,6 +1639,7 @@ mod tests {
             shown(&Notice::Hints, Size::Wide, 20, Glyphs::Unicode).contains("spc done"),
             "the hints have to name the keys"
         );
+        assert!(shown(&Notice::Hints, Size::Wide, 20, Glyphs::Unicode).contains("e $EDITOR"));
         assert_eq!(
             shown(&Notice::Hints, Size::Wide, 9, Glyphs::Unicode),
             " ?",

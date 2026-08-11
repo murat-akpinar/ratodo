@@ -151,6 +151,21 @@ fn backup_dir() -> Result<PathBuf> {
         .to_path_buf())
 }
 
+/// `$VISUAL` then `$EDITOR`, split on whitespace so that `EDITOR="nvim -u NONE"`
+/// works. That does mean an editor whose *path* contains a space cannot be found
+/// — the usual trade, and the one every other tool makes.
+///
+/// No fallback to `vi`: guessing at a program that may not be installed produces
+/// a worse message than saying which variable to set.
+fn editor() -> Option<Vec<String>> {
+    let raw = ["VISUAL", "EDITOR"]
+        .iter()
+        .find_map(|name| std::env::var(name).ok().filter(|v| !v.trim().is_empty()))?;
+
+    let words: Vec<String> = raw.split_whitespace().map(str::to_string).collect();
+    (!words.is_empty()).then_some(words)
+}
+
 /// The first locale variable that is set, in the order the C library reads them.
 fn locale() -> Option<String> {
     ["LC_ALL", "LC_CTYPE", "LANG"]
@@ -257,14 +272,6 @@ fn quietly_sync(path: &Path) {
     let _ = sync(path, false);
 }
 
-enum Msg {
-    Input(Event),
-    /// The list changed underneath us — vim, `git pull`, `ratodo add` next door.
-    Reload,
-    /// stdin ended. Without this the loop would wait for a key nobody can send.
-    InputGone,
-}
-
 /// Whether a directory event is about our list. Watching the directory means
 /// hearing about everything in it — `theme.conf` being saved, the temp file our
 /// own writer makes on the way to a rename — and re-reading on all of that would
@@ -278,14 +285,17 @@ fn touches(event: &notify::Event, name: &std::ffi::OsStr) -> bool {
 /// inotify watch on the old inode goes quiet at exactly that moment.
 ///
 /// The watcher has to stay alive to keep watching, so it is returned.
-fn watch(path: &Path, tx: std::sync::mpsc::Sender<Msg>) -> Option<notify::RecommendedWatcher> {
+///
+/// The channel carries nothing but "it changed": the loop reads keys itself and
+/// this is the only other thing that can happen.
+fn watch(path: &Path, tx: std::sync::mpsc::Sender<()>) -> Option<notify::RecommendedWatcher> {
     use notify::Watcher;
 
     let dir = path.parent()?;
     let name = path.file_name()?.to_os_string();
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
         if event.iter().any(|e| touches(e, &name)) {
-            let _ = tx.send(Msg::Reload);
+            let _ = tx.send(());
         }
     })
     .ok()?;
@@ -309,26 +319,8 @@ fn tui(path: &Path, theme_flag: Option<&str>) -> Result<ExitCode> {
     let mut live = Live::read(path, render.today)?;
 
     let (tx, rx) = std::sync::mpsc::channel();
-    let _watcher = watch(path, tx.clone());
-
-    // A thread parked in `read` and a `recv` parked here: both sources wake the
-    // loop the instant they have something, and neither one polls. That is the
-    // whole of "no fixed FPS" — see docs/architecture.md#the-event-loop.
-    std::thread::spawn(move || {
-        loop {
-            match event::read() {
-                Ok(event) => {
-                    if tx.send(Msg::Input(event)).is_err() {
-                        return;
-                    }
-                }
-                Err(_) => {
-                    let _ = tx.send(Msg::InputGone);
-                    return;
-                }
-            }
-        }
-    });
+    // Kept alive for as long as the TUI runs: dropping it stops the watch.
+    let _watcher = watch(path, tx);
 
     // `try_init` installs a panic hook that turns raw mode off and leaves the
     // alternate screen before chaining to the default one, and `Terminal`'s own
@@ -376,6 +368,66 @@ impl Live {
         self.mtime = loaded.mtime;
         self.written = None;
         Ok(())
+    }
+
+    /// Hands the terminal to `$EDITOR` and takes it back.
+    ///
+    /// The escape hatch: whatever the tool cannot do, the file can — and the
+    /// file is a Markdown file the user already knows how to edit. See
+    /// docs/product.md#product-decisions.
+    ///
+    /// This is what the event loop is shaped around. A thread parked in
+    /// `crossterm::event::read` would be reading the same terminal as vim, and
+    /// would eat its keystrokes; `poll` in one thread has nobody to compete
+    /// with. See docs/decisions.md#reversed.
+    fn edit(
+        &mut self,
+        terminal: &mut ratatui::DefaultTerminal,
+        path: &Path,
+        today: chrono::NaiveDate,
+    ) -> Result<ui::Notice> {
+        let Some(command) = editor() else {
+            return Ok(ui::Notice::Warned("no $EDITOR or $VISUAL set".to_string()));
+        };
+
+        // The screen is handed back and taken again around the same `Terminal`,
+        // rather than torn down and rebuilt with `try_init`. Rebuilding chains a
+        // second panic hook onto the first every time, and asks the terminal for
+        // its cursor position — a question some terminals never answer, which
+        // turns `e` into a hang. Suspending is both smaller and safer.
+        crossterm::terminal::disable_raw_mode()?;
+        crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
+
+        let outcome = std::process::Command::new(&command[0])
+            .args(&command[1..])
+            .arg(path)
+            .status();
+
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::EnterAlternateScreen,
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+        )?;
+        crossterm::terminal::enable_raw_mode()?;
+
+        // The backend still believes the screen holds the last frame it drew, so
+        // the next draw would send a diff against something that is no longer
+        // there. `resize` to the size it already is throws that memory away —
+        // and, unlike `Terminal::clear`, it does not ask the terminal where its
+        // cursor is. That is a question some terminals never answer, and waiting
+        // for the reply is `e` hanging.
+        let size = terminal.size()?;
+        terminal.resize(ratatui::layout::Rect::new(0, 0, size.width, size.height))?;
+
+        // Read it back whatever the editor said: somebody who saves and then
+        // exits non-zero still saved.
+        self.reload(path, today)?;
+        quietly_sync(path);
+
+        Ok(match outcome {
+            Ok(_) => ui::Notice::Said("re-read after $EDITOR".to_string()),
+            Err(e) => ui::Notice::Warned(format!("{}: {e}", command[0])),
+        })
     }
 
     /// Ticks the selected task, in the document and on the screen, and writes.
@@ -428,42 +480,48 @@ impl Live {
     }
 }
 
+/// How long the loop is willing to sit in `poll` before looking at the channel.
+///
+/// It bounds one thing only: how stale an outside edit can be before the screen
+/// catches up. A keystroke returns from `poll` immediately whatever this is, so
+/// nothing a user does waits on it. Half a second of latency on a `git pull` is
+/// invisible; two wake-ups a second is the price, and it is what buys `e`.
+/// See docs/architecture.md#the-event-loop.
+const IDLE: std::time::Duration = std::time::Duration::from_millis(500);
+
 fn run(
     terminal: &mut ratatui::DefaultTerminal,
     live: &mut Live,
     path: &Path,
-    rx: &std::sync::mpsc::Receiver<Msg>,
+    rx: &std::sync::mpsc::Receiver<()>,
     render: ui::Render<'_>,
 ) -> Result<ExitCode> {
     let today = render.today;
     let mut notice = ui::Notice::Hints;
     let mut helping = false;
+    // Drawing is still driven by events, not by the timer: a wake-up that finds
+    // nothing to do draws nothing.
+    let mut redraw = true;
 
     loop {
-        terminal.draw(|frame| {
-            ui::draw(
-                frame,
-                &mut live.screen,
-                live.counts,
-                render,
-                &notice,
-                helping,
-            )
-        })?;
+        if redraw {
+            terminal.draw(|frame| {
+                ui::draw(
+                    frame,
+                    &mut live.screen,
+                    live.counts,
+                    render,
+                    &notice,
+                    helping,
+                )
+            })?;
+            redraw = false;
+        }
 
-        match rx.recv().context("both event sources went away")? {
-            Msg::InputGone => return Ok(ExitCode::SUCCESS),
-            Msg::Reload => {
-                // Our own save wakes the watcher too. Re-reading it would throw
-                // away the in-place update and let the ticked task jump.
-                let on_disk = std::fs::read_to_string(path).ok();
-                if on_disk.is_some() && on_disk == live.written {
-                    continue;
-                }
-                live.reload(path, today)?;
-            }
-            // Anything else — a resize, say — falls through to the redraw above.
-            Msg::Input(Event::Key(key)) => {
+        if event::poll(IDLE)? {
+            // A resize or a paste falls through to the redraw and nothing else.
+            redraw = true;
+            if let Event::Key(key) = event::read()? {
                 // What the key means lives in `ui`, where it can be tested; this
                 // loop only knows how to read one and how to obey.
                 match ui::action(key) {
@@ -475,6 +533,9 @@ fn run(
                     ui::Action::Top => live.screen.top(),
                     ui::Action::Bottom => live.screen.bottom(),
                     ui::Action::Toggle => notice = live.toggle(path, today)?,
+                    ui::Action::Edit => {
+                        notice = live.edit(terminal, path, today)?;
+                    }
                     ui::Action::Reload => {
                         live.reload(path, today)?;
                         notice = ui::Notice::Said("reloaded".to_string());
@@ -487,7 +548,25 @@ fn run(
                     ui::Action::Ignore => {}
                 }
             }
-            Msg::Input(_) => {}
+        }
+
+        // One save arrives as several events; take the lot in one go. Drained
+        // with a loop rather than `count() > 0`, which a mutation turns into
+        // `>= 0` — always true, so the file gets read twice a second forever
+        // and no test can see the difference.
+        let mut changed = false;
+        for () in rx.try_iter() {
+            changed = true;
+        }
+
+        if changed {
+            // Our own save wakes the watcher too. Re-reading it would throw away
+            // the in-place update and let the ticked task jump.
+            let on_disk = std::fs::read_to_string(path).ok();
+            if on_disk.is_none() || on_disk != live.written {
+                live.reload(path, today)?;
+                redraw = true;
+            }
         }
     }
 }
@@ -633,6 +712,51 @@ mod tests {
             "our own writer's temp file must not look like the list"
         );
         assert!(!touches(&notify::Event::new(notify::EventKind::Any), name));
+    }
+
+    /// `$VISUAL` wins, `$EDITOR` follows, and neither set is `None` rather than
+    /// a guess at `vi` that may not be installed.
+    ///
+    /// Reads the real environment, so it sets and restores what it looks at.
+    /// `#[serial]` would be the tidy answer and would be an eighth dependency.
+    #[test]
+    fn which_editor_and_how_it_is_split() {
+        let restore: Vec<(&str, Option<String>)> = ["VISUAL", "EDITOR"]
+            .iter()
+            .map(|name| (*name, std::env::var(name).ok()))
+            .collect();
+
+        // SAFETY: single-threaded test, and every variable it touches is put
+        // back before it returns.
+        unsafe {
+            std::env::remove_var("VISUAL");
+            std::env::remove_var("EDITOR");
+            assert_eq!(editor(), None, "nothing set is not a guess at vi");
+
+            std::env::set_var("EDITOR", "nvim");
+            assert_eq!(editor(), Some(vec!["nvim".to_string()]));
+
+            std::env::set_var("VISUAL", "code -w");
+            assert_eq!(
+                editor(),
+                Some(vec!["code".to_string(), "-w".to_string()]),
+                "VISUAL outranks EDITOR, and its arguments come with it"
+            );
+
+            std::env::set_var("VISUAL", "   ");
+            assert_eq!(
+                editor(),
+                Some(vec!["nvim".to_string()]),
+                "a blank VISUAL is not a choice"
+            );
+
+            for (name, was) in restore {
+                match was {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+        }
     }
 
     /// The one case where the tool must interrupt, because the alternative is

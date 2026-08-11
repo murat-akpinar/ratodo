@@ -70,12 +70,6 @@ Three lists: what is settled, what was rejected, and what is still open.
   the documents were originally written in Turkish and translated.)*
 - ✅ **No test environment needed.** All that is required is a few hand-written
   `todo.md` files. Tests can be written on day one.
-- ✅ **The event loop is one channel, not a poll with a timeout** *(2026-08-11)*.
-  Keys arrive from a thread parked in `crossterm::event::read`, file changes from
-  `notify`'s own thread, both down the same mpsc channel, and the loop blocks on
-  `recv`. Any poll timeout has to choose between waking up forever and being slow
-  to notice an edit; this chooses neither. See
-  [architecture.md](architecture.md#the-event-loop).
 - ✅ **The file watch is on the directory** *(2026-08-11)*. vim, git and our own
   writer all replace the file by renaming a new one over it, and an inotify watch
   follows the inode that just stopped being the list.
@@ -121,6 +115,32 @@ no. Reopening one requires new information.
 | Automatic git commits | Tempting, but touching the user's git is dangerous even opt-in. Maybe an explicit `--commit` flag much later |
 
 ## Reversed
+
+### The event loop — a blocking channel, then `poll` again (2026-08-11)
+
+**Was:** a thread parked in `crossterm::event::read` sending keys down the same
+mpsc channel `notify` uses, with the loop blocked on `recv`. Genuinely idle:
+measured at six seconds open for zero seconds of CPU, and that measurement went
+out in a commit message.
+
+**Now:** `event::poll` with a 500 ms timeout in one thread, `try_recv` for file
+changes.
+
+**Why:** `e` → `$EDITOR`, which was already settled above. The editor wants the
+terminal that the reader thread is parked on, so while vim runs the thread eats
+its keystrokes — racily, which would have read as an intermittent bug rather
+than a design mistake. A thread blocked in a read cannot be interrupted to stop
+it, so one of the two had to go, and `e` is the escape hatch for everything the
+tool cannot do.
+
+**What it actually cost:** measured after the change, 40 wake-ups in 20 idle
+seconds and zero CPU ticks at the kernel's 10 ms accounting granularity. The
+timeout bounds nothing a user waits on — a key returns from `poll` immediately —
+only how stale an outside edit can be, and half a second of that is invisible.
+Drawing is still event-driven, so a wake-up with nothing to do draws nothing.
+
+**What the old decision still buys us:** the shape of it. Keys and file changes
+still meet in one loop, and the channel still carries nothing but "it changed".
 
 ### Theme loader — rejected, then accepted (2026-08-10)
 

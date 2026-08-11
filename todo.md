@@ -80,11 +80,12 @@ the abandonment risk in [docs/risks.md](docs/risks.md).
       `ratatui::try_init` installs one that restores raw mode and the alternate
       screen; `Terminal`'s Drop puts the cursor back
 - [x] A dumb list: print the task titles, `↑↓`, quit with `q`
-- [x] **No fixed FPS** — draw on events, block when idle. Measured: six seconds
-      open, zero seconds of CPU
+- [x] **No fixed FPS** — draw on events; a wake-up with nothing to do draws
+      nothing. Measured: 40 wake-ups in 20 idle seconds, zero CPU ticks
 - [x] The TUI only opens on a TTY — `ratodo | wc -l` lists instead
-- [x] Event loop: one mpsc channel, a reader thread on each end, blocking `recv`
-      — not `poll` with a timeout. See [docs/decisions.md](docs/decisions.md#settled)
+- [x] Event loop: `crossterm::event::poll` + notify's mpsc channel. *(Was a
+      blocking channel with a reader thread; reversed so `e` could exist — see
+      [docs/decisions.md](docs/decisions.md#reversed))*
 - [x] inotify: re-read when the file changes from outside. The watch is on the
       **directory**, because every safe writer renames over the file
 - [x] The cursor stays on its task across a reload — matched by raw line. Full
@@ -131,9 +132,8 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
       and it takes the frame and the punctuation with it
 - [~] The bottom line: hints and results done, the input field comes with the
       input mode
-- [~] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `r` · `?` · `esc` · `q` done.
-      `a o ⏎ d u h l z e` still to come — and `e` is blocked on the event-loop
-      question in [notes.md](notes.md)
+- [~] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `e` · `r` · `?` · `esc` · `q` done.
+      `a o ⏎ d u h l z` still to come
 - [ ] `h`/`l` fold the group under the cursor — lf/ranger/yazi muscle memory, not "fold LATER"
 - [ ] Input mode: `⏎` save, `esc` cancel, `ctrl-c` cancel (**never quit**), and nothing else can open it
 - [ ] **Live parse preview** under the input — `@thu` resolves as you type

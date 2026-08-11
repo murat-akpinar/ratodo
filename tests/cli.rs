@@ -781,6 +781,81 @@ fn replay(stream: &str, width: usize, height: usize) -> Vec<String> {
     grid.into_iter().map(|r| r.into_iter().collect()).collect()
 }
 
+/// `e` hands the terminal over and takes it back. This is the whole reason the
+/// event loop polls instead of parking a thread in `read`: a second reader would
+/// be eating the editor's keystrokes — see docs/decisions.md#reversed.
+///
+/// The fake editor writes to the screen as well as to the file, so the test can
+/// see that it really had the terminal rather than merely being spawned.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_editor_key_hands_the_terminal_over_and_takes_it_back() {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new("editor");
+    let path = dir.file("todo.md");
+    fs::write(&path, "- [ ] pay the invoice\n").unwrap();
+
+    let editor = dir.file("fake-editor");
+    fs::write(
+        &editor,
+        "#!/bin/sh\nprintf 'THE EDITOR HAD THE SCREEN'\nprintf -- '- [ ] written in the editor\\n' >> \"$1\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&editor, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut child = Command::new("timeout")
+        .args([
+            "20",
+            "script",
+            "-qec",
+            &format!("stty rows 12 cols 56; {BIN} --file {}", path.display()),
+            "/dev/null",
+        ])
+        .env("EDITOR", &editor)
+        .env_remove("VISUAL")
+        .env("XDG_STATE_HOME", dir.file("state"))
+        .env("XDG_DATA_HOME", dir.file("data"))
+        .env("XDG_CONFIG_HOME", dir.file("config"))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("script(1) is needed for this test — it is in util-linux");
+
+    let mut stdin = child.stdin.take().expect("stdin");
+    stdin.write_all(b"e").unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(600));
+    stdin.write_all(b"q").unwrap();
+    drop(stdin);
+
+    let out = child.wait_with_output().expect("waiting");
+    assert!(
+        out.status.success(),
+        "ratodo did not survive the round trip (exit {:?})",
+        out.status.code()
+    );
+
+    let raw = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        raw.contains("THE EDITOR HAD THE SCREEN"),
+        "the editor never got the terminal: {raw:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "- [ ] pay the invoice\n- [ ] written in the editor\n"
+    );
+
+    // And the list that came back has what the editor wrote in it. The whole
+    // screen is repainted, so this is the final state and not a leftover frame.
+    let screen = replay(&raw, 56, 12).join("\n");
+    assert!(
+        screen.contains("written in the editor"),
+        "the screen did not pick the change up: {screen}"
+    );
+    assert!(screen.contains("$EDITOR"), "{screen}");
+}
+
 /// `?` is drawn well and tested well one level down, and until this existed
 /// nothing checked that the key was wired to it at all — a mutant turning the
 /// toggle into a no-op went unnoticed.
