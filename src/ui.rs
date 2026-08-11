@@ -1325,6 +1325,22 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
                 dim,
             )),
         }
+    } else if input.text.trim().is_empty() {
+        // An empty box says what can go in it, the way the empty `p` box says
+        // what a length of time looks like. By example and not by name: `@thu`
+        // is the syntax and the hint in one, which is what the preview does for
+        // every word already typed. This is the whole of what a box split into
+        // labelled fields would have taught, at none of its cost —
+        // docs/decisions.md#settled.
+        //
+        // `$` only where it means something. With one list there is nothing to
+        // address, and a hint for a key that does nothing here is the lie the
+        // hint bar has never told.
+        let mut hint = String::from("@thu #home !high");
+        if render.lists.len() > 1 {
+            hint.push_str(" $list");
+        }
+        shown.push(Span::styled(hint, dim));
     } else {
         // The one row of the preview that has an opinion instead of a readout.
         // Everything else here reports what the parser took; this reports what
@@ -3957,6 +3973,50 @@ mod tests {
                 .map(|s| s.content.to_string())
                 .collect::<String>();
             assert!(!shown.contains("is not a date"), "{text:?} → {shown:?}");
+        }
+    }
+
+    /// An empty box says what goes in it, and it fits the narrowest pane the
+    /// design promises — this is the whole of what a box split into labelled
+    /// fields would have taught, and the width is why it is not one.
+    #[test]
+    fn an_empty_box_names_the_four_sigils() {
+        let lists = ["todo.md".to_string(), "work.md".to_string()];
+        let several = Render {
+            lists: &lists,
+            ..render(crate::theme::MOCHA)
+        };
+        let line = |render: Render<'_>| {
+            let (lines, _) = input_lines(&Input::adding(), 28, render);
+            lines[2]
+                .spans
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+
+        // 28 columns is a 34-column pane, the narrowest the box is drawn in.
+        let hint = line(several);
+        assert_eq!(hint.trim(), "@thu #home !high $list", "{hint:?}");
+        assert!(columns(&hint) <= 28, "{hint:?} does not fit the pane");
+
+        // One list, and `$` addresses nothing: the hint does not teach a key
+        // that would only be refused.
+        let hint = line(render(crate::theme::MOCHA));
+        assert_eq!(hint.trim(), "@thu #home !high", "{hint:?}");
+
+        // The moment there is a task in the box the preview goes back to
+        // reporting it, and plain text still gets no lecture.
+        for (typed, expected) in [("buy milk @thu", "due"), ("buy milk", "")] {
+            let input = Input::new(typed.to_string(), Purpose::Add);
+            let (lines, _) = input_lines(&input, 60, several);
+            let shown: String = lines[2]
+                .spans
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect();
+            assert!(!shown.contains('@'), "{typed:?} → {shown:?}");
+            assert!(shown.contains(expected), "{typed:?} → {shown:?}");
         }
     }
 

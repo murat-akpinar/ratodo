@@ -10,11 +10,11 @@ that is actually open is the short list directly under this line.
 
 ## What is left
 
-Five open. Two are code in the product and came out of a day of real use; the
+Four open: one is code in the product and came out of a day of real use, the
 other three are packaging. Nothing here blocks anything else, so the order is by
-reach rather than by dependency. The ticked one at the top came out of the same
-day of use and is kept here rather than moved down, because the reasoning in it
-is about a key that was asked for and does not exist.
+reach rather than by dependency. The ticked ones are kept here rather than moved
+down, because the reasoning in them is about things that were asked for and are
+not being built — a key, and a box split into fields.
 
 - [x] **Copying a task means retyping it.** A task that is nearly one you already
       have — same tag, same shape, different day — had no way in but `a` and the
@@ -24,10 +24,10 @@ is about a key that was asked for and does not exist.
       the capture target wherever the cursor is. See
       [docs/decisions.md](docs/decisions.md#settled)
 
-- [ ] **`$list` in the input, and the input as four fields.** Asked for on
-      2026-08-11, and it is two pieces that arrived in one sentence. They ship in
-      that order, because the first is useful without the second and the second
-      is not useful without something to put in a fourth column.
+- [x] **`$list` in the input, and the input as four fields.** Asked for on
+      2026-08-11, and it is two pieces that arrived in one sentence. The first
+      shipped. The second was measured and **rejected**, and what it was really
+      after shipped instead as one dim row.
       - [x] **`$work` routes the capture.** `a` wrote to `todo.md` and nothing
             else — [cli.md](docs/cli.md#several-lists) rule 4 — so capturing into
             `work.md` meant leaving the TUI for
@@ -50,47 +50,34 @@ is about a key that was asked for and does not exist.
             preview nagged `no list w.md` through every keystroke of `$work`, so
             it now waits until the word can no longer become one of the lists —
             the same rule the date warning already had
-      - [ ] **The box becomes four fields with `tab` between them** — work |
-            date | tag | list. This **reverses** the decision of 2026-08-11 in
-            [docs/decisions.md](docs/decisions.md#settled), which rejected
-            exactly this, and the reversal is written there first
-      - **What the reversal has to say, because one of the two recorded reasons
-        no longer holds.** The rejection said an edit would have to take an
-        existing line apart into fields and put it back, and that a line with
-        two tags or a title continuing after a tag would not survive it.
-        Measured on 2026-08-11: it does not survive that **today**. `⏎` on
-        `- [ ] pay #home the invoice @thu #work !high`, one word appended, saves
-        `- [ ] pay the invoice now @2026-08-13 #home #work !high` — the tag came
-        out of the middle of the title, the date resolved, both tags stayed.
-        Editing already round-trips through `capture`, so four fields cost
-        nothing here that one field is not already costing. The other reason
-        stands and is the one to argue with: it puts a focus state *inside* the
-        input mode, and [tui.md](docs/tui.md) opens with "vim keys, no vim
-        modes"
-      - **Open, and each one changes the shape:**
-        - **There are five fields, not four.** `!high` is the one the ask did
-          not name. Either it is a fifth column — on a box that has to fit a
-          34-column pane — or it stays typed into the work field, which makes
-          "everything has a column" untrue on the first day. **This is the one
-          that has to be answered first**; the rest of the box's shape follows
-          from it
-        - **`p` keeps one field.** It asks one question and pre-fills nothing;
-          four columns for "how long?" is a widget answering a question nobody
-          asked
-        - ✅ **What `$nosuchfile` does** — *refuse before the write*, as the
-          first piece shipped it. It does not create the list and it does not
-          fall back to `todo.md` either, since a fallback puts the task
-          somewhere nobody asked for. A new list is `touch work.md`
-        - ✅ **What the box does with one list** — `$` parses the same and
-          refuses anything but that one list. A syntax that means one thing on
-          a one-file setup and another on a two-file setup is worse than one
-          that is merely unnecessary. *(The **column** question this was
-          really about stands: a fourth column that is always empty teaches
-          nothing, and that is an argument about the box, not about `$`)*
-        - **Whether the four columns fit the documented widths.** The box lives
-          inside the list, and [tui.md](docs/tui.md) commits to ≥60 / 34–59 /
-          <34. Four fields and three separators inside 34 columns is roughly
-          seven characters a field
+      - [x] **The box becomes four fields with `tab` between them** — **no.**
+            The reversal was drafted and then measured, and the measurement
+            killed it. It is **five** fields once `!high` is counted, the box is
+            `min(70, pane − 4)` wide, and a 34-column pane leaves **28 columns**
+            — five fields and four separators is three characters a field. At 60
+            it is forty-two columns and `2026-08-13` alone is ten. Drawable at
+            eighty and nowhere else, which buys a second input mode for the
+            narrow pane the product was designed around.
+            The invariant argument is the one that settles it: keeping one
+            tokenizer means joining the fields back into a line for
+            `capture::parts`, at which point the boundaries are decoration over
+            the same string, paid for with a focus state, `tab`/`shift-tab`,
+            five carets and five scroll windows. Not joining them is a second
+            parser, and two parsers of the same box eventually disagree about
+            what it will write. A tag *field* also cannot hold `#home #work`,
+            which one line already does. Written up in
+            [docs/decisions.md](docs/decisions.md#settled)
+      - [x] **What it was actually after — discoverability — shipped instead.**
+            An empty box now reads `@thu #home !high $list` in the dim, exactly
+            as the empty `p` box reads `how long? 2 3d 1w fri`. Twenty-two
+            columns, so it fits the narrowest pane the design promises; gone the
+            moment there is anything to report; `$list` only when there is more
+            than one list to address. No mode, no keymap, no second parser
+      - **What went with the rejection:** `p` keeps its one field, the
+        five-versus-four question is moot, and the two `$` questions were
+        answered by the first piece — `$nosuchfile` is refused before the write
+        rather than created, and with one list `$` parses the same and refuses
+        anything but that list
 - [ ] **A date that does not exist is accepted in silence.** Found in use on
       2026-08-11: `@2026-13-45` resolves to nothing, so the whole word falls
       back to being part of the title — the file gets

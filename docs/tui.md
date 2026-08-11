@@ -230,6 +230,22 @@ it proves the shorthand actually did what you meant.
 If nothing parses, the preview line stays empty rather than showing an error —
 plain text is a perfectly good task.
 
+**An empty box says what can go in it**, by example rather than by name:
+
+```
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │ add ▏                                                 │ │
+│  ├───────────────────────────────────────────────────────┤ │
+│  │      @thu #home !high $list                           │ │
+│  └───────────────────────────────────────────────────────┘ │
+```
+
+It goes the moment there is anything to report, and `$list` appears only when
+there is more than one list to address. Twenty-two columns, so it survives the
+34-column pane — which is also the reason the box is one field and not five
+labelled ones. That arithmetic is in
+[decisions.md](decisions.md#settled).
+
 **One exception, and it is the only place the preview has an opinion instead of a
 readout.** `@2026-13-45` is not a date, so the word falls back to being part of
 the title — which is right, a word we did not understand belongs to the user —

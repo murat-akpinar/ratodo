@@ -105,7 +105,32 @@ Three lists: what is settled, what was rejected, and what is still open.
   have to take an existing line apart into fields and put it back, which a line
   with two tags or a title after the tag does not survive intact. `capture::parts`
   is the one tokenizer both the field and the parse read. See
-  [tui.md](tui.md#adding).
+  [tui.md](tui.md#adding). **Asked for again on 2026-08-11 and rejected again**,
+  now on arithmetic and on the invariant rather than on taste:
+  - **It is five fields, not four.** `!high` was not in the ask and `$list` was,
+    so the row is `title │ date │ tag │ priority │ list`.
+  - **They do not fit the pane the product is aimed at.** The box is
+    `min(70, pane − 4)` wide, so a 34-column pane gives it **28 columns**. Five
+    fields and four separators leave sixteen columns of content — three
+    characters a field. At 60 it is forty-two, and `2026-08-13` alone is ten. It
+    is drawable at eighty and nowhere else, which means a second input for the
+    narrow pane — and the narrow pane in the corner of a tiling layout is the
+    audience this was designed for, not the fallback.
+  - **Joined back up, the fields buy nothing.** Keeping one tokenizer means
+    joining the five fields into a line and handing it to `capture::parts` — at
+    which point the boundaries are decoration over the same string, paid for
+    with a focus state, `tab`/`shift-tab`, five carets and five scroll windows.
+    Not joining them means a second parser, and the day the two disagree the box
+    is lying about what it will write. That is invariant 1 territory.
+  - **A field is narrower than the line it replaces.** One tag field cannot hold
+    `#home #work`, and the measured round-trip on 2026-08-11 —
+    `- [ ] pay #home the invoice @thu #work !high` retyped and saved intact — is
+    the thing that would be given up.
+  - **What the ask actually wanted is discoverability**, and that is one dim row:
+    an empty box now reads `@thu #home !high $list`, the way the empty `p` box
+    reads `how long? 2 3d 1w fri`. Twenty-two columns, fits the 34-column pane,
+    no mode, no keymap, and `$list` only appears when there is more than one
+    list to address.
 - ✅ **The ASCII fallback covers the overlay too** *(2026-08-11)*. `↓ ↑` and `⏎`
   were literals in the key list, `…` was a literal in `shorten`, and `·` came out
   of `text::fields`. The separator is now the caller's, because stdout does not
