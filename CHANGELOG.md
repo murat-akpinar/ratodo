@@ -17,6 +17,8 @@ An empty `a` box drew a blank preview row while the empty `p` box has always sai
 
 - *(ui)* Fit y copy on the hint bar at eighty columns ([1322b1d](https://github.com/murat-akpinar/ratodo/commit/1322b1dc6ace46f3942ee55bed4f1af175b29cb9))
 The bar takes keys until one does not fit, so `y copy` needed 81 columns and eighty is the width a terminal opens at unless somebody moved it. The newest key was invisible at the one width most people run.
+- *(ui)* Stop a length of time at a year ([34edf79](https://github.com/murat-akpinar/ratodo/commit/34edf79e1036c24e73f51716180a8eb1c0e7df55))
+Reported from use: a keyboard that stutters turns `22` into `2222` in the `p` box, and both are perfectly good arithmetic — twenty-two days and six years — so the file took the second one without a word.
 
 ### 📚 Documentation
 
