@@ -1136,7 +1136,11 @@ fn hints(width: usize, glyphs: Glyphs) -> String {
         ("a", "add"),
         (glyphs.enter(), "edit"),
         ("d", "cancel"),
-        ("p", "put off"),
+        // `later` and not `put off`, which is what the input box calls it and
+        // what the keymap calls it. Three columns, and they are the three that
+        // decide whether `y copy` is on the bar at eighty — the width most
+        // terminals open at, and the one width the newest key was invisible at.
+        ("p", "later"),
         ("y", "copy"),
     ];
 
@@ -3411,10 +3415,12 @@ mod tests {
             }
         }
 
-        // The three states and the date, once there is room for them. A user
-        // who never opens `?` has to be able to find them.
+        // The three states, the date and the copy, at eighty columns — the
+        // width a terminal opens at unless somebody moved it. A user who never
+        // opens `?` finds a key here or not at all, so every one of these
+        // fitting at eighty is the thing being pinned, not a rendering detail.
         let wide = shown(&Notice::Hints, Size::Wide, 80, 20, Glyphs::Unicode);
-        for named in ["spc done", "d cancel", "p put off"] {
+        for named in ["spc done", "d cancel", "p later", "y copy"] {
             assert!(wide.contains(named), "{named} is not on the bar: {wide}");
         }
 
@@ -3422,7 +3428,7 @@ mod tests {
         // being clipped mid-word.
         let sixty = shown(&Notice::Hints, Size::Wide, 60, 20, Glyphs::Unicode);
         assert!(sixty.contains("spc done"), "{sixty}");
-        assert!(!sixty.contains("put off"), "{sixty}");
+        assert!(!sixty.contains("y copy"), "{sixty}");
 
         assert_eq!(
             shown(

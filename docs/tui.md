@@ -62,12 +62,16 @@ keymap and the way out both stay — and everything before them goes in until th
 next one would not fit. The order is how often a key is reached for:
 
 ```
-move · done · add · edit · cancel · put off · copy
+move · done · add · edit · cancel · later · copy
 ```
 
 So sixty columns, the narrowest pane that still counts as wide, gets through
-`⏎ edit`; a little wider brings `d cancel`, eighty brings `p put off`, and
-`y copy` goes in after it on a pane wide enough for both. `X`
+`⏎ edit`; a little wider brings `d cancel`, and eighty — the width a terminal
+opens at unless somebody moved it — brings both `p later` and `y copy`. The
+date key is `later` here and `put off` everywhere else, which is the one place
+the bar does not use the keymap's own word: at eighty those three columns are
+the difference between the newest key being on the bar and being findable only
+in `?`. `X`
 and `e` are not on it at any width — delete and `$EDITOR` are both a keystroke
 away in `?`, and neither is what somebody glancing at a side pane is about to
 press. Below the wide threshold the bar drops to bare keys, `j k  spc  a  d  p
