@@ -4,7 +4,7 @@
 
 **A todo TUI, built with ratatui — one Markdown file, no cloud, no account.**
 
-[![crates.io](https://img.shields.io/badge/crates.io-v0.6.0-green)](https://crates.io/crates/ratodo)
+[![crates.io](https://img.shields.io/badge/crates.io-v0.7.0-green)](https://crates.io/crates/ratodo)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.88%2B-orange)](https://www.rust-lang.org)
 
@@ -14,11 +14,12 @@
 
 </div>
 
-> **v0.6.0, on crates.io.** `cargo install ratodo`. The command line and the TUI
+> **v0.7.0, on crates.io.** `cargo install ratodo`. The command line and the TUI
 > are built and tested — capture, editing, undo, folding, themes, the `.ics`
 > export, several lists in one agenda, `$work` to say which one a capture goes
 > to, `tab` for a date field that cannot hold a day the calendar does not,
 > ruled columns on a roomy pane, and an input box that opens on today's date.
+> Twelve theme roles, one job each.
 > Reasoning behind every decision is in [`docs/`](docs/README.md), what comes
 > next in [`todo.md`](todo.md).
 
@@ -251,7 +252,7 @@ $ ratodo theme dump > ~/.config/ratodo/theme.conf
 
 `--theme <name>` overrides it for one run, `NO_COLOR=1` turns colour off
 entirely, and `theme = terminal` uses only your terminal's own 16 colours (which
-is also the answer for a bare TTY). Eleven keys, full spec:
+is also the answer for a bare TTY). Twelve keys, full spec:
 [`docs/theming.md`](docs/theming.md).
 
 ## Calendar
@@ -346,7 +347,7 @@ Rust 1.88 or newer, and no other build dependency. From source instead:
 
 ```console
 $ git clone https://github.com/murat-akpinar/ratodo && cd ratodo
-$ git checkout v0.6.0
+$ git checkout v0.7.0
 $ cargo install --path .        # → ~/.cargo/bin/ratodo
 ```
 

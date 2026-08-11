@@ -1,4 +1,9 @@
-## [unreleased]
+## [0.7.0] - 2026-08-11
+
+### 🚀 Features
+
+- *(theme)* One colour, one job - and a role of its own for the priority ([a3956e1](https://github.com/murat-akpinar/ratodo/commit/a3956e19b9295e474eab74f5c54fab5f04fd4c22))
+Mauve had become the answer to six questions: the group headings, the input box border, the focused date cell, the keys in `?`, and - both added today - the priority and every box label. A colour that answers two questions answers neither, and the screen read as noise.
 
 ### 🎨 Styling
 
