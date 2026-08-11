@@ -284,5 +284,7 @@ side pane turns into a dashboard nobody leaves open.
 ## Open questions blocking nothing
 
 Tracked in [docs/decisions.md](docs/decisions.md#open-questions): whether a
-completed task stays in place, whether `--file` is enough for multiple lists,
-when `.ics` gets regenerated, and whether `* [ ]` is recognised.
+completed task stays in place or moves to a `## Done` section, and whether a
+list per repository needs `ratodo` to walk up the tree. The other four the code
+answered on its way past them, and they have moved to
+[resolved](docs/decisions.md#resolved-questions).

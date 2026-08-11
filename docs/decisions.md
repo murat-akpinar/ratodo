@@ -484,21 +484,11 @@ views and `ratodo archive` are all still v2.
 - [ ] Does a completed task stay where it is, or move to a `## Done` section?
       Staying in place bloats the file; moving means every completion shifts two
       lines in `git diff`. *Leaning: stay in place in v1, `ratodo archive` in v2.*
-- [ ] Is `--file` plus `$RATODO_FILE` enough for multiple lists, or does a
-      developer with one list per repository need `ratodo` to walk up the tree
-      looking for a `TODO.md`? *Leaning: the env var buys most of it — `direnv`
-      already solves per-directory. Ship that, then find out.*
-- [ ] Where does a captured task go in a file that ends with a table, a rule or a
-      paragraph? Appending at EOF puts it outside every `##` section.
-      *Leaning: insert after the last recognised task, fall back to EOF.*
-- [ ] Do the docs promise dotfiles integration in a way that misleads `chezmoi`
-      users, whose `apply` will overwrite a live `todo.md` from a stale source
-      copy? *Leaning: a README paragraph, not code.*
-- [ ] Should `.ics` be regenerated on every `ratodo add`, or only when the TUI
-      closes? *Leaning: on every add — it is simple, and the file is small.*
-- [ ] Besides `- [ ]`, should `* [ ]` and `+ [ ]` be recognised? (Markdown treats
-      all of them as list items.) *Leaning: recognise them when reading, always
-      write `- [ ]`.*
+- [ ] Does a developer with one list per repository need `ratodo` to walk up the
+      tree looking for a `TODO.md`? `--file`, `$RATODO_FILE` and every `*.md` in
+      the config directory all shipped, and none of them is the per-repository
+      case. *Leaning: `direnv` already solves per-directory, and the env var is
+      what it would set. Still waiting on someone who wants it.*
 
 ## Resolved questions
 
@@ -509,3 +499,26 @@ views and `ratodo archive` are all still v2.
 - ✅ **The README's first sentence:** "A todo TUI, built **with** ratatui" —
   not *for*. The name's kinship risks it being read as a ratatui plugin; the
   first sentence has to close that off.
+- ✅ **Where does a captured task go in a file that ends with a table, a rule or
+  a paragraph?** *(2026-08-11)* After the last recognised task, falling back to
+  EOF — the leaning, as shipped. `Doc::push_task` finds the last `Item::Task` by
+  `rposition` and inserts after it, so a capture into a file ending in a table
+  lands inside the last `##` section rather than below everything. It also gives
+  the previous line an ending when that line is a final one without one.
+- ✅ **Do the docs mislead `chezmoi` users?** *(2026-08-11)* They did; it is a
+  README paragraph now, not code. `chezmoi apply` writes the source copy over a
+  live `todo.md` and every task captured since the last `chezmoi add` is gone.
+  The fix is `.chezmoiignore`, and telling people so is cheaper — and more
+  honest — than a tool that tries to detect it.
+- ✅ **Is `.ics` regenerated on every `add`, or only when the TUI closes?**
+  *(2026-08-11)* On every write. `quietly_sync` runs after a capture, after a
+  `done` from the command line, and after every write the TUI makes. It is a few
+  hundred bytes of string formatting over a list that fits in memory, and the
+  alternative is a calendar that is stale for as long as the TUI stays open —
+  which, given the scratchpad binding this is designed around, is all day.
+- ✅ **Are `* [ ]` and `+ [ ]` recognised?** *(2026-08-11)* Yes on the way in,
+  never on the way out — the leaning, as shipped. `parse.rs` accepts `-`, `*` and
+  `+`, and new tasks are always composed as `- [ ]`. The asymmetry is not a
+  compromise: round-trip fidelity means an existing `* [ ]` line keeps its `*`
+  forever, because ticking it rewrites one byte inside the brackets and touches
+  nothing else. We only choose a marker for lines we are creating.
