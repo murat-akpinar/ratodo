@@ -19,7 +19,7 @@ draws VEVENT and nothing else.
 
 | Client | Shows ratodo's entries? | Note |
 |---|---|---|
-| todoman | ✅ | **Verified 2026-08-11.** Reads VTODO, which is what it is for. Point it straight at `~/.local/share/ratodo`; it goes read-only on its own because there is more than one todo in the file |
+| todoman | ✅ | **Verified 2026-08-11**, against a packaged install and a live list. Reads VTODO, which is what it is for. Point it straight at `~/.local/share/ratodo`; it goes read-only on its own because there is more than one todo in the file |
 | khal | ❌ | **Verified 2026-08-11 — this used to say ✅ and was wrong.** khal wants a *vdir* (a directory), not a file, and even given one it draws VEVENT only: a control VEVENT dropped into the same directory appeared, our five VTODOs did not |
 | Thunderbird | ⚠️ | "New Calendar → On My Computer / from file". It has a Tasks view, which is where these land — not the month grid. Not verified by us |
 | Evolution | ⚠️ | Varies by version; needs an "On This Computer" source |
