@@ -196,6 +196,18 @@ Three lists: what is settled, what was rejected, and what is still open.
   does not. It moves `@` and nothing else; the time stays put. This is **not**
   the `~date` deferral of [roadmap.md](roadmap.md) v3 — that hides a task until
   a date, this changes when it is due. See [tui.md](tui.md#putting-a-date-off--p).
+- ✅ **The preview warns about an `@` that can never be a date** *(2026-08-11)*.
+  Found on the first day of real use: `@2026-13-45` resolves to nothing, so the
+  word stays in the title and the task keeps no date — correct, and silent. The
+  fallback is not what changed; the silence is. The condition is **can never
+  be**, not **is not yet**: the preview redraws on every keystroke, so warning on
+  anything unresolved would warn through all of `@2`, `@20`, `@202` on the way to
+  a good `@2026-08-20`, and a line that is wrong ten times per date is one people
+  stop reading. `@2026-0` is still on its way somewhere; `@2026-13` is not, and
+  that is where it speaks. This is the cheap half of the complaint — the
+  field-by-field date entry is the other half and is still
+  [a proposal](../notes.md#the-date-field--a-proposal-not-a-decision-2026-08-11).
+  See [tui.md](tui.md#adding).
 
 ## Rejected
 

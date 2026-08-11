@@ -225,6 +225,28 @@ it proves the shorthand actually did what you meant.
 If nothing parses, the preview line stays empty rather than showing an error —
 plain text is a perfectly good task.
 
+**One exception, and it is the only place the preview has an opinion instead of a
+readout.** `@2026-13-45` is not a date, so the word falls back to being part of
+the title — which is right, a word we did not understand belongs to the user —
+and it used to do so in silence, right up until the file had it. So an `@` that
+was meant as a date and can never be one gets said out loud, in the same colour
+the bottom line warns in:
+
+```
+│  │ add ▏call the plumber @2026-13-45 #home                │ │
+│  ├───────────────────────────────────────────────────────┤ │
+│  │      @2026-13-45 is not a date  ·  #home              │ │
+│  └───────────────────────────────────────────────────────┘ │
+```
+
+*Can never be* is the load-bearing half. The preview redraws on every keystroke,
+so a warning that fires on anything unresolved fires through all of `@2`, `@20`,
+`@202` on the way to a perfectly good `@2026-08-20` — wrong ten times and right
+once, which is how people learn to stop reading it. It speaks the moment the word
+stops being able to become a date and not before: `@2026-0` is on its way
+somewhere, `@2026-13` is not. The fields still follow it — one bad word does not
+take the row over.
+
 **The field colours itself as you type**, and it colours by what the parser
 *took*: `@thu` and the `09:30` the date took with it go `accent`, `#home` goes
 `tag`, `!high` goes bold. A `@notaday` stays plain text, because that is what it

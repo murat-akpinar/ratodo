@@ -112,6 +112,86 @@ pub fn capture(text: &str, today: NaiveDate) -> Task {
     Task::new(State::Open, title.join(" "), due, tags, priority)
 }
 
+/// The first `@word` that was meant as a date and is not one.
+///
+/// `parts` hands such a word back as plain text, and that is the right thing to
+/// do with it — a word we did not understand belongs to the user and does not
+/// get eaten. What it is not is *visible*: `@2026-13-45` looks accepted right up
+/// until the file has it in the title. This is the one question the preview
+/// answers with an opinion rather than a readout — docs/tui.md#adding.
+///
+/// A bare `@` is a word somebody typed, not a failed date, and stays silent. So
+/// is a date halfway typed: the preview runs on every keystroke, and one that
+/// says "not a date" through all of `@2`, `@20`, `@202` is one people stop
+/// reading by the time it is right.
+pub fn unresolved_date(text: &str, today: NaiveDate) -> Option<&str> {
+    words(text).into_iter().map(|(_, word)| word).find(|word| {
+        word.strip_prefix('@').is_some_and(|rest| {
+            !rest.is_empty()
+                && resolve_date(rest, today).is_none()
+                && !could_still_become_a_date(rest)
+        })
+    })
+}
+
+/// Whether more typing could still make a date of this.
+///
+/// The question the live preview has to ask before it opens its mouth. `@2026-0`
+/// is on its way somewhere and `@2026-13` is not, and the difference is what
+/// separates a warning from nagging.
+fn could_still_become_a_date(s: &str) -> bool {
+    let s = s.to_ascii_lowercase();
+    [
+        "today", "tomorrow", "mon", "tue", "wed", "thu", "fri", "sat", "sun",
+    ]
+    .iter()
+    .any(|word| word.starts_with(&s))
+        || partial_iso(&s)
+}
+
+/// `YYYY-MM-DD` with the tail not typed yet — which also covers `3d` and `2w`
+/// on their way past the digits.
+///
+/// Field by field and not by position: `@2026-8-4` is a date, since the parser
+/// does not insist on the padding, and a check counting characters would have
+/// nagged at every step of typing one.
+fn partial_iso(s: &str) -> bool {
+    let mut fields = s.split('-');
+    let year = fields.next().unwrap_or_default();
+    let month = fields.next().unwrap_or_default();
+    let day = fields.next().unwrap_or_default();
+
+    if fields.next().is_some()
+        || !(1..=4).contains(&year.len())
+        || !year.bytes().all(|c| c.is_ascii_digit())
+    {
+        return false;
+    }
+
+    // All three fields filled to the brim is not a prefix of anything. It had
+    // its chance to parse upstream of here and did not take it, so it is a date
+    // that does not exist rather than one halfway typed.
+    if (year.len(), month.len(), day.len()) == (4, 2, 2) {
+        return false;
+    }
+
+    reachable(month, 12) && reachable(day, 31)
+}
+
+/// A month or a day, as far as it has been typed.
+///
+/// Two digits are the whole number and have to be one that exists. A single one
+/// is always still going somewhere — it is either the number itself or the tens
+/// of a bigger one — and an empty field has not been reached yet.
+fn reachable(digits: &str, max: u32) -> bool {
+    match digits.as_bytes() {
+        [] => true,
+        [c] => c.is_ascii_digit(),
+        [_, _] => digits.parse::<u32>().is_ok_and(|n| (1..=max).contains(&n)),
+        _ => false,
+    }
+}
+
 /// What `p` takes: everything `@` takes, plus a bare number meaning days.
 ///
 /// The bare number is only accepted here. `@2` in a sentence is somebody typing
@@ -368,5 +448,81 @@ mod tests {
         assert_eq!(back.due, t.due);
         assert_eq!(back.tags, t.tags);
         assert_eq!(back.priority, t.priority);
+    }
+
+    /// The word the preview is allowed to have an opinion about: an `@` that was
+    /// meant as a date, is not one, and cannot become one either.
+    #[test]
+    fn a_word_that_can_never_be_a_date_is_named() {
+        for text in [
+            "call the plumber @2026-13-45",
+            "call the plumber @2026-13",
+            "call the plumber @2026-08-45",
+            "call the plumber @2026-02-30",
+            "call the plumber @2026-00",
+            "call the plumber @2026-08-00",
+            "call the plumber @12345-08-20",
+            "call the plumber @3x",
+            "call the plumber @nextweek",
+        ] {
+            let word = text.rsplit(' ').next().unwrap();
+            assert_eq!(unresolved_date(text, today()), Some(word), "{text}");
+        }
+    }
+
+    /// The preview runs on every keystroke, so every prefix on the way to a real
+    /// date has to stay quiet — otherwise the warning is wrong for ten presses
+    /// and right for one, and nobody reads it by then.
+    #[test]
+    fn a_date_halfway_typed_is_left_alone() {
+        let mut typed = String::from("call the plumber ");
+        for c in "@2026-08-20".chars() {
+            typed.push(c);
+            assert_eq!(unresolved_date(&typed, today()), None, "{typed}");
+        }
+        // And the unpadded form, which the parser takes and which a check
+        // counting characters instead of fields would have nagged through.
+        let mut typed = String::from("call the plumber ");
+        for c in "@2026-8-4".chars() {
+            typed.push(c);
+            assert_eq!(unresolved_date(&typed, today()), None, "{typed}");
+        }
+        // A single digit is never finished: it is either the number itself or
+        // the tens of a bigger one.
+        for word in [
+            "@t",
+            "@to",
+            "@tom",
+            "@th",
+            "@m",
+            "@s",
+            "@1",
+            "@12",
+            "@3",
+            "@2026-1",
+            "@2026-2",
+            "@2026-9",
+            "@2026-08-2",
+            "@2026-08-3",
+        ] {
+            let text = format!("call the plumber {word}");
+            assert_eq!(unresolved_date(&text, today()), None, "{text}");
+        }
+    }
+
+    /// The other side of it: what resolves, and what was never an `@` date at
+    /// all, both stay silent.
+    #[test]
+    fn what_is_not_a_failed_date_stays_silent() {
+        for text in [
+            "email a@b about it",
+            "read the @ sign chapter",
+            "pay the invoice @thu",
+            "pay the invoice @2026-08-20",
+            "pay the invoice @3d",
+            "just write it down",
+        ] {
+            assert_eq!(unresolved_date(text, today()), None, "{text}");
+        }
     }
 }

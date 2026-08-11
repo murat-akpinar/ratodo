@@ -21,14 +21,23 @@ reach rather than by dependency.
       preview nor the status line ever says so. The fallback itself is correct
       and stays: a word we did not understand is the user's text and we do not
       eat it. What is missing is that the preview goes quiet in exactly the
-      moment it should speak. **First:** an unresolved `@word` gets an answer
-      under the input, the same way `@thu` gets one. **Then, separately:** the
-      field-by-field date entry — `↑ ↓` on the part under the cursor and eight
-      digits filling `DD MM YYYY` — which is a keymap and a widget, not a
-      message. What it would cost is worked through in
-      [notes.md](notes.md#the-date-field--a-proposal-not-a-decision-2026-08-11),
-      and it becomes an entry in [docs/decisions.md](docs/decisions.md) before a
-      line of it is written
+      moment it should speak.
+      - [x] **The preview says so.** An `@` that can never become a date gets
+            named under the input, in the colour the bottom line warns in.
+            *Can never* rather than *does not yet*: the line redraws on every
+            keystroke, and one that fires on `@2`, `@20`, `@202` on the way to
+            `@2026-08-20` is one nobody reads by the time it is right. Caught
+            by running the binary, not by the suite — the first version nagged
+            through ten presses. See
+            [docs/decisions.md](docs/decisions.md#settled)
+      - [ ] **The field-by-field date entry** — `↑ ↓` on the part under the
+            cursor and eight digits filling `DD MM YYYY`, which is a keymap and
+            a widget, not a message, and makes the invalid state unrepresentable
+            rather than merely detectable. What it would cost is worked through
+            in
+            [notes.md](notes.md#the-date-field--a-proposal-not-a-decision-2026-08-11),
+            and it becomes an entry in
+            [docs/decisions.md](docs/decisions.md) before a line of it is written
 - [ ] **`cargo publish`** — `--dry-run` passes (44 files, 157 KiB), and the only
       thing in the way is a verified email address on crates.io. One command
       after that. This is the item that decides whether anyone outside this

@@ -105,7 +105,12 @@ surface.
   in silence. The preview under the input resolves `@thu` out loud and then says
   nothing at all about the one case where the user is actually wrong. Watch for
   the same shape elsewhere: every place the parser falls back is a place the
-  screen should have an opinion.
+  screen should have an opinion. *(Fixed the same day — and the fix had the
+  shape's mirror image in it. A warning on everything unresolved is a warning
+  through `@2`, `@20`, `@202` on the way to a good date: a preview with an
+  opinion about a half-typed word is exactly as useless as one with none about a
+  wrong one. It speaks only once the word can never become a date. Found by
+  running the binary; every test passed while it nagged.)*
 
 ---
 

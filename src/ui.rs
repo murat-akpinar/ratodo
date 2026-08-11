@@ -1263,6 +1263,18 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
             )),
         }
     } else {
+        // The one row of the preview that has an opinion instead of a readout.
+        // Everything else here reports what the parser took; this reports what
+        // it refused, because the refusal is otherwise silent — the word stays
+        // in the title and the box looks like it agreed. In `overdue`, which is
+        // already the bottom line's warning colour, rather than a twelfth theme
+        // role. The fields still follow it: one bad word does not hide the tag.
+        if let Some(word) = crate::capture::unresolved_date(&input.text, render.today) {
+            shown.push(Span::styled(
+                format!("{word} is not a date"),
+                Style::default().fg(render.colours.overdue),
+            ));
+        }
         let parsed = crate::capture::capture(&input.text, render.today);
         for (part, text) in crate::text::field_parts(&parsed, render.today) {
             if shown.len() > 1 {
@@ -3752,6 +3764,63 @@ mod tests {
             "⏎ save   esc cancel",
             "the way out is on the line under the box: {screen:?}"
         );
+    }
+
+    /// The one thing the preview is allowed to have an opinion about. A word we
+    /// did not understand stays in the title, which is right, and silent — so
+    /// `@2026-13-45` looked accepted until the file had it. The tag beside it
+    /// still previews: one bad word does not take the row over.
+    #[test]
+    fn a_date_that_does_not_exist_is_said_out_loud() {
+        let render = render(crate::theme::MOCHA);
+        let input = Input::new(
+            "call the plumber @2026-13-45 #home".to_string(),
+            Purpose::Add,
+        );
+        let (lines, _) = input_lines(&input, 60, render);
+        let shown: Vec<(String, Style)> = lines[2]
+            .spans
+            .iter()
+            .map(|s| (s.content.to_string(), s.style))
+            .collect();
+
+        let warned = shown
+            .iter()
+            .find(|(text, _)| text.contains("is not a date"))
+            .unwrap_or_else(|| panic!("the preview stayed quiet about it: {shown:?}"));
+        assert!(warned.0.contains("@2026-13-45"), "{shown:?}");
+        assert_eq!(
+            warned.1.fg,
+            Some(render.colours.overdue),
+            "the warning is not in the colour the bottom line warns in: {shown:?}"
+        );
+        assert!(
+            shown.iter().any(|(text, _)| text.contains("#home")),
+            "one bad word swallowed the rest of the preview: {shown:?}"
+        );
+    }
+
+    /// The other half of it: the words that are *not* failed dates stay silent.
+    /// A preview that cries about every `@` is one people stop reading.
+    #[test]
+    fn the_words_that_are_not_failed_dates_stay_quiet() {
+        let render = render(crate::theme::MOCHA);
+        for text in [
+            "email a@b about it",
+            "pay the invoice @thu",
+            "read the @ sign chapter",
+            "just write it down",
+            "the @2026-08-20 one",
+        ] {
+            let input = Input::new(text.to_string(), Purpose::Add);
+            let (lines, _) = input_lines(&input, 60, render);
+            let shown = lines[2]
+                .spans
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>();
+            assert!(!shown.contains("is not a date"), "{text:?} → {shown:?}");
+        }
     }
 
     /// `p` reuses the box but not its reading of what is in it: a length of
