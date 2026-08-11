@@ -212,7 +212,9 @@ Three lists: what is settled, what was rejected, and what is still open.
   Weight rather than a twelfth theme role: a priority colour would have to be
   themed, would collide with `overdue` on the rows that have both, and would say
   nothing under `NO_COLOR`. `!med` and `!low` stay dim. See
-  [tui.md](tui.md#main-screen).
+  [tui.md](tui.md#main-screen). *(Widened 2026-08-12: the priority is the accent
+  in two weights — [reversed](#reversed), and each objection answered by using
+  the accent rather than a new hue.)*
 - ✅ **A finished task is never late** *(2026-08-11)*. `1d ago` on a ticked line
   states something that stopped being true, and the counts already left finished
   work out of `overdue`. It shows the plain date instead, and keeps its place in
@@ -335,6 +337,40 @@ no. Reopening one requires new information.
 | Automatic git commits | Tempting, but touching the user's git is dangerous even opt-in. Maybe an explicit `--commit` flag much later |
 
 ## Reversed
+
+### `!high` is bold and that is all it gets → the priority is the accent, in two weights (2026-08-12)
+
+**Was:** the priority borrowed the row's own colour and added weight when it was
+`!high` and the task was open; `!med` and `!low` sat in the same grey as the
+tags. The reasoning was that a priority colour would need a twelfth theme role,
+would collide with `overdue` on the rows that have both, and would say nothing
+under `NO_COLOR`.
+
+**Now:** `!high` is the **accent, bold**, `!med` is the **accent**, and `!low`
+stays dim. Three levels the eye can sort without reading them, which is what the
+column is for.
+
+**Every one of the old objections is answered by using the accent and not a new
+hue, rather than waved past:**
+
+- **No twelfth role.** It is `accent`, already themed, already in `theme dump`.
+  `theme.conf` gains no key and the eleven roles stay eleven.
+- **The collision goes the other way now.** `!high` used to be drawn in the
+  row's colour, so on a late row the date and the priority were the *same red* —
+  the one row where the two most need telling apart. The accent is the one
+  colour no row state ever takes.
+- **`NO_COLOR` is unchanged**, because the weight is unchanged: `!high` is still
+  the bold one, and the three words are still three different words on the
+  screen. Nothing here is carried by colour alone —
+  [design.md](design.md#rules) still holds.
+- **The palette rules are untouched.** Red is still the negative outcome and
+  green is still only for completed; a traffic light would have spent both, and
+  `!low` in green would have meant *finished* on a row that is not.
+- **A ticked or cancelled task is still dim**, however it was filed — the same
+  reason a finished row stops saying how late it is.
+
+The input box paints it the same two ways, because the box teaching a colour the
+list then contradicts is worse than either of them alone.
 
 ### Only `copy` is lit → every label is (2026-08-12)
 

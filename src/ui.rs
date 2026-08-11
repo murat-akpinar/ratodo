@@ -1386,18 +1386,11 @@ fn task_line(
     };
     push(date, cols.date, date_style);
     if size == Size::Wide {
-        // `!high` is the one field the user typed to mean *urgent*, and dim
-        // beside the tags is the screen saying it back in a whisper. Weight
-        // rather than a twelfth theme colour: nothing on this screen may be
-        // carried by colour alone — docs/design.md#rules. `!med` and `!low` stay
-        // where they were, or three loud rows teach nothing about which is which,
-        // and a ticked task is not urgent however it was filed.
-        let urgent = task.priority == Some(Priority::High) && task.open();
-        let style = if urgent {
-            Style::default().fg(colour).bold()
-        } else {
-            dim
-        };
+        // The field the user typed to mean *how much this matters*, and dim
+        // beside the tags was the screen saying it back in a whisper. It borrows
+        // the row's colour from nobody: `!high` on a late row used to be the same
+        // red as the date, which is the one row where the two need telling apart.
+        let style = priority_style(task.priority.filter(|_| task.open()), dim, render);
         push(prio.unwrap_or_default(), cols.prio, style);
         // What is left of the row after the columns. A tag that does not fit is
         // dropped whole rather than cut: `#hea…` is not a filter, it is a
@@ -1588,12 +1581,36 @@ impl Notice {
 ///
 /// Returns the column the cursor belongs in as well, because it is the same
 /// arithmetic.
+/// What a priority is drawn in, on the row and in the input box alike.
+///
+/// The accent in two weights: `!high` bold, `!med` plain, and `!low` down with
+/// the dim fields where it asked to be. No new theme role, and none of the three
+/// earned colours diluted — `docs/design.md#rules` keeps red for the negative
+/// outcome and green for finished, and a priority is neither.
+///
+/// `None` is anything that is not urgent any more: a ticked or cancelled task is
+/// not `!high` however it was filed.
+fn priority_style(priority: Option<Priority>, dim: Style, render: Render<'_>) -> Style {
+    let accent = Style::default().fg(render.colours.accent);
+    match priority {
+        Some(Priority::High) => accent.bold(),
+        Some(Priority::Med) => accent,
+        _ => dim,
+    }
+}
+
 /// What colour a parsed word gets, on the typed line and in the preview under it
-/// alike. Priority is weight rather than a twelfth theme role — docs/tui.md.
-fn paint(part: crate::capture::Part, plain: Style, render: Render<'_>) -> Style {
+/// alike — the same two weights the row gives it, so the box is not teaching a
+/// colour the list then contradicts.
+fn paint(
+    part: crate::capture::Part,
+    priority: Option<Priority>,
+    plain: Style,
+    render: Render<'_>,
+) -> Style {
     match part {
         crate::capture::Part::Tag => Style::default().fg(render.colours.tag),
-        crate::capture::Part::Priority => plain.bold(),
+        crate::capture::Part::Priority => priority_style(priority, plain, render),
         _ => Style::default().fg(render.colours.accent),
     }
 }
@@ -1657,6 +1674,9 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
     let lands = moving
         .then(|| crate::capture::later(&input.text, render.today))
         .flatten();
+    // Read once and used by both halves of the box, so the word on the typed
+    // line and the word under it are never coloured by two different readings.
+    let parsed = crate::capture::capture(&input.text, render.today);
 
     // Split so the label can be lit without the caret glyph following it: the
     // two together are still `head`, so the cursor column above is unchanged.
@@ -1674,7 +1694,7 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
         }
         spans.push(Span::styled(
             input.text[start..end].to_string(),
-            paint(part, plain, render),
+            paint(part, parsed.priority, plain, render),
         ));
         cut = end;
     }
@@ -1771,12 +1791,14 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
             }
             shown.push(span);
         }
-        let parsed = crate::capture::capture(&input.text, render.today);
         for (part, text) in crate::text::field_parts(&parsed, render.today) {
             if shown.len() > 1 {
                 shown.push(Span::styled(format!(" {dot} "), rule));
             }
-            shown.push(Span::styled(text, paint(part, plain, render)));
+            shown.push(Span::styled(
+                text,
+                paint(part, parsed.priority, plain, render),
+            ));
         }
     }
     let preview = Line::from(shown);
@@ -3385,12 +3407,12 @@ mod tests {
         assert_eq!(style_of("a @2026-08-10", true).fg, Some(colours.dim));
     }
 
-    /// `!high` is the one field the user typed to mean *urgent*, and it sat in
-    /// the same grey as the date and the tags. Weight says so without spending a
-    /// twelfth theme colour, and without leaning on colour at all
+    /// The priority is the accent in two weights: `!high` bold, `!med` plain,
+    /// `!low` down with the dim fields. One colour and no new theme role, so
+    /// red still means the negative outcome and green still means finished
     /// — docs/design.md#rules.
     #[test]
-    fn high_priority_carries_weight_and_the_other_two_stay_quiet() {
+    fn the_priority_is_the_accent_in_two_weights() {
         let colours = crate::theme::MOCHA;
         let style_of = |spec: &str, done: bool| {
             let mut task = capture(spec, today());
@@ -3400,34 +3422,49 @@ mod tests {
             let rows = [Row::Task(task.clone())];
             let cols = Columns::of(&rows, 86, render(colours), Size::Wide);
             let line = task_line(&task, 86, cols, render(colours), Size::Wide);
+            // By the word and not by the leading `!`: on a late row the mark is
+            // an `!` too, and it is the first one in the line.
+            let want = task.priority.expect("the spec has a priority").as_str();
             line.spans
                 .iter()
-                .find(|s| s.content.starts_with('!'))
+                .find(|s| s.content == want)
                 .expect("the priority is on the row")
                 .style
         };
 
         let high = style_of("a @2026-08-14 !high", false);
-        assert_eq!(high.fg, Some(colours.foreground));
+        assert_eq!(high.fg, Some(colours.accent));
         assert!(
             high.add_modifier.contains(ratatui::style::Modifier::BOLD),
             "the loud field is not loud: {high:?}"
         );
 
-        for quiet in ["a @2026-08-14 !med", "a @2026-08-14 !low"] {
-            let style = style_of(quiet, false);
-            assert_eq!(style.fg, Some(colours.dim), "{quiet}");
-            assert!(
-                !style.add_modifier.contains(ratatui::style::Modifier::BOLD),
-                "{quiet}"
-            );
-        }
+        // The middle one is the same colour and not the same weight, which is
+        // the whole of what separates them.
+        let med = style_of("a @2026-08-14 !med", false);
+        assert_eq!(med.fg, Some(colours.accent));
+        assert!(!med.add_modifier.contains(ratatui::style::Modifier::BOLD));
+
+        let low = style_of("a @2026-08-14 !low", false);
+        assert_eq!(low.fg, Some(colours.dim));
+        assert!(!low.add_modifier.contains(ratatui::style::Modifier::BOLD));
+
+        // It borrows the row's colour from nobody. On a late row the date is
+        // `overdue` red and the priority is still the accent — that is the one
+        // row where the two most need telling apart.
+        let late = style_of("a @2026-08-08 !high", false);
+        assert_eq!(late.fg, Some(colours.accent));
 
         // Finished work is not urgent, however it was filed — the same reason a
         // ticked task stops saying how late it is.
-        let ticked = style_of("a @2026-08-14 !high", true);
-        assert_eq!(ticked.fg, Some(colours.dim));
-        assert!(!ticked.add_modifier.contains(ratatui::style::Modifier::BOLD));
+        for done in ["a @2026-08-14 !high", "a @2026-08-14 !med"] {
+            let ticked = style_of(done, true);
+            assert_eq!(ticked.fg, Some(colours.dim), "{done}");
+            assert!(
+                !ticked.add_modifier.contains(ratatui::style::Modifier::BOLD),
+                "{done}"
+            );
+        }
     }
 
     /// A row is built to a width and ratatui clips whatever overruns it, so an
@@ -4416,6 +4453,9 @@ mod tests {
 
         assert_eq!(styled("due Thursday").fg, Some(render.colours.accent));
         assert_eq!(styled("#home").fg, Some(render.colours.tag));
+        // The same two weights the row gives it, or the box teaches a colour the
+        // list then contradicts.
+        assert_eq!(styled("!high").fg, Some(render.colours.accent));
         assert!(
             styled("!high")
                 .add_modifier

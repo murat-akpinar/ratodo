@@ -170,13 +170,17 @@ Details that are decisions, not drawing:
   instead (`Aug 8`) — still a fact, and still worth seeing. The task stays in
   `OVERDUE` all the same: membership there is positional, and the list does not
   move under you.
-- **`!high` is bold**, in the row's own colour rather than the grey the rest of
-  the right-hand fields sit in. It is the one field the user typed to mean
-  *urgent*, and saying it back in the same whisper as the date wastes it. Weight,
-  not a twelfth theme colour: it reads the same on a bare TTY with `NO_COLOR=1`,
-  where a colour would have said nothing at all. `!med` and `!low` stay quiet —
-  three loud rows teach nothing about which of them is which — and a ticked task
-  is not urgent however it was filed.
+- **The priority is the accent, in two weights.** `!high` is the accent and
+  bold, `!med` is the accent, `!low` stays in the grey the rest of the
+  right-hand fields sit in. It is the field the user typed to mean *how much
+  this matters*, and saying all three back in the same whisper wastes it. The
+  **accent** and not a hue of its own: `theme.conf` gains no key, red still
+  means the negative outcome and green still only means finished
+  ([design.md](design.md#rules)), and no row state ever takes the accent — so on
+  a late row the red date and the priority beside it stay two different things,
+  which is the one row where they most need telling apart. The weight is what
+  survives `NO_COLOR=1`, where a colour says nothing at all. A ticked or
+  cancelled task is dim however it was filed.
 - Counts in the title bar are the same numbers a waybar module will show in v4
   ([roadmap.md](roadmap.md)). Same wording, one source.
 - **What is finished sits on the right of the title rule**, as eight cells and a
@@ -291,7 +295,8 @@ take the row over.
 
 **The field colours itself as you type**, and it colours by what the parser
 *took*: `@thu` and the `09:30` the date took with it go `accent`, `#home` goes
-`tag`, `!high` goes bold. A `@notaday` stays plain text, because that is what it
+`tag`, and `!high` and `!med` take the accent in the same two weights the row
+gives them. A `@notaday` stays plain text, because that is what it
 will be in the file — a colour that promises more than the parser delivers
 teaches a syntax the format does not have. The preview says *what* was
 understood; the colour says *where*, on the words themselves, which is where the
