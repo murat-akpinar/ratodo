@@ -207,8 +207,10 @@ side pane turns into a dashboard nobody leaves open.
 - [ ] **Dated groups and the file's own `##` sections look identical.** `OVERDUE`
       and `Work` are both a bold word plus a rule, though one is ours and one is
       the user's. Careful: "two levels of hierarchy, there is no third"
-- [ ] **A completed task still shows how late it is** — `✓ review the deploy PR
-      … 1d ago`. It is finished; the lateness stopped being true
+- [x] **A completed task still shows how late it is** — `✓ review the deploy PR
+      … 1d ago`. It is finished; the lateness stopped being true —
+      **done**: it shows the plain date (`Aug 8`) instead, and stays in
+      `OVERDUE`, where membership was always positional
 - [ ] **`!high` is easy to miss**, sitting dim next to the tags. It is the one
       field the user typed to mean *urgent* and the screen barely says so
 - [ ] Empty screen and `?` overlay — both correct and both plain

@@ -745,7 +745,11 @@ fn when(task: &Task, today: NaiveDate, size: Size) -> String {
     let time = due.time.map(|t| t.format("%H:%M").to_string());
 
     match (days, size) {
-        (d, _) if d < 0 => format!("{}d ago", -d),
+        // Lateness is a claim about work still owed. A ticked line saying "2d
+        // ago" contradicts the tick — and the counts, which already leave
+        // finished work out of `overdue`. It falls through to the plain date,
+        // which is still true: that is when it was for.
+        (d, _) if d < 0 && !task.done => format!("{}d ago", -d),
         (0, _) => time.unwrap_or_else(|| "today".to_string()),
         (1..=6, Size::Wide) => match time {
             Some(t) => format!("{} {t}", due.date.format("%a")),
@@ -2605,6 +2609,22 @@ mod tests {
 
         let undated = capture("a", today());
         assert_eq!(when(&undated, today(), Size::Wide), "");
+    }
+
+    /// It is finished, so the lateness stopped being true — and the counts
+    /// already agree: a completed task is never in `overdue`. The date it was
+    /// for survives, because that much is still a fact.
+    #[test]
+    fn a_finished_task_is_not_late_however_far_past_its_date_it_is() {
+        let mut done = capture("a @2026-08-08", today());
+        done.set_done(true);
+        assert_eq!(when(&done, today(), Size::Wide), "Aug 8");
+        assert_eq!(when(&done, today(), Size::Narrow), "Aug 8");
+
+        // Only lateness goes: a finished task due today still says so.
+        let mut earlier = capture("a @2026-08-10 09:30", today());
+        earlier.set_done(true);
+        assert_eq!(when(&earlier, today(), Size::Wide), "09:30");
     }
 
     #[test]

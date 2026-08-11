@@ -117,6 +117,12 @@ Details that are decisions, not drawing:
   absolute where it does not (`Aug 20`). At this width it is right-aligned, so
   the eye reads down the right edge; past eighty columns it becomes a real
   left-aligned column — [below](#width).
+- **A finished task is never late.** `2d ago` on a ticked line states something
+  that stopped being true when the box was ticked, and it contradicts the counts,
+  which already leave finished work out of `overdue`. It shows the plain date
+  instead (`Aug 8`) — still a fact, and still worth seeing. The task stays in
+  `OVERDUE` all the same: membership there is positional, and the list does not
+  move under you.
 - Counts in the title bar are the same numbers a waybar module will show in v4
   ([roadmap.md](roadmap.md)). Same wording, one source.
 - **What is finished sits on the right of the title rule**, as eight cells and a
