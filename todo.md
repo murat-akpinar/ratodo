@@ -10,7 +10,7 @@ that is actually open is the short list directly under this line.
 
 ## What is left
 
-Four open. One is code in the product and came out of a day of real use; the
+Five open. Two are code in the product and came out of a day of real use; the
 other three are packaging. Nothing here blocks anything else, so the order is by
 reach rather than by dependency. The ticked one at the top came out of the same
 day of use and is kept here rather than moved down, because the reasoning in it
@@ -24,6 +24,60 @@ is about a key that was asked for and does not exist.
       the capture target wherever the cursor is. See
       [docs/decisions.md](docs/decisions.md#settled)
 
+- [ ] **`$list` in the input, and the input as four fields.** Asked for on
+      2026-08-11, and it is two pieces that arrived in one sentence. They ship in
+      that order, because the first is useful without the second and the second
+      is not useful without something to put in a fourth column.
+      - [ ] **`$work` routes the capture.** `a` writes to `todo.md` and nothing
+            else — [cli.md](docs/cli.md#several-lists) rule 4 — so capturing into
+            `work.md` means leaving the TUI for
+            `ratodo --file ~/.config/ratodo/work.md add '...'`. `$` puts it in
+            the box: a fourth sigil beside `@` `#` `!`, read by the one
+            tokenizer `capture::parts` already is, previewed as `→ work.md` the
+            way `@thu` is previewed as a date. Rule 4 said a fixed target on
+            purpose — "`a` must not mean a different file depending on what the
+            cursor happens to be over" — and `$` does not break that: the target
+            is a **word the user typed**, not the cursor position. That
+            distinction is the whole reversal and it goes in
+            [docs/decisions.md](docs/decisions.md) before the code does
+      - [ ] **The box becomes four fields with `tab` between them** — work |
+            date | tag | list. This **reverses** the decision of 2026-08-11 in
+            [docs/decisions.md](docs/decisions.md#settled), which rejected
+            exactly this, and the reversal is written there first
+      - **What the reversal has to say, because one of the two recorded reasons
+        no longer holds.** The rejection said an edit would have to take an
+        existing line apart into fields and put it back, and that a line with
+        two tags or a title continuing after a tag would not survive it.
+        Measured on 2026-08-11: it does not survive that **today**. `⏎` on
+        `- [ ] pay #home the invoice @thu #work !high`, one word appended, saves
+        `- [ ] pay the invoice now @2026-08-13 #home #work !high` — the tag came
+        out of the middle of the title, the date resolved, both tags stayed.
+        Editing already round-trips through `capture`, so four fields cost
+        nothing here that one field is not already costing. The other reason
+        stands and is the one to argue with: it puts a focus state *inside* the
+        input mode, and [tui.md](docs/tui.md) opens with "vim keys, no vim
+        modes"
+      - **Open, and each one changes the shape:**
+        - **There are five fields, not four.** `!high` is the one the ask did
+          not name. Either it is a fifth column — on a box that has to fit a
+          34-column pane — or it stays typed into the work field, which makes
+          "everything has a column" untrue on the first day
+        - **`p` keeps one field.** It asks one question and pre-fills nothing;
+          four columns for "how long?" is a widget answering a question nobody
+          asked
+        - **What `$nosuchfile` does.** Refuse before the write, the way an
+          unparseable `p` is refused? Or create the list? A capture that
+          silently invents a file in the config directory is a surprise; one
+          that refuses is a dead end at the moment of capture
+        - **What the box does with one list.** `$` has no meaning until there
+          is a second file, and [cli.md](docs/cli.md#several-lists) already
+          holds that shape: the file name is attached to a task only when there
+          is more than one. A fourth column that is always empty is a column
+          teaching nothing
+        - **Whether the four columns fit the documented widths.** The box lives
+          inside the list, and [tui.md](docs/tui.md) commits to ≥60 / 34–59 /
+          <34. Four fields and three separators inside 34 columns is roughly
+          seven characters a field
 - [ ] **A date that does not exist is accepted in silence.** Found in use on
       2026-08-11: `@2026-13-45` resolves to nothing, so the whole word falls
       back to being part of the title — the file gets
