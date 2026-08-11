@@ -1,3 +1,13 @@
+## [unreleased]
+
+### 🚀 Features
+
+- *(ui)* Rule the columns, and say copy on the copy box ([d145d87](https://github.com/murat-akpinar/ratodo/commit/d145d875fa081aa83f4739b872316097801f1ad4))
+Both out of the same report: the row read as one run-on line, and the box `y` fills looked exactly like the box `a` fills.
+
+### ⚙️ Miscellaneous Tasks
+
+- Point the PKGBUILD at v0.4.0 ([2cbd2b0](https://github.com/murat-akpinar/ratodo/commit/2cbd2b06bea68646a62b6c6150f850d966bf0129))
 ## [0.4.0] - 2026-08-11
 
 ### 🚀 Features
@@ -9,6 +19,7 @@
 
 - Add a flake and an Arch PKGBUILD ([ccf4d16](https://github.com/murat-akpinar/ratodo/commit/ccf4d163f5096928a051580c5259c3608aabc974))
 Two ways in that are not `cargo install`, which is what NixOS and Arch users were left with after v0.3.0.
+- *(release)* V0.4.0 ([f4e40ea](https://github.com/murat-akpinar/ratodo/commit/f4e40ea9c184a1358b97c476478601166facee63))
 ## [0.3.0] - 2026-08-11
 
 ### 🚀 Features
