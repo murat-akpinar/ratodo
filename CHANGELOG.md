@@ -13,6 +13,8 @@ Grey said *finished*, and a cancelled task is the opposite of finished — it is
 
 - *(ui)* Colour the parse preview field by field ([7173a34](https://github.com/murat-akpinar/ratodo/commit/7173a34619999c5d6d1d439a77d10ef37c9412a4))
 The row under the input was one accent-coloured string, which said the parser had understood all of it equally: the resolved date and the tag came out the same colour in the one row whose job is telling them apart.
+- *(cli)* Stop the test suite writing into the real ~/.local ([0a20020](https://github.com/murat-akpinar/ratodo/commit/0a200204e0be912f6964bef5907a634b780656ba))
+`write_back` called `backup_dir()` and resolved the calendar path itself, both of which read the environment. The callers furthest from `main` are the tests, so every in-process case wrote into the developer's own directories: it regenerated their real `~/.local/share/ratodo/todo.ics` from a fixture and left a `.bak` per case in `~/.local/state/ratodo` — twenty-two megabytes of them on the machine this was found on. `tests/cli.rs` had the same hole from the other side, setting `XDG_STATE_HOME` and `XDG_CACHE_HOME` and forgetting `XDG_DATA_HOME`, under a comment claiming every XDG directory was covered.
 
 ### 📚 Documentation
 
