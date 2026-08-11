@@ -132,9 +132,10 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
       and it takes the frame and the punctuation with it
 - [~] The bottom line: hints and results done, the input field comes with the
       input mode
-- [~] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `e` · `r` · `?` · `esc` · `q` done.
-      `a o ⏎ d u h l z` still to come
-- [ ] `h`/`l` fold the group under the cursor — lf/ranger/yazi muscle memory, not "fold LATER"
+- [~] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `h l z` · `e` · `r` · `?` · `esc` ·
+      `q` done. `a o ⏎ d u` still to come
+- [x] `h`/`l` fold the group under the cursor — lf/ranger/yazi muscle memory, not
+      "fold LATER". A collapsed group is selectable, which is the only way back
 - [ ] Input mode: `⏎` save, `esc` cancel, `ctrl-c` cancel (**never quit**), and nothing else can open it
 - [ ] **Live parse preview** under the input — `@thu` resolves as you type
 - [ ] `d` deletes immediately; `u` undoes delete / toggle / edit

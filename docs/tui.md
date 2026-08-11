@@ -86,6 +86,17 @@ Details that are decisions, not drawing:
   a horizontal anchor to find where a group starts; a bare word does not give it.
 - **`LATER (3)` stays collapsed** and shows its count and its key. A collapsed
   group that does not say how to open it is a dead end.
+
+  A collapsed group is also **selectable** — the cursor lands on it, the way it
+  lands on a closed directory in `lf` or `ranger`. That is not decoration: the
+  tasks inside are gone from the screen, so the header is the only thing left to
+  put a cursor on, and without one `l` would have nothing to open. Folding would
+  be a one-way trip.
+
+  Folds are remembered by heading, so they survive a reload — `ratodo add` in
+  another pane must not quietly undo them. A file with the same heading twice
+  therefore folds both at once, which is the price of that and is the user's own
+  arrangement.
 - **`SOMEDAY` is a `##` heading from the user's file**, not one of ours. Dated
   groups come first, then the user's own sections in file order.
 - The date column is right-aligned and relative where that reads better

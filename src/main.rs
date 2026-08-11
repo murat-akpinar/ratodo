@@ -533,6 +533,16 @@ fn run(
                     ui::Action::Top => live.screen.top(),
                     ui::Action::Bottom => live.screen.bottom(),
                     ui::Action::Toggle => notice = live.toggle(path, today)?,
+                    ui::Action::Fold(want) => {
+                        if !live.screen.fold(want) {
+                            // Nothing happened, and silence would read as a
+                            // broken key rather than "there is nothing here".
+                            notice = ui::Notice::Said(match want {
+                                ui::Fold::Open => "nothing folded here".to_string(),
+                                _ => "no group to fold here".to_string(),
+                            });
+                        }
+                    }
                     ui::Action::Edit => {
                         notice = live.edit(terminal, path, today)?;
                     }

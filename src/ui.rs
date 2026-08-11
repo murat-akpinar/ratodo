@@ -22,6 +22,8 @@ pub enum Action {
     Top,
     Bottom,
     Toggle,
+    /// `h` `l` `z` — collapse or open the group under the cursor.
+    Fold(Fold),
     /// Hand the terminal to `$EDITOR`. The escape hatch for everything the
     /// tool cannot do — docs/product.md#product-decisions.
     Edit,
@@ -63,6 +65,10 @@ pub fn action(key: KeyEvent) -> Action {
         KeyCode::Char('d') if ctrl => Action::Move(10),
         KeyCode::Char('u') if ctrl => Action::Move(-10),
         KeyCode::Char(' ') => Action::Toggle,
+        KeyCode::Char('h') | KeyCode::Left => Action::Fold(Fold::Close),
+        KeyCode::Char('l') | KeyCode::Right => Action::Fold(Fold::Open),
+        // `z` is the vim fold prefix, and here it is the whole of it.
+        KeyCode::Char('z') => Action::Fold(Fold::Toggle),
         KeyCode::Char('e') => Action::Edit,
         KeyCode::Char('r') => Action::Reload,
         KeyCode::Char('?') => Action::Help,
@@ -77,6 +83,14 @@ pub fn action(key: KeyEvent) -> Action {
     }
 }
 
+/// What `h`, `l` and `z` ask for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fold {
+    Close,
+    Open,
+    Toggle,
+}
+
 /// One line of the list. Only a `Task` can hold the selection; the rest is
 /// scenery the cursor moves over.
 ///
@@ -84,9 +98,24 @@ pub fn action(key: KeyEvent) -> Action {
 /// without the screen still pointing into the document it replaced.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Row {
-    Header(String),
+    Header {
+        title: String,
+        /// How many tasks are hidden under it, when it is folded. A collapsed
+        /// group that does not say how much it is hiding is a dead end —
+        /// docs/tui.md.
+        hidden: Option<usize>,
+    },
     Task(Task),
     Spacer,
+}
+
+impl Row {
+    fn header(title: &str) -> Self {
+        Row::Header {
+            title: title.to_string(),
+            hidden: None,
+        }
+    }
 }
 
 /// Flattens the agenda into lines. The blank row between groups is half of the
@@ -98,7 +127,7 @@ pub fn rows(groups: &[Group<'_>]) -> Vec<Row> {
             out.push(Row::Spacer);
         }
         if let Some(title) = group.kind.title() {
-            out.push(Row::Header(title.to_string()));
+            out.push(Row::header(title));
         }
         out.extend(group.tasks.iter().map(|t| Row::Task((*t).clone())));
     }
@@ -107,6 +136,19 @@ pub fn rows(groups: &[Group<'_>]) -> Vec<Row> {
 
 #[derive(Default)]
 pub struct Screen {
+    /// Every row the document produces, folded or not.
+    all: Vec<Row>,
+    /// The titles of the groups that are collapsed. Kept across a reload on
+    /// purpose: a group you folded stays folded when `ratodo add` fires the
+    /// watcher, or folding would undo itself every time anything touched the
+    /// file.
+    ///
+    /// Keyed by title, so a file with the same heading twice folds both at once.
+    /// That is the price of surviving a reload — an index would not — and two
+    /// `## Work` headings are the user's own doing.
+    folded: std::collections::HashSet<String>,
+    /// What is on screen — `all` with the folded groups taken out. Derived, and
+    /// the thing `state` indexes into.
     rows: Vec<Row>,
     /// Holds the scroll offset as well as the selection, so the selected row
     /// stays on screen without this module doing viewport arithmetic.
@@ -125,15 +167,120 @@ impl Screen {
     /// asks for — that is step 6 — but it covers the case that actually happens:
     /// `ratodo add` in another pane pushing rows around underneath you.
     pub fn replace(&mut self, rows: Vec<Row>) {
-        let was = self.task().map(|t| t.raw.clone());
-        let kept = was.and_then(|raw| {
-            rows.iter()
+        self.all = rows;
+        self.refresh();
+    }
+
+    /// Rebuilds the visible rows from `all` and the folded set, and puts the
+    /// cursor back on the task it was on.
+    ///
+    /// When that task is no longer visible — because the group it lived in was
+    /// just folded — the cursor holds its **position** instead and snaps to the
+    /// nearest task. Sending it to the top of the list would be the one thing a
+    /// side pane must not do.
+    fn refresh(&mut self) {
+        let was_on = self.task().map(|t| t.raw.clone());
+        let was_at = self.state.selected().unwrap_or(0);
+
+        self.rows = Vec::with_capacity(self.all.len());
+        let mut skipping: Option<usize> = None;
+
+        for row in &self.all {
+            match row {
+                Row::Header { title, .. } if self.folded.contains(title) => {
+                    skipping = Some(0);
+                    self.rows.push(Row::Header {
+                        title: title.clone(),
+                        hidden: Some(0),
+                    });
+                }
+                Row::Header { title, .. } => {
+                    skipping = None;
+                    self.rows.push(Row::header(title));
+                }
+                Row::Task(t) => match skipping {
+                    Some(_) => {
+                        // Count it against the header that is hiding it.
+                        if let Some(Row::Header {
+                            hidden: Some(n), ..
+                        }) = self.rows.last_mut()
+                        {
+                            *n += 1;
+                        }
+                    }
+                    None => self.rows.push(Row::Task(t.clone())),
+                },
+                Row::Spacer => self.rows.push(Row::Spacer),
+            }
+        }
+
+        let kept = was_on.and_then(|raw| {
+            self.rows
+                .iter()
                 .position(|r| matches!(r, Row::Task(t) if t.raw == raw))
         });
+        let near = (was_at..self.rows.len())
+            .find(|&i| self.is_selectable(i))
+            .or_else(|| {
+                (0..was_at.min(self.rows.len()))
+                    .rev()
+                    .find(|&i| self.is_selectable(i))
+            });
 
-        self.rows = rows;
-        let first = (0..self.rows.len()).find(|&i| self.is_task(i));
-        self.state.select(kept.or(first));
+        self.state.select(kept.or(near));
+    }
+
+    /// The heading the cursor is under — or sitting on, when the group is
+    /// folded. A run of tasks above the file's first `##` has no header to
+    /// collapse into and gets `None`.
+    fn group_at_cursor(&self) -> Option<String> {
+        let at = self.state.selected()?;
+        self.rows[..=at.min(self.rows.len().saturating_sub(1))]
+            .iter()
+            .rev()
+            .find_map(|r| match r {
+                Row::Header { title, .. } => Some(title.clone()),
+                _ => None,
+            })
+    }
+
+    /// `h` collapses, `l` opens, `z` does whichever is the opposite of now —
+    /// the muscle memory `lf`, `ranger` and `yazi` arrive with. Returns whether
+    /// anything happened, so the caller can say when nothing did.
+    pub fn fold(&mut self, want: Fold) -> bool {
+        let Some(title) = self.group_at_cursor() else {
+            return false;
+        };
+        let folded = self.folded.contains(&title);
+        let should = match want {
+            Fold::Close => true,
+            Fold::Open => false,
+            Fold::Toggle => !folded,
+        };
+        if should == folded {
+            return false;
+        }
+
+        if should {
+            self.folded.insert(title.clone());
+            self.refresh();
+            // Land on the header that just swallowed the group. Anywhere else
+            // and there is no way back: `l` needs a cursor on the thing it opens.
+            if let Some(at) = self
+                .rows
+                .iter()
+                .position(|r| matches!(r, Row::Header { title: t, hidden: Some(_) } if *t == title))
+            {
+                self.state.select(Some(at));
+            }
+        } else {
+            self.folded.remove(&title);
+            // `refresh` already steps inside: the header stops being selectable
+            // the moment it opens, so holding the position lands on the first
+            // task of the group that was just revealed.
+            self.refresh();
+        }
+        true
     }
 
     pub fn selected(&self) -> Option<usize> {
@@ -157,8 +304,21 @@ impl Screen {
         }
     }
 
-    fn is_task(&self, i: usize) -> bool {
-        matches!(self.rows.get(i), Some(Row::Task(_)))
+    /// A task, or the header of a folded group.
+    ///
+    /// A collapsed group is one thing on screen and behaves like one: the cursor
+    /// lands on it, which is also the only way `l` can ever open it again. This
+    /// is what `lf` and `ranger` do with a closed directory, and the reason `h`
+    /// and `l` are the keys.
+    fn is_selectable(&self, i: usize) -> bool {
+        matches!(
+            self.rows.get(i),
+            Some(Row::Task(_))
+                | Some(Row::Header {
+                    hidden: Some(_),
+                    ..
+                })
+        )
     }
 
     /// Moves `n` task rows, skipping headers and blanks, and **stops at the
@@ -174,9 +334,9 @@ impl Screen {
         let forward = n.is_positive();
         for _ in 0..n.unsigned_abs() {
             let next = if forward {
-                (at + 1..self.rows.len()).find(|&i| self.is_task(i))
+                (at + 1..self.rows.len()).find(|&i| self.is_selectable(i))
             } else {
-                (0..at).rev().find(|&i| self.is_task(i))
+                (0..at).rev().find(|&i| self.is_selectable(i))
             };
             match next {
                 Some(i) => at = i,
@@ -195,7 +355,7 @@ impl Screen {
     }
 
     fn jump(&mut self, mut order: impl Iterator<Item = usize>) {
-        if let Some(i) = order.find(|&i| self.is_task(i)) {
+        if let Some(i) = order.find(|&i| self.is_selectable(i)) {
             self.state.select(Some(i));
         }
     }
@@ -412,15 +572,28 @@ fn task_line(task: &Task, width: usize, render: Render<'_>, size: Size) -> Line<
 /// A group heading with a rule out to the right edge. In a narrow pane the eye
 /// needs a horizontal anchor to find where a group starts; a bare word does not
 /// give it — docs/tui.md.
-fn header_line(title: &str, width: usize, render: Render<'_>) -> Line<'static> {
-    let name = text::plain(title);
-    let rule = width.saturating_sub(columns(&name) + 2);
+fn header_line(
+    title: &str,
+    hidden: Option<usize>,
+    width: usize,
+    render: Render<'_>,
+) -> Line<'static> {
+    // A collapsed group says how much it is hiding and which key opens it.
+    // One that does not is a dead end — docs/tui.md.
+    let name = match hidden {
+        Some(n) => format!("{} ({n})", text::plain(title)),
+        None => text::plain(title),
+    };
+    let tail = if hidden.is_some() { " l" } else { "" };
+
+    let rule = width.saturating_sub(columns(&name) + columns(tail) + 2);
     Line::from(vec![
         Span::styled(name, Style::default().fg(render.colours.accent).bold()),
         Span::styled(
             format!(" {}", render.glyphs.rule().to_string().repeat(rule)),
             Style::default().fg(render.colours.border),
         ),
+        Span::styled(tail, Style::default().fg(render.colours.dim)),
     ])
 }
 
@@ -532,7 +705,9 @@ pub fn draw(
         .filter(|row| !(size < Size::Wide && matches!(row, Row::Spacer)))
         .map(|row| match row {
             Row::Task(t) => ListItem::new(task_line(t, width, render, size)),
-            Row::Header(title) => ListItem::new(header_line(title, width, render)),
+            Row::Header { title, hidden } => {
+                ListItem::new(header_line(title, *hidden, width, render))
+            }
             Row::Spacer => ListItem::new(""),
         })
         .collect();
@@ -570,11 +745,12 @@ pub fn draw(
 /// Only the keys that do something. A help screen listing keys that are not
 /// built yet teaches the wrong thing twice.
 fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
-    const KEYS: [(&str, &str); 9] = [
+    const KEYS: [(&str, &str); 10] = [
         ("j k  ↓ ↑", "move"),
         ("g G", "top / bottom"),
         ("ctrl-d ctrl-u", "half page"),
         ("spc", "toggle done"),
+        ("h l  z", "fold this group"),
         ("e", "open $EDITOR"),
         ("r", "re-read the file"),
         (":  /", "answer, for now"),
@@ -721,7 +897,7 @@ mod tests {
     fn titles(rows: &[Row]) -> Vec<String> {
         rows.iter()
             .map(|r| match r {
-                Row::Header(t) => format!("# {t}"),
+                Row::Header { title, .. } => format!("# {title}"),
                 Row::Task(t) => t.title.clone(),
                 Row::Spacer => String::new(),
             })
@@ -768,7 +944,7 @@ mod tests {
     /// matters: pressed out of habit, it must not take the pane down with it.
     #[test]
     fn the_deliberately_unbound_keys_do_nothing() {
-        for code in [KeyCode::Char('x'), KeyCode::Char('Q'), KeyCode::Char('z')] {
+        for code in [KeyCode::Char('x'), KeyCode::Char('Q'), KeyCode::Char('w')] {
             assert_eq!(action(press(code)), Action::Ignore, "{code:?}");
         }
         // `esc` is the one that matters. It closes the overlay and does nothing
@@ -883,12 +1059,12 @@ mod tests {
                 "│   │  g G            top / bottom         │   │",
                 "│   │  ctrl-d ctrl-u  half page            │   │",
                 "│   │  spc            toggle done          │   │",
+                "│   │  h l  z         fold this group      │   │",
                 "│   │  e              open $EDITOR         │   │",
                 "│   │  r              re-read the file     │   │",
                 "│   │  :  /           answer, for now      │   │",
                 "│   │  ? esc          this, and away again │   │",
                 "│   │  q  ctrl-c      quit                 │   │",
-                "│   │                                      │   │",
                 "└───└──────────────────────────────────────┘───┘",
                 " j k  spc  e  r  ?  q                           ",
             ]
@@ -903,7 +1079,7 @@ mod tests {
         let tasks = tasks(&["a @2026-08-01"]);
         let groups = agenda(&tasks, today());
 
-        for (height, top) in [(14u16, 0usize), (16, 1), (20, 3)] {
+        for (height, top) in [(16u16, 0usize), (18, 1), (22, 3)] {
             let mut screen = Screen::new(rows(&groups));
             let mut terminal = Terminal::new(TestBackend::new(48, height)).unwrap();
             terminal
@@ -959,12 +1135,27 @@ mod tests {
             .map(|c| c.symbol())
             .collect();
 
-        for unbuilt in ["delete", "undo", "fold"] {
+        for unbuilt in ["delete", "undo", "add", "edit"] {
             assert!(
                 !text.contains(unbuilt),
                 "{unbuilt} is advertised but absent"
             );
         }
+    }
+
+    /// `h` and `l` collapse and open what is under the cursor — the muscle
+    /// memory `lf`, `ranger` and `yazi` arrive with — and `z` is the vim fold
+    /// prefix doing the whole job in one key.
+    #[test]
+    fn the_fold_keys() {
+        assert_eq!(action(press(KeyCode::Char('h'))), Action::Fold(Fold::Close));
+        assert_eq!(action(press(KeyCode::Left)), Action::Fold(Fold::Close));
+        assert_eq!(action(press(KeyCode::Char('l'))), Action::Fold(Fold::Open));
+        assert_eq!(action(press(KeyCode::Right)), Action::Fold(Fold::Open));
+        assert_eq!(
+            action(press(KeyCode::Char('z'))),
+            Action::Fold(Fold::Toggle)
+        );
     }
 
     #[test]
@@ -1013,10 +1204,7 @@ mod tests {
     #[test]
     fn the_first_group_gets_no_spacer_above_it() {
         let tasks = tasks(&["a @2026-08-10"]);
-        assert_eq!(
-            rows(&agenda(&tasks, today()))[0],
-            Row::Header("TODAY".to_string())
-        );
+        assert_eq!(rows(&agenda(&tasks, today()))[0], Row::header("TODAY"));
     }
 
     /// An untitled group is the run of tasks above the file's first heading, and
@@ -1689,6 +1877,188 @@ mod tests {
         assert!(noisy[8].contains("careful"), "{noisy:?}");
     }
 
+    fn two_groups() -> Vec<Task> {
+        in_section(&[("deploy", "Work"), ("invoice", "Work"), ("plumber", "Home")])
+    }
+
+    #[test]
+    fn folding_hides_a_group_and_says_how_much_it_is_hiding() {
+        let tasks = two_groups();
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+
+        assert!(screen.fold(Fold::Close), "nothing was folded");
+        assert_eq!(
+            titles(&screen.rows),
+            ["# Work", "", "# Home", "plumber"],
+            "the tasks are gone but the heading stayed"
+        );
+        assert!(
+            matches!(
+                &screen.rows[0],
+                Row::Header {
+                    hidden: Some(2),
+                    ..
+                }
+            ),
+            "a collapsed group that does not say how much it hides is a dead end"
+        );
+
+        assert!(screen.fold(Fold::Open));
+        assert_eq!(
+            titles(&screen.rows),
+            ["# Work", "deploy", "invoice", "", "# Home", "plumber"]
+        );
+    }
+
+    /// The collapsed header drawn exactly. Its rule has to stop short of the
+    /// `l`, and with the key absent on an open header that is arithmetic no
+    /// other test looks at — a mutant lived there.
+    #[test]
+    fn a_folded_header_leaves_room_for_the_key_that_opens_it() {
+        let tasks = two_groups();
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        screen.fold(Fold::Close);
+
+        let counts = Counts::of(&tasks, today());
+        let mut terminal = Terminal::new(TestBackend::new(44, 8)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    counts,
+                    render(crate::theme::MOCHA),
+                    &Notice::Hints,
+                    false,
+                )
+            })
+            .unwrap();
+
+        let rows: Vec<String> = terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(44)
+            .map(|r| r.iter().map(|c| c.symbol()).collect())
+            .collect();
+
+        assert_eq!(
+            rows,
+            [
+                "┌ ratodo — 3 · 0! ─────────────────────────┐",
+                "│▌ Work (2) ──────────────────────────── l │",
+                "│  Home ────────────────────────────────── │",
+                "│  ○ plumber                               │",
+                "│                                          │",
+                "│                                          │",
+                "└──────────────────────────────────────────┘",
+                " ?                                          ",
+            ]
+        );
+    }
+
+    #[test]
+    fn z_is_whichever_of_the_two_is_the_opposite_of_now() {
+        let tasks = two_groups();
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+
+        screen.fold(Fold::Toggle);
+        assert_eq!(titles(&screen.rows).len(), 4);
+        screen.fold(Fold::Toggle);
+        assert_eq!(titles(&screen.rows).len(), 6);
+    }
+
+    /// Asking twice is not an error, but it is not a change either — and the
+    /// caller needs to know, or `l` on an open group looks like a broken key.
+    #[test]
+    fn folding_what_is_already_folded_reports_that_nothing_happened() {
+        let tasks = two_groups();
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+
+        assert!(screen.fold(Fold::Close));
+        assert!(!screen.fold(Fold::Close));
+        assert!(screen.fold(Fold::Open));
+        assert!(!screen.fold(Fold::Open));
+    }
+
+    /// The cursor was inside the group that just closed. Sending it to the top
+    /// of the list is the one thing a side pane must not do.
+    #[test]
+    fn folding_under_the_cursor_leaves_it_nearby_not_at_the_top() {
+        let tasks = two_groups();
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+
+        screen.move_by(1);
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("invoice"));
+
+        screen.fold(Fold::Close);
+        assert!(
+            screen.task().is_none(),
+            "the cursor should be on the collapsed group itself"
+        );
+        assert_eq!(screen.selected(), Some(0), "and not at the top by accident");
+        assert!(matches!(
+            screen.rows[screen.selected().unwrap()],
+            Row::Header {
+                hidden: Some(2),
+                ..
+            }
+        ));
+
+        // And from there `l` opens it again and steps back inside, which is the
+        // only route back: there is nothing else on screen to put a cursor on.
+        assert!(screen.fold(Fold::Open));
+        assert_eq!(screen.task().map(|t| t.title.as_str()), Some("deploy"));
+    }
+
+    /// A run of tasks above the file's first heading has no header to collapse
+    /// into, and saying so beats a key that silently does nothing.
+    #[test]
+    fn a_group_with_no_heading_cannot_be_folded() {
+        let tasks = tasks(&["a", "b"]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+
+        assert!(!screen.fold(Fold::Close));
+        assert_eq!(titles(&screen.rows), ["a", "b"]);
+    }
+
+    /// `ratodo add` in another pane fires the watcher, which reloads. A fold
+    /// that came undone every time anything touched the file would be useless.
+    #[test]
+    fn a_fold_survives_a_reload() {
+        let before = two_groups();
+        let groups = agenda(&before, today());
+        let mut screen = Screen::new(rows(&groups));
+        screen.fold(Fold::Close);
+
+        let after = in_section(&[
+            ("deploy", "Work"),
+            ("invoice", "Work"),
+            ("arrived from outside", "Work"),
+            ("plumber", "Home"),
+        ]);
+        let groups = agenda(&after, today());
+        screen.replace(rows(&groups));
+
+        assert!(
+            matches!(
+                &screen.rows[0],
+                Row::Header {
+                    hidden: Some(3),
+                    ..
+                }
+            ),
+            "the fold came undone, or the new task was not counted: {:?}",
+            titles(&screen.rows)
+        );
+    }
+
     /// The first thing a new user sees. It has to teach — and it has to say
     /// where the file is, because the promise of this product is that the file
     /// is theirs.
@@ -1753,7 +2123,7 @@ mod tests {
     /// one — but a document of nothing but prose has nothing to show.
     #[test]
     fn a_document_with_no_tasks_at_all_gets_the_empty_screen() {
-        let with_headers = Screen::new(vec![Row::Header("Work".into()), Row::Spacer]);
+        let with_headers = Screen::new(vec![Row::header("Work"), Row::Spacer]);
         let counts = Counts::default();
         let mut screen = with_headers;
         let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
