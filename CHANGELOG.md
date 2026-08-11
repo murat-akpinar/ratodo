@@ -1,3 +1,8 @@
+## [unreleased]
+
+### ⚙️ Miscellaneous Tasks
+
+- Point the PKGBUILD at v0.6.0 ([596d654](https://github.com/murat-akpinar/ratodo/commit/596d654e56cb8f190d906090dc0d3622edfb4195))
 ## [0.6.0] - 2026-08-11
 
 ### 🚀 Features
@@ -25,6 +30,7 @@ The box is a mode and the label is what names it, so a mode whose name is the di
 ### ⚙️ Miscellaneous Tasks
 
 - Point the PKGBUILD at v0.5.0 ([ed2a068](https://github.com/murat-akpinar/ratodo/commit/ed2a068ba862a7aec3dafb93aaab1095381478d7))
+- *(release)* V0.6.0 ([4971fe6](https://github.com/murat-akpinar/ratodo/commit/4971fe63ce76ffb4ff8a3fc4444f61d14d56eaba))
 ## [0.5.0] - 2026-08-11
 
 ### 🚀 Features
