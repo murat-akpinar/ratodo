@@ -12,8 +12,8 @@ pub fn parse(input: &str) -> Doc {
     let mut lines = Vec::new();
     let mut section: Option<String> = None;
 
-    for (no, (raw, ending)) in split_lines(input).into_iter().enumerate() {
-        let item = match parse_task(raw, no + 1) {
+    for (raw, ending) in split_lines(input) {
+        let item = match parse_task(raw) {
             Some(mut task) => {
                 task.section = section.clone();
                 Item::Task(task)
@@ -70,7 +70,7 @@ fn heading(raw: &str) -> Option<String> {
     Some(name.trim().to_string())
 }
 
-fn parse_task(raw: &str, line_no: usize) -> Option<Task> {
+fn parse_task(raw: &str) -> Option<Task> {
     let indent = raw.len() - raw.trim_start().len();
     let b = raw.as_bytes();
     let mut i = indent;
@@ -102,7 +102,7 @@ fn parse_task(raw: &str, line_no: usize) -> Option<Task> {
         return None;
     }
 
-    let mut task = Task::from_parts(raw.to_string(), line_no, checkbox);
+    let mut task = Task::from_parts(raw.to_string(), checkbox);
     task.done = done;
     parse_meta(&raw[after..], &mut task);
     Some(task)

@@ -138,7 +138,6 @@ enum   Item { Task(Task), Text(String) }     // Text = everything we don't touch
 
 struct Task {
     raw: String,        // the line exactly as it was read
-    line_no: usize,
     done: bool,
     title: String,
     due: Option<Due>,

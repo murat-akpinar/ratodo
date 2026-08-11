@@ -69,7 +69,6 @@ impl Due {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
     pub raw: String,
-    pub line_no: usize,
     pub done: bool,
     pub title: String,
     pub due: Option<Due>,
@@ -92,7 +91,6 @@ impl Task {
     ) -> Self {
         let mut task = Task {
             raw: String::new(),
-            line_no: 0,
             done,
             title,
             due,
@@ -106,10 +104,9 @@ impl Task {
         task
     }
 
-    pub(crate) fn from_parts(raw: String, line_no: usize, checkbox: usize) -> Self {
+    pub(crate) fn from_parts(raw: String, checkbox: usize) -> Self {
         Task {
             raw,
-            line_no,
             done: false,
             title: String::new(),
             due: None,
@@ -686,8 +683,7 @@ impl Doc {
     /// that ends with a table, a `---` or a paragraph would otherwise collect
     /// captured tasks below all of it, outside every `##` section.
     ///
-    /// Nothing already in the file moves, so this still never reorders. It does
-    /// invalidate `line_no` for the lines it pushes down — see notes.md.
+    /// Nothing already in the file moves, so this still never reorders.
     pub fn push_task(&mut self, task: Task) {
         let at = self
             .lines

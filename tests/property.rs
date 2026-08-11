@@ -4,6 +4,7 @@
 //! a few thousand deliberately awkward documents, built from a fixed seed so a
 //! failure is reproducible from the number printed in the message.
 
+use ratodo::model::Item;
 use ratodo::{parse::parse, write::render};
 
 const RUNS: u64 = 4000;
@@ -165,7 +166,7 @@ fn check(seed: u64, generated: &Generated) {
     let doc_text = generated.text.as_str();
     let doc = parse(doc_text);
 
-    let found: Vec<usize> = doc.tasks().map(|t| t.line_no).collect();
+    let found: Vec<usize> = task_lines(&doc);
     assert_eq!(
         found, generated.task_lines,
         "seed {seed}: the parser did not find exactly the generated tasks\n{doc_text:?}"
@@ -244,19 +245,36 @@ fn generated_documents_hold_every_invariant() {
     }
 }
 
-/// The line each task reports must be the line it actually came from, or every
-/// error message and every future edit points at the wrong place.
+/// Which line of `doc.lines` each task sits on, one-based — the number the
+/// generator recorded, and the number `remove_task` and `task_at_mut` are
+/// indexed by.
+///
+/// Computed from the position rather than read off the task: a task no longer
+/// carries a line number, because a stamped one goes stale the moment anything
+/// is inserted above it and a position cannot.
+fn task_lines(doc: &ratodo::model::Doc) -> Vec<usize> {
+    doc.lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| matches!(l.item, Item::Task(_)))
+        .map(|(i, _)| i + 1)
+        .collect()
+}
+
+/// A task has to sit on the line it came from, or `remove_task` takes out
+/// somebody else's line and `task_at_mut` edits the wrong one.
 #[test]
-fn line_numbers_are_one_based_and_correct() {
+fn tasks_sit_on_the_lines_they_were_parsed_from() {
     for seed in 0..200 {
         let generated = document(seed);
         let lines: Vec<&str> = generated.text.split_inclusive('\n').collect();
-        for task in parse(&generated.text).tasks() {
-            let source = lines[task.line_no - 1].trim_end_matches(['\n', '\r']);
+        let doc = parse(&generated.text);
+
+        for (at, task) in task_lines(&doc).into_iter().zip(doc.tasks()) {
+            let source = lines[at - 1].trim_end_matches(['\n', '\r']);
             assert_eq!(
                 source, task.raw,
-                "seed {seed}: task claims line {} but that line is different",
-                task.line_no
+                "seed {seed}: the task at line {at} is not the line that is there"
             );
         }
     }

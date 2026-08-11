@@ -98,13 +98,14 @@ surface.
   turns it into a spec: a floating terminal that takes a beat to paint feels
   broken in a way the same delay in a long-lived window does not. Aim under
   50 ms cold, and measure rather than assume.
-- **`line_no` goes stale after `push_task`.** Now that a captured task is
-  inserted after the last task rather than at EOF, every line below it keeps the
-  number it had at parse time. Nothing reads `line_no` after a mutation today —
-  `add` pushes, saves and exits. It did *not* become the selection's identity in
-  step 6: that is `Task::identity`, the section and the title, shared with the
-  `.ics` UID. So this is now a trap rather than a bug — either renumber on
-  insert or never let `line_no` outlive a parse.
+
+*(`line_no` left on 2026-08-11: the field is gone. Nothing in the product read
+it, it went stale the moment `push_task` inserted above a task, and the two
+property tests that used it now compute the position from `doc.lines` — which is
+the number `remove_task` is indexed by, and the one that cannot be stale. The
+selection's identity is `Task::identity` — section and title, shared with the
+`.ics` UID.)*
+
 *(chezmoi and `set autoread` moved out of here on 2026-08-11: both are README
 sections now. The `e` / reader-thread question left on 2026-08-11 too — the
 answer was to go back to `poll`, and it is written up in
