@@ -1327,6 +1327,96 @@ mod tests {
         );
     }
 
+    /// `spc` and `X` are each a way in **and** the way back out, which is what
+    /// makes a state you can enter by accident survivable. Pinned in the file
+    /// rather than in the enum: the tick has a stamp to take back off with it,
+    /// and cancelling must not leave one behind.
+    #[test]
+    fn ticking_and_cancelling_both_go_both_ways() {
+        let before = "## Work\n- [ ] first @2026-08-20\n- [ ] second\n";
+
+        let (path, mut live) = open("toggle-back", before);
+        live.toggle(a_day()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "## Work\n- [x] first @2026-08-20 ✓2026-08-11\n- [ ] second\n"
+        );
+        live.toggle(a_day()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            before,
+            "unticking left the stamp behind"
+        );
+
+        let (path, mut live) = open("cancel-back", before);
+        live.cancel(a_day()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "## Work\n- [-] first @2026-08-20\n- [ ] second\n",
+            "cancelling is not finishing, so it does not stamp"
+        );
+        live.cancel(a_day()).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+
+        // And the two are not the same door: `X` on a ticked task cancels it
+        // rather than reopening it, and takes the stamp with it.
+        let (path, mut live) = open("tick-then-cancel", before);
+        live.toggle(a_day()).unwrap();
+        live.cancel(a_day()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "## Work\n- [-] first @2026-08-20\n- [ ] second\n"
+        );
+    }
+
+    /// `p` saves through the same path as an edit but means something else: move
+    /// the date, keep the time, and leave everything the parser did not
+    /// understand exactly where it is.
+    #[test]
+    fn putting_a_date_off_moves_the_date_and_nothing_else() {
+        let raw = "- [ ] first @2026-08-20 16:00 #ops !high";
+        let before = format!("## Work\n{raw}\n> a note\n");
+        let (path, mut live) = open("postpone", &before);
+
+        let input = ui::Input::new("3d".to_string(), ui::Purpose::Postpone(raw.to_string()));
+        let notice = live
+            .save_typed(std::slice::from_ref(&path), a_day(), &input)
+            .unwrap();
+        assert!(
+            matches!(&notice, ui::Notice::Said(s) if s.contains("put off: first")),
+            "{notice:?}"
+        );
+
+        let moved = "## Work\n- [ ] first @2026-08-14 16:00 #ops !high\n> a note\n";
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), moved);
+
+        // A bare number is days, and it is the answer the box was asking for.
+        let now = "- [ ] first @2026-08-14 16:00 #ops !high";
+        let input = ui::Input::new("1".to_string(), ui::Purpose::Postpone(now.to_string()));
+        live.save_typed(std::slice::from_ref(&path), a_day(), &input)
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "## Work\n- [ ] first @2026-08-12 16:00 #ops !high\n> a note\n"
+        );
+
+        // What is not a length of time is refused before the file is opened.
+        let then = std::fs::read_to_string(&path).unwrap();
+        let bad = ui::Input::new(
+            "3x".to_string(),
+            ui::Purpose::Postpone("- [ ] first @2026-08-12 16:00 #ops !high".to_string()),
+        );
+        let notice = live
+            .save_typed(std::slice::from_ref(&path), a_day(), &bad)
+            .unwrap();
+        assert!(matches!(&notice, ui::Notice::Warned(_)), "{notice:?}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            then,
+            "a refusal wrote something"
+        );
+    }
+
     /// Deleting takes one line out and leaves everything else exactly as it was,
     /// including the things ratodo does not understand.
     #[test]
