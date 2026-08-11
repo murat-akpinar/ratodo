@@ -500,6 +500,22 @@ impl Glyphs {
         }
     }
 
+    /// The tick on its own, for the count in a narrow title bar.
+    fn tick(self) -> &'static str {
+        match self {
+            Glyphs::Unicode => "✓",
+            Glyphs::Ascii => "x",
+        }
+    }
+
+    /// Filled and empty, for the progress bar.
+    fn bar(self) -> (&'static str, &'static str) {
+        match self {
+            Glyphs::Unicode => ("▰", "▱"),
+            Glyphs::Ascii => ("#", "-"),
+        }
+    }
+
     /// The bar the typed text sits behind.
     fn field(self) -> &'static str {
         match self {
@@ -862,13 +878,22 @@ pub fn draw(
     // Under 34 columns the frame is two of them, which is a tenth of the pane.
     let (dash, _) = render.glyphs.punctuation();
     let block = (size > Size::Bare).then(|| {
-        Block::bordered()
+        let name = format!(
+            " ratodo {dash} {} ",
+            title_counts(counts, size, render.glyphs)
+        );
+        let bar = (size == Size::Wide)
+            .then(|| progress(counts, area.width as usize, columns(&name), render))
+            .flatten();
+
+        let block = Block::bordered()
             .border_set(render.glyphs.border())
             .border_style(Style::default().fg(render.colours.border))
-            .title(format!(
-                " ratodo {dash} {} ",
-                title_counts(counts, size, render.glyphs)
-            ))
+            .title(name);
+        match bar {
+            Some(bar) => block.title(bar.right_aligned()),
+            None => block,
+        }
     });
     let inner = block.as_ref().map_or(area, |b| b.inner(area));
 
@@ -1042,12 +1067,71 @@ fn empty(frame: &mut Frame, area: Rect, block: Option<Block<'_>>, render: Render
 
 /// `5 open · 1 overdue` while it fits, `5 · 1!` when it does not — and the same
 /// numbers a waybar module shows, in the same words. One source.
+///
+/// A narrow pane has no room for the bar, so what it has finished is a count on
+/// the end instead, and only once there is something to say.
 fn title_counts(counts: Counts, size: Size, glyphs: Glyphs) -> String {
     let (_, dot) = glyphs.punctuation();
     match size {
         Size::Wide => format!("{} open {dot} {} overdue", counts.open, counts.overdue),
+        _ if counts.done > 0 => format!(
+            "{} {dot} {}! {dot} {}{}",
+            counts.open,
+            counts.overdue,
+            counts.done,
+            glyphs.tick()
+        ),
         _ => format!("{} {dot} {}!", counts.open, counts.overdue),
     }
+}
+
+/// How many cells of the bar are filled. Eight cells, and the two ends are the
+/// two things a reader will not forgive being wrong: a bar showing nothing when
+/// something is done, and a full one with work left.
+const BAR: usize = 8;
+
+fn filled(done: usize, total: usize) -> usize {
+    let cells = done * BAR / total;
+    // Only the low end needs saying. The high end takes care of itself: with
+    // anything left, `done * 8` is short of `total * 8`, so the division cannot
+    // reach eight — and a clamp for it would be a line no test could ever fail.
+    if done > 0 { cells.max(1) } else { cells }
+}
+
+/// What is finished, on the right of the title rule. `None` when there is
+/// nothing to say — nothing done yet, or a pane with no room for it.
+///
+/// An empty bar is not information: "2 open" on the left already says you are at
+/// the start, and `0/2` says it again in a second alphabet. So it appears when
+/// the first task is ticked and not before.
+///
+/// Green, because docs/design.md#rules says green is only ever for completed and
+/// this is the only other thing in the product that means completed. Spending a
+/// second colour on it would dilute an earned meaning.
+fn progress(
+    counts: Counts,
+    width: usize,
+    left: usize,
+    render: Render<'_>,
+) -> Option<Line<'static>> {
+    let total = counts.open + counts.done;
+    let text = format!(" {}/{total} ", counts.done);
+    // Four columns of rule between the two titles, or they read as one label.
+    if counts.done == 0 || left + BAR + columns(&text) + 4 > width {
+        return None;
+    }
+
+    let (on, off) = render.glyphs.bar();
+    let cells = filled(counts.done, total);
+    Some(Line::from(vec![
+        Span::raw(" "),
+        Span::styled(on.repeat(cells), Style::default().fg(render.colours.done)),
+        Span::styled(
+            off.repeat(BAR - cells),
+            Style::default().fg(render.colours.border),
+        ),
+        Span::styled(text, Style::default().fg(render.colours.dim)),
+    ]))
 }
 
 /// Red is only for overdue and green only for done — docs/design.md#rules — so
@@ -1675,6 +1759,139 @@ mod tests {
                 " j k move   spc done   a add   ⏎ edit   ? keys   q quit       ",
             ]
         );
+    }
+
+    /// The progress bar, drawn exactly: green for what is finished, the rule
+    /// between the two titles, and the count flush to the corner.
+    #[test]
+    fn the_title_bar_shows_what_is_finished() {
+        let mut done = capture("migrate the server", today());
+        done.set_done(true);
+        let tasks = [capture("late @2026-08-09 #ops", today()), done];
+
+        assert_eq!(
+            rendered(62, 5, &tasks),
+            [
+                "┌ ratodo — 1 open · 1 overdue ───────────────── ▰▰▰▰▱▱▱▱ 1/2 ┐",
+                "│  OVERDUE ───────────────────────────────────────────────── │",
+                "│▌ ! late                                        1d ago  #ops│",
+                "└────────────────────────────────────────────────────────────┘",
+                " ?                                                            ",
+            ]
+        );
+    }
+
+    /// Nothing finished is not a fact worth two symbols: `2 open` on the left
+    /// already says you are at the start.
+    #[test]
+    fn an_untouched_list_gets_no_bar_at_all() {
+        let tasks = tasks(&["a @2026-08-09", "b"]);
+        let screen = rendered(62, 5, &tasks);
+        assert!(!screen[0].contains('▱'), "{screen:?}");
+        assert!(!screen[0].contains('/'), "{screen:?}");
+    }
+
+    /// A narrow pane has no room for the bar and says the number instead — and
+    /// under 34 columns there is no title bar to say it in.
+    #[test]
+    fn the_bar_gives_way_before_the_counts_do() {
+        let mut done = capture("finished", today());
+        done.set_done(true);
+        let tasks = [capture("late @2026-08-09", today()), done];
+
+        let narrow = rendered(46, 5, &tasks);
+        assert!(
+            narrow[0].starts_with("┌ ratodo — 1 · 1! · 1✓"),
+            "{narrow:?}"
+        );
+        assert!(!narrow[0].contains('▰'), "the bar did not fit: {narrow:?}");
+
+        assert!(
+            !rendered(30, 5, &tasks)[0].contains('✓'),
+            "there is no frame under 34 columns to put a count in"
+        );
+    }
+
+    /// The title grows with the counts, and at some width it wants the room the
+    /// bar is standing in. Pinned to the exact column, because "it fits" and "it
+    /// fits by one" are the same assertion until one of them is not.
+    #[test]
+    fn the_bar_stands_down_when_the_title_needs_the_room() {
+        let counts = Counts {
+            open: 5,
+            done: 3,
+            ..Counts::default()
+        };
+        let render = render(crate::theme::MOCHA);
+        // Eight cells, ` 3/8 `, and four columns of rule between the two titles:
+        // seventeen, so a 43-column title is the last one that leaves room.
+        assert!(progress(counts, 60, 43, render).is_some());
+        assert!(
+            progress(counts, 60, 44, render).is_none(),
+            "the bar overran the title"
+        );
+        assert!(
+            progress(counts, 20, 10, render).is_none(),
+            "a pane this narrow has no room for either"
+        );
+    }
+
+    /// The two ends are the ones a reader will not forgive. Everything between
+    /// them is proportional.
+    #[test]
+    fn the_bar_never_reads_empty_with_work_done_or_full_with_work_left() {
+        assert_eq!(filled(0, 8), 0);
+        assert_eq!(filled(8, 8), BAR);
+        assert_eq!(filled(4, 8), 4);
+        assert_eq!(
+            filled(1, 100),
+            1,
+            "one task in a hundred still moved the bar"
+        );
+        assert_eq!(
+            filled(99, 100),
+            BAR - 1,
+            "one task left is not a finished list"
+        );
+    }
+
+    /// The whole screen goes ASCII together, and the bar is on the screen.
+    #[test]
+    fn the_bar_has_an_ascii_form() {
+        let mut done = capture("finished", today());
+        done.set_done(true);
+        let tasks = [capture("late @2026-08-09", today()), done];
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let render = Render {
+            glyphs: Glyphs::Ascii,
+            ..render(crate::theme::MOCHA)
+        };
+
+        let mut terminal = Terminal::new(TestBackend::new(62, 5)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    Counts::of(&tasks, today()),
+                    render,
+                    &Notice::Hints,
+                    false,
+                    None,
+                )
+            })
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+
+        assert!(text.contains("#---- 1/2"), "{text}");
+        assert!(text.is_ascii(), "something non-ASCII reached the screen");
     }
 
     /// Where the title gets cut, pinned to the column. The two snapshots above

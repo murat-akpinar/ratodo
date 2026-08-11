@@ -67,7 +67,7 @@ slots when the capture keys arrived — adding a task is what the tool is for, a
 ## Main screen
 
 ```
-┌─ ratodo ────────────────────────────── 5 open · 1 overdue ─┐
+┌─ ratodo ─ 5 open · 1 overdue ───────────── ▰▰▰▱▱▱▱▱ 3/8 ─┐
 │                                                            │
 │ OVERDUE ─────────────────────────────────────────────────  │
 │   ! rotate the backup keys                   2d ago  #ops  │
@@ -115,6 +115,13 @@ Details that are decisions, not drawing:
   (`2d ago`, `Thu 09:30`), absolute where it does not (`Aug 20`).
 - Counts in the title bar are the same numbers a waybar module will show in v4
   ([roadmap.md](roadmap.md)). Same wording, one source.
+- **What is finished sits on the right of the title rule**, as eight cells and a
+  `3/8`. It appears when the first task is ticked and not before: an empty bar is
+  not information, because `5 open` on the left already says you are at the
+  start. Below sixty columns the bar gives way and the count stays — `5 · 1! · 3✓`
+  — and below thirty-four there is no frame to put it in at all. The two ends are
+  reserved: any progress fills a cell, and anything short of finished leaves one
+  empty.
 
 ## Adding
 

@@ -10,14 +10,16 @@
 
 </div>
 
-> ⚠️ **Status: v1 in progress.** The whole command line works today — `add`,
-> `list` with its filters, `done` and `status`, which is enough to use it and
-> enough to wire into a bar. The TUI below is designed but not built yet.
-> Progress in [`todo.md`](todo.md), reasoning in [`docs/`](docs/README.md).
+> ⚠️ **Status: v1 in progress — unreleased.** Everything below is built and
+> tested: the command line, and the TUI with capture, editing, undo and folding.
+> What is left is a tag and packaging, so there is no crates.io release and no
+> AUR package yet — build it yourself. Progress in [`todo.md`](todo.md),
+> reasoning in [`docs/`](docs/README.md).
 >
 > ```console
-> $ cargo run -- --file ./todo-test.md add 'try ratodo @tomorrow #test'
-> $ cargo run -- --file ./todo-test.md list
+> $ cargo build --release
+> $ ./target/release/ratodo --file ./todo-test.md add 'try ratodo @tomorrow #test'
+> $ ./target/release/ratodo --file ./todo-test.md
 > ```
 
 ## What it is
@@ -34,7 +36,7 @@ added: pay the invoice  ·  due tomorrow (2026-08-11)  ·  #home
 Then, when you want the overview, `ratodo` opens the agenda:
 
 ```
-┌─ ratodo ────────────────────────────── 5 open · 1 overdue ─┐
+┌─ ratodo ─ 5 open · 1 overdue ───────────── ▰▰▰▱▱▱▱▱ 3/8 ─┐
 │                                                            │
 │ OVERDUE ─────────────────────────────────────────────────  │
 │   ! rotate the backup keys                   2d ago  #ops  │

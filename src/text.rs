@@ -241,6 +241,7 @@ mod tests {
             open: 3,
             today: 0,
             overdue: 1,
+            ..Counts::default()
         };
         assert_eq!(status_line(counts), "3 open · 1 overdue");
         assert_eq!(status_line(Counts::default()), "0 open · 0 overdue");
@@ -254,6 +255,7 @@ mod tests {
             open: 3,
             today: 0,
             overdue: 1,
+            ..Counts::default()
         };
         assert_eq!(
             status_json(counts),
@@ -267,6 +269,7 @@ mod tests {
             open: 2,
             today: 1,
             overdue: 0,
+            ..Counts::default()
         };
         assert_eq!(
             status_json(counts),

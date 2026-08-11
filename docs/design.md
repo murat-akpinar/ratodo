@@ -40,6 +40,9 @@ change any of them.
   emphasised.
 - **Red is only for overdue.** Nowhere else.
 - **Green is only for completed.** Both are earned meanings; don't dilute them.
+  The progress bar in the title rule is green for exactly this reason: it is the
+  only other thing in the product that means *finished*, so it does not get a
+  colour of its own.
 - Two levels of hierarchy: task title bright, date/tags `dim`. There is no third.
 - Generous whitespace. The blank lines between groups are half of the design.
 - **One layout, no split panes.** No sidebar, no modal. There is one list.

@@ -150,6 +150,9 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
 - [x] A toggled task does not change position until the next reload
 - [x] Empty state with the file path and a worked example
 - [x] `?` help overlay — only the keys that are built, and `esc` closes it
+- [x] Progress on the right of the title rule — eight cells and a `3/8`, green
+      because green already means finished. Only once something is ticked; the
+      bar gives way below 60 columns and the count stays
 - [x] Width breakpoints: ≥60 / 34–59 / <34, in the documented drop order
 - [x] Height under 10 rows: collapse the hint bar
 - [x] `NO_COLOR=1` on a bare TTY still reads correctly
@@ -174,6 +177,40 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
 - [ ] Tag `v0.1.0`, generate the changelog with git-cliff
 - [ ] `flake.nix` (`rustPlatform.buildRustPackage`) and an AUR `PKGBUILD` — a tag
       has to exist first, so this is genuinely last
+
+## 8 — Visual polish (deliberately last, and blocks nothing)
+
+The screen works and is documented; this is the pass for making it feel less
+plain. It comes **after** the tag on purpose — none of it is a bug, and shipping
+a working v0.1.0 beats holding one back for looks.
+
+The frame every item here has to fit is [docs/design.md](docs/design.md#rules),
+and it is a tight one: one accent colour plus greys, two levels of hierarchy and
+no third, one layout, nothing that depends on a Nerd Font, no meaning carried by
+colour alone. Anything that needs a rule bent gets written up in
+[docs/decisions.md](docs/decisions.md) first — an item on this list is a
+**candidate**, not a decision.
+
+The standing test for each: does it tell the reader something, or does it just
+decorate? The progress bar earned its place by the first; the second is how a
+side pane turns into a dashboard nobody leaves open.
+
+- [x] Progress on the right of the title rule — the one already done, as the
+      worked example of the standard above
+- [ ] **Wide panes waste their width.** Past 60 columns nothing new appears, the
+      gap in the middle just stretches. A fourth breakpoint could show the full
+      date and the section a dated task came from
+- [ ] **Dated groups and the file's own `##` sections look identical.** `OVERDUE`
+      and `Work` are both a bold word plus a rule, though one is ours and one is
+      the user's. Careful: "two levels of hierarchy, there is no third"
+- [ ] **A completed task still shows how late it is** — `✓ review the deploy PR
+      … 1d ago`. It is finished; the lateness stopped being true
+- [ ] **`!high` is easy to miss**, sitting dim next to the tags. It is the one
+      field the user typed to mean *urgent* and the screen barely says so
+- [ ] Empty screen and `?` overlay — both correct and both plain
+- [ ] Decide what to do about the help overlay's `↓ ↑` under a non-UTF-8 locale.
+      The main screen goes fully ASCII and the overlay does not; the buffer test
+      never covered it because it does not open the overlay
 
 ## Open questions blocking nothing
 

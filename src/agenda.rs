@@ -40,6 +40,10 @@ pub struct Counts {
     pub open: usize,
     pub today: usize,
     pub overdue: usize,
+    /// Only the TUI's title bar reads this. `status` and `--json` are an
+    /// interface other people's status bars are already parsing, and they say
+    /// what they have always said.
+    pub done: usize,
 }
 
 impl Counts {
@@ -52,6 +56,7 @@ impl Counts {
                 .filter(|t| t.due.is_some_and(|d| d.date == today))
                 .count(),
             overdue: tasks.iter().filter(|t| t.is_overdue(today)).count(),
+            done: tasks.iter().filter(|t| t.done).count(),
         }
     }
 
@@ -361,17 +366,25 @@ mod tests {
                 open: 4,
                 today: 1,
                 overdue: 1,
+                done: 1,
             }
         );
     }
 
     /// A completed task is neither open nor overdue however late it was — the
-    /// count a bar shows must not include work that is finished.
+    /// count a bar shows must not include work that is finished. It is counted
+    /// as *done*, which is the one place finished work does get to appear.
     #[test]
     fn completing_something_late_empties_the_counts() {
         let mut t = task("late @2026-08-01");
         t.set_done(true);
-        assert_eq!(Counts::of(&[t], today()), Counts::default());
+        assert_eq!(
+            Counts::of(&[t], today()),
+            Counts {
+                done: 1,
+                ..Counts::default()
+            }
+        );
     }
 
     #[test]
