@@ -1,3 +1,9 @@
+## [unreleased]
+
+### ⚙️ Miscellaneous Tasks
+
+- Add a flake and an Arch PKGBUILD ([ccf4d16](https://github.com/murat-akpinar/ratodo/commit/ccf4d163f5096928a051580c5259c3608aabc974))
+Two ways in that are not `cargo install`, which is what NixOS and Arch users were left with after v0.3.0.
 ## [0.3.0] - 2026-08-11
 
 ### 🚀 Features
@@ -27,6 +33,10 @@ Reported from use: a keyboard that stutters turns `22` into `2222` in the `p` bo
 todo.md and notes.md still had `d` deleting. The build record keeps what shipped, with the swap noted where it happened rather than rewritten out.
 - Write up $list and the four-field input before building either ([0c88832](https://github.com/murat-akpinar/ratodo/commit/0c888323141dc5c13edf47afb29d8e5a53c1435f))
 Asked for as one sentence and it is two pieces: `$work` routing a capture, and the input box split into fields with `tab` between them. The second reverses the decision of 2026-08-11, so it gets the reversal written in decisions.md before a line of it exists.
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.3.0 ([5971f75](https://github.com/murat-akpinar/ratodo/commit/5971f757f6045b2d76f85525a90ebd80e0d23623))
 ## [0.2.0] - 2026-08-11
 
 ### 🚀 Features
