@@ -19,6 +19,8 @@ The bar takes keys until one does not fit, so `y copy` needed 81 columns and eig
 - Put what is left at the top of todo.md ([bb63dcb](https://github.com/murat-akpinar/ratodo/commit/bb63dcb23567cdef37025ca82ff00ab96055ab78))
 - Record the swapped keys and the date-entry complaint ([853092b](https://github.com/murat-akpinar/ratodo/commit/853092b87394b2f002a280c054d12777d6e4ce82))
 todo.md and notes.md still had `d` deleting. The build record keeps what shipped, with the swap noted where it happened rather than rewritten out.
+- Write up $list and the four-field input before building either ([0c88832](https://github.com/murat-akpinar/ratodo/commit/0c888323141dc5c13edf47afb29d8e5a53c1435f))
+Asked for as one sentence and it is two pieces: `$work` routing a capture, and the input box split into fields with `tab` between them. The second reverses the decision of 2026-08-11, so it gets the reversal written in decisions.md before a line of it exists.
 ## [0.2.0] - 2026-08-11
 
 ### 🚀 Features
