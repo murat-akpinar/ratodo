@@ -1,4 +1,4 @@
-## [unreleased]
+## [0.7.1] - 2026-08-11
 
 ### 📚 Documentation
 
@@ -8,6 +8,8 @@
 
 - *(ui)* Light the box labels by weight, and put them in upper case ([6fa065b](https://github.com/murat-akpinar/ratodo/commit/6fa065bfb619f331cef26ecb9a47a955ce88a250))
 `ADD`, `EDIT` and `PUT OFF` are `foreground` and bold now - full brightness against the dim caret beside them - and `COPY` keeps the accent, because `COPY` is the only one with news. Lit, without a seventh meaning on the screen: a thirteenth theme role was the alternative, and the limit was never the palette but the other five built-ins and the reader.
+- *(ui)* A finished row keeps its priority colour ([aaf7f5e](https://github.com/murat-akpinar/ratodo/commit/aaf7f5ee7b10e1561c08f88b6d2eba17b15def57))
+`!med` on a ticked task went grey, which read as the colour having failed rather than as the task being done - and it sat next to an open `!high` in the same group, so it read as a bug.
 
 ### ⚙️ Miscellaneous Tasks
 
