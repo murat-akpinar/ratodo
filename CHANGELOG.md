@@ -1,3 +1,8 @@
+## [unreleased]
+
+### 📚 Documentation
+
+- Put what is left at the top of todo.md ([bb63dcb](https://github.com/murat-akpinar/ratodo/commit/bb63dcb23567cdef37025ca82ff00ab96055ab78))
 ## [0.2.0] - 2026-08-11
 
 ### 🚀 Features
