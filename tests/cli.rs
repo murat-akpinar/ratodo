@@ -1452,7 +1452,7 @@ fn no_color_flattens_every_role() {
         .filter_map(|l| l.split_once('='))
         .map(|(_, v)| v.trim())
         .collect();
-    assert_eq!(colours.len(), 11, "{text}");
+    assert_eq!(colours.len(), 12, "{text}");
     assert!(colours.iter().all(|c| *c == "none"), "{text}");
 }
 

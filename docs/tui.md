@@ -170,17 +170,18 @@ Details that are decisions, not drawing:
   instead (`Aug 8`) — still a fact, and still worth seeing. The task stays in
   `OVERDUE` all the same: membership there is positional, and the list does not
   move under you.
-- **The priority is the accent, in two weights.** `!high` is the accent and
-  bold, `!med` is the accent, `!low` stays in the grey the rest of the
-  right-hand fields sit in. It is the field the user typed to mean *how much
-  this matters*, and saying all three back in the same whisper wastes it. The
-  **accent** and not a hue of its own: `theme.conf` gains no key, red still
-  means the negative outcome and green still only means finished
-  ([design.md](design.md#rules)), and no row state ever takes the accent — so on
-  a late row the red date and the priority beside it stay two different things,
-  which is the one row where they most need telling apart. The weight is what
-  survives `NO_COLOR=1`, where a colour says nothing at all. A ticked or
-  cancelled task is dim however it was filed.
+- **The priority has a colour of its own, in two weights.** `!high` is
+  `priority` and bold, `!med` is `priority`, `!low` stays in the grey the rest of
+  the right-hand fields sit in. It is the field the user typed to mean *how much
+  this matters*, and saying all three back in the same whisper wastes it. Its
+  **own** role and not a borrowed one, because every other colour is already
+  answering a question — red the negative outcome, green finished, orange today,
+  blue a tag, mauve the tool's own voice
+  ([design.md](design.md#what-each-colour-means)). It borrows the row's colour
+  from nobody either: on a late row the red date and the priority beside it stay
+  two different things, which is the one row where they most need telling apart.
+  The weight is what survives `NO_COLOR=1`, where a colour says nothing at all. A
+  ticked or cancelled task is dim however it was filed.
 - Counts in the title bar are the same numbers a waybar module will show in v4
   ([roadmap.md](roadmap.md)). Same wording, one source.
 - **What is finished sits on the right of the title rule**, as eight cells and a
@@ -295,7 +296,7 @@ take the row over.
 
 **The field colours itself as you type**, and it colours by what the parser
 *took*: `@thu` and the `09:30` the date took with it go `accent`, `#home` goes
-`tag`, and `!high` and `!med` take the accent in the same two weights the row
+`tag`, and `!high` and `!med` take `priority` in the same two weights the row
 gives them. A `@notaday` stays plain text, because that is what it
 will be in the file — a colour that promises more than the parser delivers
 teaches a syntax the format does not have. The preview says *what* was
@@ -473,13 +474,13 @@ task that is nearly a task you already have should be an edit, not a retype.
 │  └───────────────────────────────────────────────────────┘ │
 ```
 
-**It says `copy`**, and that label is the whole design. `y` fills
+**It says `copy`, in the accent**, and that label is the whole design. `y` fills
 the box the way `⏎` does and then means something else by it: what comes back is
 a **new** task, so the line it was copied from is not the line `⏎` rewrites.
-The label is the only thing on the screen that says so — it said `add` until
-2026-08-11, and a box filled from the row under the cursor that says `add` is a
-box nobody reads the first word of. Every label is in the accent, so what makes
-this one read is the word and not the colour. Nothing is written until `⏎`, and a
+The label is the only thing on the screen that says so, which is why it is the
+one of the four that is lit — it said `add` until 2026-08-11, and a box filled
+from the row under the cursor that says `add` in the same grey as every other
+box is a box nobody reads the first word of. Nothing is written until `⏎`, and a
 cancelled box leaves the file exactly as it was — which is the difference
 between this and a copy that lands first and is edited afterwards.
 

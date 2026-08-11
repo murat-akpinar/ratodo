@@ -61,7 +61,7 @@ Three lists: what is settled, what was rejected, and what is still open.
   [architecture.md](architecture.md#dependencies).
 - ✅ **Palette: Catppuccin Mocha, accent mauve** — as the *default*.
 - ✅ **Colours are user-configurable** via `~/.config/ratodo/theme.conf`, in v1.
-  A flat kitty-style `key = value` file, 11 role keys, six built-in themes, no
+  A flat kitty-style `key = value` file, 12 role keys, six built-in themes, no
   new dependency. Hot reload is v2. See [theming.md](theming.md).
   *(This reverses an earlier rejection — see below.)*
 - ✅ **Interface language: English.** The terms and the search results are English
@@ -338,7 +338,7 @@ no. Reopening one requires new information.
 
 ## Reversed
 
-### `!high` is bold and that is all it gets → the priority is the accent, in two weights (2026-08-12)
+### `!high` is bold and that is all it gets → the priority gets a colour of its own (2026-08-12)
 
 **Was:** the priority borrowed the row's own colour and added weight when it was
 `!high` and the task was open; `!med` and `!low` sat in the same grey as the
@@ -346,43 +346,58 @@ tags. The reasoning was that a priority colour would need a twelfth theme role,
 would collide with `overdue` on the rows that have both, and would say nothing
 under `NO_COLOR`.
 
-**Now:** `!high` is the **accent, bold**, `!med` is the **accent**, and `!low`
-stays dim. Three levels the eye can sort without reading them, which is what the
-column is for.
+**Now:** a **twelfth role, `priority`** — yellow by default. `!high` is that
+colour and bold, `!med` is that colour, `!low` stays dim. Three levels the eye
+can sort without reading them, which is what the column is for.
 
-**Every one of the old objections is answered by using the accent and not a new
-hue, rather than waved past:**
+**It went to the accent first, on 2026-08-12, and that lasted an hour.** The
+accent was already the group headings, the input box border, the focused date
+cell and the keys in `?`; adding the priority to it — and, the same day, the box
+labels — made mauve the answer to six different questions, and the screen read
+as noise. That is the failure [design.md](design.md#what-each-colour-means) now
+exists to prevent, and the rule it states is the finding: **one colour, one
+job.** A colour that answers two questions answers neither.
 
-- **No twelfth role.** It is `accent`, already themed, already in `theme dump`.
-  `theme.conf` gains no key and the eleven roles stay eleven.
-- **The collision goes the other way now.** `!high` used to be drawn in the
-  row's colour, so on a late row the date and the priority were the *same red* —
-  the one row where the two most need telling apart. The accent is the one
-  colour no row state ever takes.
-- **`NO_COLOR` is unchanged**, because the weight is unchanged: `!high` is still
-  the bold one, and the three words are still three different words on the
-  screen. Nothing here is carried by colour alone —
-  [design.md](design.md#rules) still holds.
-- **The palette rules are untouched.** Red is still the negative outcome and
-  green is still only for completed; a traffic light would have spent both, and
-  `!low` in green would have meant *finished* on a row that is not.
-- **A ticked or cancelled task is still dim**, however it was filed — the same
-  reason a finished row stops saying how late it is.
+**A twelfth role rather than a borrowed one, because every other colour was
+already spoken for:** red is the negative outcome, green is finished, orange is
+today, blue is a tag, mauve is the tool's own voice. Yellow was the only hue in
+the palette with no job, and a priority is the only thing left that needs one.
 
-The input box paints it the same two ways, because the box teaching a colour the
-list then contradicts is worse than either of them alone.
+**What survives from the old decision:**
 
-### Only `copy` is lit → every label is (2026-08-12)
+- **The weight.** `!high` is still the bold one, so `NO_COLOR=1` reads exactly
+  as it did and nothing here is carried by colour alone.
+- **`!low` stays dim.** Three loud rows teach nothing about which is which.
+- **A ticked or cancelled task is dim**, however it was filed.
 
-**Was:** the input box's first word was dim for `add`, `edit` and `put off`, and
-in the accent only for `copy`, on the grounds that a label which is always lit is
-a label nobody reads. `copy` is the one with something to say — `⏎` will **not**
-rewrite the line the box was just filled from.
+**And one thing it fixes.** `!high` used to be drawn in the *row's* colour, so on
+a late row the date and the priority were the same red — the one row where the
+two most need telling apart. A field now keeps its own job's colour whatever the
+row is doing.
 
-**Now:** all four are in the accent. The box is a mode, the label is what names
-it, and a mode whose name is the dimmest thing in it is a mode you have to look
-for. `copy` keeps its job: what makes it read is the word, which is the only
-thing that ever carried the meaning — the colour only ever made someone glance.
+The input box paints it the same two ways, because a box teaching a colour the
+list then contradicts is worse than either of them alone. On the `terminal`
+theme it is ANSI 6, the one index the other eleven roles had left.
+
+### Only `copy` is lit → every label is → only `copy` again (2026-08-12)
+
+**Was, and is again:** the input box's first word is dim for `add`, `edit` and
+`put off`, and in the accent only for `copy`. `copy` is the one with something to
+say — `⏎` will **not** rewrite the line the box was just filled from.
+
+**The hour in between:** all four were put in the accent, on the grounds that the
+box is a mode and a mode whose name is the dimmest thing in it is a mode you have
+to look for. What that missed is that **the box's own border is already the
+accent**, and it is the border that says *you are in a box*. The label an inch
+inside it in the same colour said the same thing twice, and spent the one
+distinction `copy` had. Together with the priority moving to the accent the same
+day, it made mauve mean six things at once — see
+[design.md](design.md#what-each-colour-means), which was written out of exactly
+this.
+
+If a lit label is ever wanted again, the way to do it is weight or `foreground`,
+not the accent: the accent is the tool's voice and the border is already using
+it here.
 
 ### The input box opens empty → it opens on today (2026-08-12)
 

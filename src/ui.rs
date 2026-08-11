@@ -1583,18 +1583,19 @@ impl Notice {
 /// arithmetic.
 /// What a priority is drawn in, on the row and in the input box alike.
 ///
-/// The accent in two weights: `!high` bold, `!med` plain, and `!low` down with
-/// the dim fields where it asked to be. No new theme role, and none of the three
-/// earned colours diluted — `docs/design.md#rules` keeps red for the negative
-/// outcome and green for finished, and a priority is neither.
+/// Its own colour in two weights: `!high` bold, `!med` plain, and `!low` down
+/// with the dim fields where it asked to be. Its own and not the accent, which
+/// is the tool's voice and already the headings, the box border and the help
+/// keys — one colour answering two questions answers neither
+/// (docs/design.md#what-each-colour-means).
 ///
 /// `None` is anything that is not urgent any more: a ticked or cancelled task is
 /// not `!high` however it was filed.
 fn priority_style(priority: Option<Priority>, dim: Style, render: Render<'_>) -> Style {
-    let accent = Style::default().fg(render.colours.accent);
+    let loud = Style::default().fg(render.colours.priority);
     match priority {
-        Some(Priority::High) => accent.bold(),
-        Some(Priority::Med) => accent,
+        Some(Priority::High) => loud.bold(),
+        Some(Priority::Med) => loud,
         _ => dim,
     }
 }
@@ -1646,7 +1647,14 @@ fn addressed(name: &str, render: Render<'_>) -> Option<Span<'static>> {
 fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'static>>, usize) {
     let dim = Style::default().fg(render.colours.dim);
     let head = format!(" {} {}", input.purpose.label(), render.glyphs.field());
-    let label = Style::default().fg(render.colours.accent).bold();
+    // The box's own border is already the accent, and it is what says *you are
+    // in the box*. A label in the same colour an inch inside it says the same
+    // thing twice and leaves `copy` — the one label that has news — with nothing
+    // to be told apart by. docs/design.md#what-each-colour-means.
+    let label = match input.purpose {
+        Purpose::Copy => Style::default().fg(render.colours.accent).bold(),
+        _ => dim,
+    };
     // The window is anchored on the caret, not on the end of the line: what is
     // before it fills the field from the right, and whatever room is left shows
     // what comes after.
@@ -3407,12 +3415,12 @@ mod tests {
         assert_eq!(style_of("a @2026-08-10", true).fg, Some(colours.dim));
     }
 
-    /// The priority is the accent in two weights: `!high` bold, `!med` plain,
-    /// `!low` down with the dim fields. One colour and no new theme role, so
-    /// red still means the negative outcome and green still means finished
-    /// — docs/design.md#rules.
+    /// The priority has a colour of its own, in two weights: `!high` bold,
+    /// `!med` plain, `!low` down with the dim fields. Its own and not the
+    /// accent, which is already the headings, the box border and the help keys
+    /// — docs/design.md#what-each-colour-means.
     #[test]
-    fn the_priority_is_the_accent_in_two_weights() {
+    fn the_priority_is_its_own_colour_in_two_weights() {
         let colours = crate::theme::MOCHA;
         let style_of = |spec: &str, done: bool| {
             let mut task = capture(spec, today());
@@ -3433,7 +3441,7 @@ mod tests {
         };
 
         let high = style_of("a @2026-08-14 !high", false);
-        assert_eq!(high.fg, Some(colours.accent));
+        assert_eq!(high.fg, Some(colours.priority));
         assert!(
             high.add_modifier.contains(ratatui::style::Modifier::BOLD),
             "the loud field is not loud: {high:?}"
@@ -3442,18 +3450,20 @@ mod tests {
         // The middle one is the same colour and not the same weight, which is
         // the whole of what separates them.
         let med = style_of("a @2026-08-14 !med", false);
-        assert_eq!(med.fg, Some(colours.accent));
+        assert_eq!(med.fg, Some(colours.priority));
         assert!(!med.add_modifier.contains(ratatui::style::Modifier::BOLD));
 
         let low = style_of("a @2026-08-14 !low", false);
         assert_eq!(low.fg, Some(colours.dim));
         assert!(!low.add_modifier.contains(ratatui::style::Modifier::BOLD));
 
-        // It borrows the row's colour from nobody. On a late row the date is
-        // `overdue` red and the priority is still the accent — that is the one
-        // row where the two most need telling apart.
+        // It borrows the row's colour from nobody, and it is not the accent the
+        // heading above it wears either. On a late row the date is `overdue` red
+        // and the priority is still its own — that is the one row where the two
+        // most need telling apart.
         let late = style_of("a @2026-08-08 !high", false);
-        assert_eq!(late.fg, Some(colours.accent));
+        assert_eq!(late.fg, Some(colours.priority));
+        assert_ne!(colours.priority, colours.accent);
 
         // Finished work is not urgent, however it was filed — the same reason a
         // ticked task stops saying how late it is.
@@ -4178,22 +4188,26 @@ mod tests {
         assert_eq!(input.purpose.raw(), None, "a copy rewrites no line");
         assert_eq!(input.at, input.text.len());
 
-        // And the box says so — "this is not the line you were looking at" is the
-        // one thing `y` has to get across, and the word is what carries it: every
-        // label is in the accent, so none of them is read for its colour.
+        // And the box says so, in the accent: "this is not the line you were
+        // looking at" is the one thing `y` has to get across. The other three
+        // stay dim — the box's own border is already the accent and is what says
+        // *you are in the box*, so a label repeating it an inch inside leaves
+        // this one nothing to be told apart by.
+        let (lines, _) = input_lines(&input, 60, render(crate::theme::MOCHA));
+        let head = &lines[0].spans[0];
+        assert_eq!(head.content, " copy");
+        assert_eq!(head.style.fg, Some(crate::theme::MOCHA.accent));
+
         for purpose in [
-            Purpose::Copy,
             Purpose::Add,
             Purpose::Edit(String::new()),
             Purpose::Postpone(String::new()),
         ] {
             let box_ = Input::new(String::new(), purpose);
             let (lines, _) = input_lines(&box_, 60, render(crate::theme::MOCHA));
-            let head = &lines[0].spans[0];
-            assert_eq!(head.content, format!(" {}", box_.purpose.label()));
             assert_eq!(
-                head.style.fg,
-                Some(crate::theme::MOCHA.accent),
+                lines[0].spans[0].style.fg,
+                Some(crate::theme::MOCHA.dim),
                 "{:?}",
                 box_.purpose
             );
@@ -4455,7 +4469,7 @@ mod tests {
         assert_eq!(styled("#home").fg, Some(render.colours.tag));
         // The same two weights the row gives it, or the box teaches a colour the
         // list then contradicts.
-        assert_eq!(styled("!high").fg, Some(render.colours.accent));
+        assert_eq!(styled("!high").fg, Some(render.colours.priority));
         assert!(
             styled("!high")
                 .add_modifier

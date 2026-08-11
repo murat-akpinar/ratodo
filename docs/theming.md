@@ -44,8 +44,9 @@ Rules:
 
 ## Keys
 
-Eleven roles, named after what they *do* — not after Catppuccin — so themes stay
-portable:
+Twelve roles, named after what they *do* — not after Catppuccin — so themes stay
+portable. Each one has exactly one job, listed in
+[design.md](design.md#what-each-colour-means):
 
 | Key | What it colours | Default (Catppuccin Mocha) |
 |---|---|---|
@@ -54,12 +55,13 @@ portable:
 | `dim` | dates, tags, secondary text | `#a6adc8` |
 | `border` | frame and separators | `#6c7086` |
 | `selection` | background of the selected row | `#313244` |
-| `accent` | selection marker, headings, highlights | `#cba6f7` |
+| `accent` | the tool's own voice: headings, the input box border, the focused date cell, the keys in `?` | `#cba6f7` |
 | `overdue` | the overdue group and its `!` | `#f38ba8` |
 | `today` | the today group | `#fab387` |
 | `done` | the `✓` mark | `#a6e3a1` |
 | `done_text` | the text of a completed task | `#7f849c` |
 | `tag` | `#tag` | `#89b4fa` |
+| `priority` | `!high` (bold) and `!med`; `!low` stays `dim` | `#f9e2af` |
 
 The [design rules](design.md#rules) still apply on top of this: one accent plus
 greys, red only for overdue, green only for done. A user can of course break
@@ -103,7 +105,7 @@ keys are unaffected: only the background is `none` by default.
 TTY or inside old `screen`, which used to be an open risk. See
 [risks.md](risks.md).
 
-Built-in themes are `const` tables in `theme.rs` — the same eleven keys, filled
+Built-in themes are `const` tables in `theme.rs` — the same twelve keys, filled
 in. Adding one is a dozen lines and no new machinery.
 
 ## Precedence

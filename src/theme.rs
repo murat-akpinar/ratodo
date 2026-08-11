@@ -2,7 +2,7 @@
 
 use ratatui::style::Color;
 
-/// Eleven roles, named after what they do rather than after any one palette.
+/// Twelve roles, named after what they do rather than after any one palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
     pub background: Color,
@@ -16,6 +16,7 @@ pub struct Theme {
     pub done: Color,
     pub done_text: Color,
     pub tag: Color,
+    pub priority: Color,
 }
 
 /// A role's name paired with the way to reach it.
@@ -23,7 +24,7 @@ type Role = (&'static str, fn(&mut Theme) -> &mut Color);
 
 /// The one list. The parser, `dump` and the "unknown key" warning all read it,
 /// so a twelfth role cannot be added to the struct and forgotten in two places.
-const KEYS: [Role; 11] = [
+const KEYS: [Role; 12] = [
     ("background", |t| &mut t.background),
     ("foreground", |t| &mut t.foreground),
     ("dim", |t| &mut t.dim),
@@ -35,6 +36,7 @@ const KEYS: [Role; 11] = [
     ("done", |t| &mut t.done),
     ("done_text", |t| &mut t.done_text),
     ("tag", |t| &mut t.tag),
+    ("priority", |t| &mut t.priority),
 ];
 
 impl Theme {
@@ -101,6 +103,7 @@ pub const MOCHA: Theme = Theme {
     done: rgb(0xa6e3a1),
     done_text: rgb(0x7f849c),
     tag: rgb(0x89b4fa),
+    priority: rgb(0xf9e2af),
 };
 
 const LATTE: Theme = Theme {
@@ -115,6 +118,7 @@ const LATTE: Theme = Theme {
     done: rgb(0x40a02b),
     done_text: rgb(0x8c8fa1),
     tag: rgb(0x1e66f5),
+    priority: rgb(0xdf8e1d),
 };
 
 const GRUVBOX_DARK: Theme = Theme {
@@ -129,6 +133,7 @@ const GRUVBOX_DARK: Theme = Theme {
     done: rgb(0xb8bb26),
     done_text: rgb(0x928374),
     tag: rgb(0x83a598),
+    priority: rgb(0xfabd2f),
 };
 
 const NORD: Theme = Theme {
@@ -143,6 +148,7 @@ const NORD: Theme = Theme {
     done: rgb(0xa3be8c),
     done_text: rgb(0x616e88),
     tag: rgb(0x81a1c1),
+    priority: rgb(0xebcb8b),
 };
 
 const DRACULA: Theme = Theme {
@@ -157,6 +163,7 @@ const DRACULA: Theme = Theme {
     done: rgb(0x50fa7b),
     done_text: rgb(0x6272a4),
     tag: rgb(0x8be9fd),
+    priority: rgb(0xf1fa8c),
 };
 
 /// ANSI 0–15 only, so every colour comes from the terminal's own palette. This
@@ -175,6 +182,7 @@ const TERMINAL: Theme = Theme {
     done: Color::Indexed(2),
     done_text: Color::Indexed(8),
     tag: Color::Indexed(4),
+    priority: Color::Indexed(6),
 };
 
 pub const BUILT_IN: [(&str, Theme); 6] = [
@@ -346,11 +354,11 @@ mod tests {
         }
     }
 
-    /// Eleven roles, and every built-in fills all of them. A theme with a role
+    /// Twelve roles, and every built-in fills all of them. A theme with a role
     /// left at the default is how one palette leaks into another.
     #[test]
     fn every_built_in_sets_every_other_role() {
-        assert_eq!(KEYS.len(), 11);
+        assert_eq!(KEYS.len(), 12);
         for (name, theme) in BUILT_IN {
             for (key, colour) in theme.pairs() {
                 if key == "background" {
