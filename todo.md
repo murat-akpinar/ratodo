@@ -5,7 +5,7 @@ loose ends live in [notes.md](notes.md).
 
 **v1 shipped as `v0.1.0`, the next batch as `v0.2.0`, the crates.io release as
 `v0.3.0`, the date field as `v0.4.0` and the ruled columns as `v0.5.0` — all on
-2026-08-11.**
+2026-08-11. The input box opening on today's date is `v0.6.0`, 2026-08-12.**
 Steps 0–8 below are the record of how that was built and are kept for the
 reasoning in them, not because there is anything left to do in them. The work
 that is actually open is the short list directly under this line.
