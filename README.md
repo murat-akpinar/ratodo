@@ -4,16 +4,16 @@
 
 **A todo TUI, built with ratatui — one Markdown file, no cloud, no account.**
 
-[![crates.io](https://img.shields.io/badge/crates.io-v0.3.0-green)](https://crates.io/crates/ratodo)
+[![crates.io](https://img.shields.io/badge/crates.io-v0.4.0-green)](https://crates.io/crates/ratodo)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.88%2B-orange)](https://www.rust-lang.org)
 
 </div>
 
-> **v0.3.0, on crates.io.** `cargo install ratodo`. The command line and the TUI
+> **v0.4.0, on crates.io.** `cargo install ratodo`. The command line and the TUI
 > are built and tested — capture, editing, undo, folding, themes, the `.ics`
-> export, several lists in one agenda, and `$work` to say which one a capture
-> goes to. A `flake.nix` and an AUR `PKGBUILD` are what is still missing.
+> export, several lists in one agenda, `$work` to say which one a capture goes
+> to, and `tab` for a date field that cannot hold a day the calendar does not.
 > Reasoning behind every decision is in [`docs/`](docs/README.md), what comes
 > next in [`todo.md`](todo.md).
 
@@ -77,6 +77,23 @@ is, and under a rule it shows what the line will become as you type:
 │      due Thursday (2026-08-13)  ·  !high           │
 └────────────────────────────────────────────────────┘
 ```
+
+`tab` swaps that preview for a date field, for the days you were going to count
+on your fingers:
+
+```
+┌────────────────────────────────────────────────────┐
+│ add ▏renew the passport                            │
+├────────────────────────────────────────────────────┤
+│      [11] 08  2026  ↓ ↑                            │
+└────────────────────────────────────────────────────┘
+```
+
+`↑` `↓` change the part in brackets, `←` `→` move between the three, and
+`13082026` fills all three in eight keystrokes. It cannot produce a day the
+calendar does not have — the 31st of January arrowed into February is the 28th,
+and a month of `13` is unreachable. `⏎` writes it into the line, `esc` leaves it
+alone, and `@thu` is still there for everything faster than that.
 
 Only two things ever cover the list and you open both of them — that box and the
 `?` help. Deleting is undoable with `u` instead of asking you to confirm, and the
@@ -324,7 +341,7 @@ Rust 1.88 or newer, and no other build dependency. From source instead:
 
 ```console
 $ git clone https://github.com/murat-akpinar/ratodo && cd ratodo
-$ git checkout v0.3.0
+$ git checkout v0.4.0
 $ cargo install --path .        # → ~/.cargo/bin/ratodo
 ```
 
