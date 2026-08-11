@@ -49,6 +49,15 @@ change any of them.
   the thing that earned it.
 - Two levels of hierarchy: task title bright, date/tags `dim`. There is no third.
 - Generous whitespace. The blank lines between groups are half of the design.
+- **A rule between two columns, and nowhere else.** Past
+  [`COLUMNS_AT`](tui.md#width) the date, priority and tags start in the same
+  place on every row, and a dim `│` says where each one begins — the row is a
+  table there, so it is drawn as one. Below that breakpoint the fields are
+  ragged and there is nothing to separate, so there are no rules: three
+  characters of noise per row is what a table costs when it has no columns. The
+  same `│` separates the fields in the input box's preview, so the screen has
+  one separator and not two. Rules are `border`, the colour the frame is
+  already drawn in — a grid is scenery, and scenery does not get the accent.
 - **One layout, no split panes.** No sidebar, no modal. There is one list.
 - `○ ✓ ✗ !` symbols — never rely on colour alone (colour blindness, and so output
   survives being copy-pasted).

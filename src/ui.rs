@@ -164,6 +164,10 @@ enum DatePart {
 pub enum Purpose {
     /// `a` `o` — a new task, for the capture target.
     Add,
+    /// `y` — also a new task, and the box says so in the accent: the line under
+    /// the cursor is filled in but is **not** the line `⏎` will rewrite, and
+    /// that is the one thing somebody who pressed `y` has to know.
+    Copy,
     /// `⏎` — the raw line being rewritten.
     Edit(String),
     /// `p` — the raw line whose date is moving. What is being typed is a length
@@ -176,7 +180,7 @@ impl Purpose {
     /// The line this is about, as the file has it. `None` for a new task.
     pub fn raw(&self) -> Option<&str> {
         match self {
-            Purpose::Add => None,
+            Purpose::Add | Purpose::Copy => None,
             Purpose::Edit(raw) | Purpose::Postpone(raw) => Some(raw),
         }
     }
@@ -184,6 +188,7 @@ impl Purpose {
     fn label(&self) -> &'static str {
         match self {
             Purpose::Add => "add",
+            Purpose::Copy => "copy",
             Purpose::Edit(_) => "edit",
             Purpose::Postpone(_) => "put off",
         }
@@ -388,7 +393,7 @@ impl Input {
     pub fn duplicating(task: &Task, today: NaiveDate) -> Self {
         let mut copy = task.clone();
         copy.set_state(State::Open, today);
-        Input::new(copy.body().to_string(), Purpose::Add)
+        Input::new(copy.body().to_string(), Purpose::Copy)
     }
 
     pub fn insert(&mut self, c: char) {
@@ -941,6 +946,15 @@ impl Glyphs {
         }
     }
 
+    /// The rule between two columns. The row is a table past `COLUMNS_AT`, and
+    /// this is what says so — docs/tui.md#width.
+    fn divider(self) -> &'static str {
+        match self {
+            Glyphs::Unicode => "│",
+            Glyphs::Ascii => "|",
+        }
+    }
+
     /// The arrow the preview points a `$work` capture with.
     fn arrow(self) -> &'static str {
         match self {
@@ -1179,6 +1193,11 @@ fn when(task: &Task, today: NaiveDate, size: Size) -> String {
 /// pulls the eye across a distance it does not need to travel.
 const GAP: usize = 2;
 
+/// What a column costs in front of its own text once the divider is drawn:
+/// a space, the rule, a space. One column more than `GAP`, paid for out of the
+/// title, which is the field with room to give at these widths.
+const RULED: usize = 3;
+
 /// Where the columns sit. Every entry is as wide as the widest thing in it, so
 /// a list with no priorities spends no width on a priority column, and the eye
 /// gets a straight edge to read down — docs/tui.md#width.
@@ -1194,6 +1213,11 @@ struct Columns {
     title: usize,
     date: usize,
     prio: usize,
+    /// Whether anything on screen is tagged. Tags reserve no width — they are
+    /// last and ragged — but the rule that opens their column is drawn on every
+    /// row once one row has them, or the table would lose its last edge on
+    /// exactly the rows with nothing in that cell.
+    tags: bool,
 }
 
 /// The fourth breakpoint, in columns of **row** — the frame and the selection
@@ -1234,7 +1258,7 @@ impl Columns {
             .unwrap_or(0);
         // An empty column takes no gap either, or a list nobody tagged would
         // still be drawn around a tag column that is not there.
-        let with_gap = |w: usize| if w == 0 { 0 } else { w + GAP };
+        let with_gap = |w: usize| if w == 0 { 0 } else { w + RULED };
         let (date, prio) = (with_gap(date), with_gap(prio));
 
         // The mark and its space — three columns wider under the ASCII
@@ -1245,11 +1269,18 @@ impl Columns {
         // up after them, and reserving the widest row's worth would cut every
         // title to pay for tags most rows do not have — the exact inversion of
         // the drop order in docs/tui.md#width. task_line spends what is left.
-        let room = width.saturating_sub(mark + date + prio);
+        //
+        // The rule that opens their column *is* reserved, and it has to be: it
+        // is drawn on every row once any row is tagged, so a title allowed to
+        // eat the last three columns would push it off the end of exactly the
+        // rows that have nothing to show there.
+        let tags = tasks().any(|t| !t.tags.is_empty());
+        let room = width.saturating_sub(mark + date + prio + if tags { RULED } else { 0 });
         Self {
             title: title.min(room).max(12.min(width.saturating_sub(mark))),
             date,
             prio,
+            tags,
         }
     }
 }
@@ -1278,6 +1309,7 @@ fn task_line(
 
     let mut right: Vec<Span<'static>> = Vec::new();
     // A column pads to its own width; without one the entry carries its gap.
+    let rule = Style::default().fg(render.colours.border);
     let mut push = |text: String, column: usize, style: Style| {
         if column == 0 {
             if !text.is_empty() {
@@ -1285,8 +1317,11 @@ fn task_line(
             }
             return;
         }
-        right.push(Span::raw(" ".repeat(GAP)));
-        let pad = column.saturating_sub(columns(&text) + GAP);
+        // The divider is drawn for an empty cell too, which is the whole of what
+        // makes it a table: the rules run straight down the pane past the rows
+        // that have no date and no priority.
+        right.push(Span::styled(format!(" {} ", render.glyphs.divider()), rule));
+        let pad = column.saturating_sub(columns(&text) + RULED);
         right.push(Span::styled(text, style));
         right.push(Span::raw(" ".repeat(pad)));
     };
@@ -1330,8 +1365,24 @@ fn task_line(
             0 => usize::MAX,
             title => width.saturating_sub(mark_width + title + cols.date + cols.prio),
         };
-        for tag in &task.tags {
-            let span = format!("  #{}", text::plain(tag));
+        // The rule that opens the tag column, drawn whether or not this row has
+        // one to put in it — an empty cell keeps its place, which is the whole
+        // difference between a table and three fields near each other.
+        let lead = format!(" {} ", render.glyphs.divider());
+        // The width check is the belt to the reservation's braces: a row may
+        // never overrun, whatever the arithmetic above did.
+        let ruled = cols.date + cols.prio > 0 && cols.tags && room >= columns(&lead);
+        if ruled {
+            room -= columns(&lead);
+            right.push(Span::styled(lead, rule));
+        }
+        for (n, tag) in task.tags.iter().enumerate() {
+            // Inside the column the tags are ragged: nothing lines up after
+            // them, so they are spaced rather than ruled.
+            let span = match (n, ruled) {
+                (0, true) => format!("#{}", text::plain(tag)),
+                _ => format!("  #{}", text::plain(tag)),
+            };
             let Some(left) = room.checked_sub(columns(&span)) else {
                 break;
             };
@@ -1537,6 +1588,13 @@ fn addressed(name: &str, render: Render<'_>) -> Option<Span<'static>> {
 fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'static>>, usize) {
     let dim = Style::default().fg(render.colours.dim);
     let head = format!(" {} {}", input.purpose.label(), render.glyphs.field());
+    // `copy` is the one label worth looking at, because it is the one that says
+    // `⏎` will **not** rewrite the line it just filled the box with. The word
+    // carries that on its own — the colour is what makes somebody read it.
+    let label = match input.purpose {
+        Purpose::Copy => Style::default().fg(render.colours.accent).bold(),
+        _ => dim,
+    };
     // The window is anchored on the caret, not on the end of the line: what is
     // before it fills the field from the right, and whatever room is left shows
     // what comes after.
@@ -1565,7 +1623,11 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
         .then(|| crate::capture::later(&input.text, render.today))
         .flatten();
 
-    let mut spans = vec![Span::styled(head, dim)];
+    // Split so the label can be lit without the caret glyph following it: the
+    // two together are still `head`, so the cursor column above is unchanged.
+    let caret = format!(" {}", render.glyphs.field());
+    let named = head[..head.len() - caret.len()].to_string();
+    let mut spans = vec![Span::styled(named, label), Span::styled(caret, dim)];
     let mut cut = from;
     for (word, part) in crate::capture::parts(&input.text, render.today) {
         if moving || part == crate::capture::Part::Text || word.end <= from || word.start >= to {
@@ -1597,7 +1659,9 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
     // about — and it made the date and the tag indistinguishable in the row
     // whose whole job is telling them apart. The title is not repeated: it is
     // already on the line above, in the same white.
-    let (_, dot) = render.glyphs.punctuation();
+    // The same rule the rows use, so the screen speaks one separator language.
+    let dot = render.glyphs.divider();
+    let rule = Style::default().fg(render.colours.border);
     let mut shown = vec![Span::styled("      ".to_string(), dim)];
     if let Some(open) = input.field {
         // The field takes the preview's row rather than a row of its own: the
@@ -1668,14 +1732,14 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
             && let Some(span) = addressed(name, render)
         {
             if shown.len() > 1 {
-                shown.push(Span::styled(format!("  {dot}  "), dim));
+                shown.push(Span::styled(format!(" {dot} "), rule));
             }
             shown.push(span);
         }
         let parsed = crate::capture::capture(&input.text, render.today);
         for (part, text) in crate::text::field_parts(&parsed, render.today) {
             if shown.len() > 1 {
-                shown.push(Span::styled(format!("  {dot}  "), dim));
+                shown.push(Span::styled(format!(" {dot} "), rule));
             }
             shown.push(Span::styled(text, paint(part, plain, render)));
         }
@@ -3075,7 +3139,7 @@ mod tests {
         );
         assert_eq!(
             at(packed + 1),
-            1 + 2 + 2 + columns("a much longer title here") + GAP,
+            1 + 2 + 2 + columns("a much longer title here") + RULED,
             "columns one column too late: {:?}",
             rendered(packed + 1, 8, &tasks)
         );
@@ -3109,6 +3173,53 @@ mod tests {
         assert_eq!(at[1], at[2], "a missing date moved the tags: {screen:?}");
     }
 
+    /// The rules run straight down the pane. A row with no date and no priority
+    /// draws them in the same places as a row with both — an empty cell keeps
+    /// its column, which is the whole difference between a table and three
+    /// fields that happen to be near each other.
+    #[test]
+    fn the_column_rules_line_up_down_the_pane() {
+        let tasks = tasks(&[
+            "late one @2026-08-01 !high #ops",
+            "no priority @2026-08-14 #home",
+            "nothing at all",
+            "priority only !low",
+        ]);
+        let screen = rendered(90, 12, &tasks);
+        let bars = |row: &str| -> Vec<usize> {
+            let last = row.chars().count() - 1;
+            row.char_indices()
+                .filter(|(_, c)| *c == '│')
+                .map(|(i, _)| row[..i].chars().count())
+                // The frame's own two sides are not column rules.
+                .filter(|at| *at > 0 && *at < last)
+                .collect()
+        };
+
+        let rows: Vec<Vec<usize>> = screen
+            .iter()
+            .filter(|r| {
+                ["late one", "no priority", "nothing at all", "priority only"]
+                    .iter()
+                    .any(|title| r.contains(title))
+            })
+            .map(|r| bars(r))
+            .collect();
+        assert_eq!(rows.len(), 4, "not every task is on screen: {screen:?}");
+        for row in &rows {
+            assert_eq!(row.len(), 3, "a row is missing a rule: {screen:?}");
+            assert_eq!(row, &rows[0], "the rules do not line up: {screen:?}");
+        }
+
+        // And below the breakpoint there is nothing to line up, so there are no
+        // rules to draw: three characters of noise per row is what a table
+        // costs when it has no columns.
+        let narrow = rendered(70, 12, &tasks);
+        for row in narrow.iter().filter(|r| r.contains("late one")) {
+            assert_eq!(bars(row), Vec::<usize>::new(), "{narrow:?}");
+        }
+    }
+
     /// The column widths themselves, not the difference between two of them: a
     /// budget that is wrong by the same amount everywhere still lines up.
     #[test]
@@ -3119,13 +3230,13 @@ mod tests {
         let cols = Columns::of(&rows, 86, render(crate::theme::MOCHA), Size::Wide);
 
         // `9d ago` and `!high`, each plus its gap.
-        assert_eq!(cols.date, 6 + GAP, "the date column");
-        assert_eq!(cols.prio, 5 + GAP, "the priority column");
+        assert_eq!(cols.date, 6 + RULED, "the date column");
+        assert_eq!(cols.prio, 5 + RULED, "the priority column");
         // 86 less the mark and its space, less both of those. The title asked
         // for 80 and the row has this much to give it.
         assert_eq!(
             cols.title,
-            86 - 2 - (6 + GAP) - (5 + GAP),
+            86 - 2 - (6 + RULED) - (5 + RULED),
             "the title column"
         );
     }
@@ -3153,7 +3264,7 @@ mod tests {
         );
         assert_eq!(
             cols.prio,
-            5 + GAP,
+            5 + RULED,
             "one task with a priority buys the column"
         );
     }
@@ -3182,12 +3293,10 @@ mod tests {
         // mark, the 56-column title, the date column and the priority column
         // spend 73 of it, and `#alpha` and `#bravo` are what the rest buys.
         let title = columns("a title long enough to leave the last tags nowhere to go");
-        let budget = 92 - (2 + title + (6 + GAP) + (5 + GAP));
-        assert_eq!(
-            budget,
-            columns("  #alpha  #bravo") + 3,
-            "the tag budget moved"
-        );
+        let budget = 92 - (2 + title + (6 + RULED) + (5 + RULED));
+        // The rule in front of the first tag is part of what the budget buys,
+        // and these two spend every column of it.
+        assert_eq!(budget, columns(" │ #alpha  #bravo"), "the tag budget moved");
         assert!(screen[2].contains("#alpha"), "{screen:?}");
         assert!(screen[2].contains("#bravo"), "{screen:?}");
         for missing in ["#charlie", "#delta"] {
@@ -3213,10 +3322,15 @@ mod tests {
             let rows = [Row::Task(task.clone())];
             let cols = Columns::of(&rows, 86, render(colours), Size::Wide);
             let line = task_line(&task, 86, cols, render(colours), Size::Wide);
-            // The date is the first styled entry after the mark and the title.
+            // The date is the first styled entry after the mark and the title,
+            // and past the rule that opens its column — which has a colour of
+            // its own and is not the thing being asked about here.
             line.spans[3..]
                 .iter()
-                .find(|s| !s.content.trim().is_empty())
+                .find(|s| {
+                    let text = s.content.trim();
+                    !text.is_empty() && text != render(colours).glyphs.divider()
+                })
                 .expect("the date is on the row")
                 .style
         };
@@ -3320,7 +3434,7 @@ mod tests {
         // The frame, the cursor, the mark, then the title column and its gap.
         assert_eq!(
             at_column(&cramped[2], "9d ago"),
-            1 + 2 + 2 + wide.title + GAP,
+            1 + 2 + 2 + wide.title + RULED,
             "the visible row was measured on its own: {cramped:?}"
         );
     }
@@ -3930,9 +4044,29 @@ mod tests {
 
         let input = Input::duplicating(task, today());
         assert_eq!(input.text, "wash up @2026-08-12 #home !high");
-        assert_eq!(input.purpose, Purpose::Add);
+        assert_eq!(input.purpose, Purpose::Copy);
         assert_eq!(input.purpose.raw(), None, "a copy rewrites no line");
         assert_eq!(input.at, input.text.len());
+
+        // And the box says so, in the accent, because "this is not the line you
+        // were looking at" is the one thing `y` has to get across.
+        let (lines, _) = input_lines(&input, 60, render(crate::theme::MOCHA));
+        let head = &lines[0].spans[0];
+        assert_eq!(head.content, " copy");
+        assert_eq!(head.style.fg, Some(crate::theme::MOCHA.accent));
+
+        // The other three stay quiet: a label that is always lit is a label
+        // nobody reads.
+        for purpose in [Purpose::Add, Purpose::Edit(String::new())] {
+            let plain = Input::new(String::new(), purpose);
+            let (lines, _) = input_lines(&plain, 60, render(crate::theme::MOCHA));
+            assert_eq!(
+                lines[0].spans[0].style.fg,
+                Some(crate::theme::MOCHA.dim),
+                "{:?}",
+                plain.purpose
+            );
+        }
     }
 
     /// The completion stamp is the field `capture` has never heard of, so a copy
@@ -4149,7 +4283,7 @@ mod tests {
                 "│▌┌────────────────────────────────────────────────────────────────┐y│",
                 "│ │ add ▏call the accountant @thu !high                            │ │",
                 "│ ├────────────────────────────────────────────────────────────────┤ │",
-                "│ │      due Thursday (2026-08-13)  ·  !high                       │ │",
+                "│ │      due Thursday (2026-08-13) │ !high                         │ │",
                 "│ └────────────────────────────────────────────────────────────────┘ │",
                 "│                                                                    │",
                 "│                                                                    │",
@@ -4195,7 +4329,9 @@ mod tests {
             "the priority lost its weight: {shown:?}"
         );
         // The separators are the quiet part, and the row is not one colour.
-        assert_eq!(styled("·").fg, Some(render.colours.dim));
+        // They are the same rule the columns in the list are drawn with, in the
+        // same border colour, so the screen has one separator and not two.
+        assert_eq!(styled("│").fg, Some(render.colours.border));
         assert!(
             shown
                 .iter()

@@ -441,17 +441,21 @@ task that is nearly a task you already have should be an edit, not a retype.
 
 ```
 │  ┌───────────────────────────────────────────────────────┐ │
-│  │ add ▏water the plants @2026-08-12 #home                │ │
+│  │ copy ▏water the plants @2026-08-12 #home              │ │
 │  ├───────────────────────────────────────────────────────┤ │
-│  │      due Wednesday (2026-08-12)  ·  #home             │ │
+│  │      due Wednesday (2026-08-12) │ #home               │ │
 │  └───────────────────────────────────────────────────────┘ │
 ```
 
-It says `add`, and that is the whole design. `y` fills the box the way `⏎` does
-and then means something else by it: what comes back is a **new** task, so the
-line it was copied from is not the line `⏎` rewrites. Nothing is written until
-`⏎`, and a cancelled box leaves the file exactly as it was — which is the
-difference between this and a copy that lands first and is edited afterwards.
+**It says `copy`, in the accent**, and that label is the whole design. `y` fills
+the box the way `⏎` does and then means something else by it: what comes back is
+a **new** task, so the line it was copied from is not the line `⏎` rewrites.
+The label is the only thing on the screen that says so, which is why it is the
+one of the four that is lit — it said `add` until 2026-08-11, and a box filled
+from the row under the cursor that says `add` in the same grey as every other
+box is a box nobody reads the first word of. Nothing is written until `⏎`, and a
+cancelled box leaves the file exactly as it was — which is the difference
+between this and a copy that lands first and is edited afterwards.
 
 Two things do not come with the copy. The **completion stamp** goes, because
 `capture` has never heard of `✓2026-08-11` and would have left it sitting in the
@@ -645,18 +649,18 @@ title column is as wide as the widest title in the list:
 ```
 ┌ ratodo — 5 open · 1 overdue ─────────────────────────────────── ▰▱▱▱▱▱▱▱ 1/6 ┐
 │  OVERDUE ───────────────────────────                                         │
-│  ! rotate the backup keys              2d ago           #ops                 │
+│  ! rotate the backup keys            │ 2d ago    │      │ #ops               │
 │                                                                              │
 │  TODAY ─────────────────────────────                                         │
-│  ○ pay the invoice                     today            #home                │
-│  ○ review the deploy PR                16:00            #work                │
+│  ○ pay the invoice                   │ today     │      │ #home              │
+│  ○ review the deploy PR              │ 16:00     │      │ #work              │
 │                                                                              │
 │  THIS WEEK ─────────────────────────                                         │
-│  ○ book a dentist appointment          Thu 09:30        #health              │
-│  ✓ migrate the server                  Thu                                   │
+│  ○ book a dentist appointment        │ Thu 09:30 │      │ #health            │
+│  ✓ migrate the server                │ Thu       │      │                    │
 │                                                                              │
 │  ## Someday ────────────────────────                                         │
-│▌ ○ finish chapter 13 of the Rust book             !low                       │
+│▌ ○ finish chapter 13 of the Rust book│           │ !low │                    │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -666,8 +670,16 @@ a priority column that every other row then carries as blank space. Past eighty
 columns there is room to spend; below it the packed right-aligned block fits
 more onto the row, and fitting more on wins when there is not much row.
 
-Three things follow from the columns, and they are decisions:
+Four things follow from the columns, and they are decisions:
 
+- **A dim `│` between them.** Once the fields line up the row *is* a table, and
+  a table without rules was read as one run-on line. **An empty cell keeps its
+  rules** — the row with no priority draws them in the same places as the row
+  with one — because rules that appear and disappear per row are worse than none.
+  They are `border`, the colour the frame is already drawn in: a grid is scenery
+  and scenery does not get the accent. The same `│` separates the fields in the
+  input box's preview, so the screen has one separator and not two. Below this
+  breakpoint there are no rules, because there is nothing lined up to separate.
 - **The group rule stops at the title column** instead of running to the right
   edge. At this width a rule to the edge is the heaviest thing on the screen and
   says nothing; one that ends where the titles end draws the column instead.
@@ -677,7 +689,11 @@ Three things follow from the columns, and they are decisions:
   lines up after them, and reserving the widest row's worth would cut every
   title to pay for tags most rows do not have. They spend what is left of the
   row, and a tag that does not fit is dropped whole — `#hea…` is not a filter,
-  it is a riddle.
+  it is a riddle. The **rule** that opens their column is reserved, though, and
+  it has to be: it is drawn on every row once any row is tagged, so a title
+  allowed to eat the last three columns would push it off exactly the rows with
+  nothing to show there. A list where nobody tagged anything gets no rule, the
+  same way it gets no priority column.
 
 **Wide (60–79 columns)** — the main screen above: no columns, the right-hand
 fields packed against the right edge.

@@ -74,7 +74,7 @@ is, and under a rule it shows what the line will become as you type:
 ┌────────────────────────────────────────────────────┐
 │ add ▏call the accountant @thu !high                │
 ├────────────────────────────────────────────────────┤
-│      due Thursday (2026-08-13)  ·  !high           │
+│      due Thursday (2026-08-13) │ !high             │
 └────────────────────────────────────────────────────┘
 ```
 

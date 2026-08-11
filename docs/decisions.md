@@ -142,6 +142,22 @@ Three lists: what is settled, what was rejected, and what is still open.
   — the two roles the title already uses, so nothing new to theme. Colouring
   every date was the alternative and it flattens the row: the right-hand fields
   are secondary on purpose. See [tui.md](tui.md#main-screen).
+- ✅ **The columns get rules, and `y` says `copy`** *(2026-08-11)*. Both out of
+  the same report: the row was read as one run-on line, and the box filled by
+  `y` looked exactly like the box filled by `a`. Past `COLUMNS_AT` the fields
+  already line up, so a dim `│` between them costs one column each and turns
+  three fields that happen to be near each other into a table. **An empty cell
+  keeps its rules** — a row with no date and no priority draws them in the same
+  places as a row with both, which is the whole difference — and the rule that
+  opens the tag column is reserved in `Columns` rather than spent out of what is
+  left, or a long title would push it off exactly the rows with nothing to show
+  there. Below the breakpoint there are no rules, because there are no columns.
+  The input box's preview uses the same `│`, so the screen has one separator
+  language. `y` now opens a box labelled `copy` in the accent rather than `add`:
+  the label is the only thing that says `⏎` will *not* rewrite the line it was
+  just filled from, and it was the one label worth reading in the quietest
+  colour on the screen. See [design.md](design.md#rules) and
+  [tui.md](tui.md#copying--y).
 - ✅ **A date field, opened by `tab` and not standing in anybody's way**
   *(2026-08-11)*. `↑ ↓` on the part under the cursor and eight digits filling
   `DD MM YYYY`, which makes a month of `13` **unreachable** rather than merely
