@@ -18,6 +18,8 @@ The row under the input was one accent-coloured string, which said the parser ha
 
 - The three states, the stamp, p, and two reversals ([3e57ca4](https://github.com/murat-akpinar/ratodo/commit/3e57ca4a7d5caae490d34fd3b0a0624e8c44546b))
 format.md gains the state and stamp rows plus the two sections behind them; tui.md gains the `p` box, the finished-row colour and date, and an adaptive hint bar in place of a fixed six. decisions.md records three settled decisions and three reversals — grey to green, `x` staying unbound while `X` takes the job, and `:` `/` leaving the overlay to make room.
+- *(calendar)* Khal does not show these, todoman does ([26858dd](https://github.com/murat-akpinar/ratodo/commit/26858dd7794d3bb71c301db93409986b26cee0de))
+The `.ics` had been verified as *parseable* — by Python's icalendar, a different implementation of the same RFC — and never as *displayed*. todo.md had that open as "the one that catches a client quietly ignoring VTODO", and it caught one on the first try.
 
 ### 🧪 Testing
 
