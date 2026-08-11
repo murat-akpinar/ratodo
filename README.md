@@ -229,29 +229,37 @@ A time in your file has no timezone, so it does not get one here either —
 `@2026-08-13 09:30` is exported as a floating time and stays half past nine
 wherever you are.
 
-Generating the file is the easy part; subscribing to it is up to your client, and
-they differ a lot:
+Generating the file is the easy part. **Pick a program that reads todos** —
+these are VTODO entries, and most of what people call "the calendar" draws
+events and nothing else:
 
-| Client | Local `.ics` |
+| Client | Shows them |
 |---|---|
-| khal | ✅ |
-| Thunderbird | ✅ |
+| todoman | ✅ |
+| Thunderbird | ⚠️ in the Tasks view, not the month grid |
 | Evolution | ⚠️ version-dependent |
-| GNOME Calendar | ⚠️ mostly wants `webcal://` |
+| khal | ❌ it is a calendar; it draws events |
+| GNOME Calendar | ❌ wants `webcal://`, draws events |
 | Google Calendar | ❌ ignores VTODO entirely |
 
-Subscribing:
+Subscribing, with [todoman](https://github.com/pimutils/todoman):
 
-```console
-$ khal                      # ~/.config/khal/config
-[[calendars]]
-[[[todo]]]
-path = ~/.local/share/ratodo/todo.ics
-type = calendar
+```python
+# ~/.config/todoman/config.py
+path = "~/.local/share/ratodo"
+date_format = "%Y-%m-%d"
+time_format = "%H:%M"
 ```
 
-Thunderbird: **New Calendar → On My Computer**, then point it at the same file.
-Both read it; neither writes back, which is the whole design.
+```console
+$ todo list
+[ ] 1 !!! 2026-08-12 call the accountant  [home]
+[ ] 2     2026-08-13 09:30 book a dentist appointment  [health]
+```
+
+It goes read-only by itself, which is the whole design: ratodo owns the file.
+Thunderbird is **New Calendar → On My Computer**, pointed at the same file, and
+the entries land in Tasks rather than on the grid.
 
 Details: [`docs/calendar.md`](docs/calendar.md).
 

@@ -13,18 +13,27 @@ When it is written: after every `todo.md` write, and manually via `ratodo sync`.
 
 This section has to be read honestly, because it is where expectations break:
 
-| Client | Reads a local `.ics` file? | Note |
+**A calendar app and a todo app are not the same program**, and that is the
+whole of this section. We write VTODO; most of what people call "the calendar"
+draws VEVENT and nothing else.
+
+| Client | Shows ratodo's entries? | Note |
 |---|---|---|
-| khal | ✅ | Already file-based; you just point it at the directory |
-| Thunderbird | ✅ | "New Calendar → On My Computer / from file" |
+| todoman | ✅ | **Verified 2026-08-11.** Reads VTODO, which is what it is for. Point it straight at `~/.local/share/ratodo`; it goes read-only on its own because there is more than one todo in the file |
+| khal | ❌ | **Verified 2026-08-11 — this used to say ✅ and was wrong.** khal wants a *vdir* (a directory), not a file, and even given one it draws VEVENT only: a control VEVENT dropped into the same directory appeared, our five VTODOs did not |
+| Thunderbird | ⚠️ | "New Calendar → On My Computer / from file". It has a Tasks view, which is where these land — not the month grid. Not verified by us |
 | Evolution | ⚠️ | Varies by version; needs an "On This Computer" source |
-| GNOME Calendar | ⚠️ | Mostly expects `webcal://` / HTTPS; local files are unreliable |
+| GNOME Calendar | ❌ | Expects `webcal://` / HTTPS, and draws events |
 | Google Calendar | ❌ | Does not read local files, and **ignores VTODO entirely** |
 
-So producing the `.ics` is easy; **getting it subscribed is the user's job.** In
-v1 we generate the file and document the subscription steps for khal and
-Thunderbird in the README. No automatic registration, no talking to a calendar
-service over dbus.
+So producing the `.ics` is easy; **getting it subscribed is the user's job**, and
+picking a program that reads todos at all comes before that. In v1 we generate
+the file and document the steps for todoman in the README. No automatic
+registration, no talking to a calendar service over dbus.
+
+The `--as-events` flag on the [roadmap](roadmap.md) for v2 is the answer for the
+other half of that table, and this is the evidence that it is worth building:
+every ❌ above is a client that would have shown the same tasks as events.
 
 ## VTODO or VEVENT
 
@@ -91,6 +100,14 @@ the comma escape survives a round trip rather than splitting a summary in two,
 that a 130-character Turkish and emoji title unfolds back to itself, and that a
 timed task arrives as a floating datetime rather than one pinned to an offset.
 
-Still to do — khal or Thunderbird actually **displaying** it, which is a
-different question from parsing it, and the one that catches a client quietly
-ignoring VTODO.
+Done 2026-08-11 — a real client **displaying** it, which is a different
+question from parsing it, and the one that catches a client quietly ignoring
+VTODO. It caught one immediately: `todoman` lists all five tasks with their
+dates, times, categories and priorities, and a change made in ratodo shows up on
+the next `todo list` with no sync step in between; `khal`, which this document
+had listed as ✅ on nothing more than "it is file-based", shows none of them. The
+control that makes that a finding rather than a guess is a hand-written VEVENT
+dropped into the same directory with the same config — khal drew that one.
+
+Still to do — Thunderbird, whose Tasks view is a different code path from the
+month grid and is where these would land.
