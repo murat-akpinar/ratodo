@@ -468,13 +468,13 @@ task that is nearly a task you already have should be an edit, not a retype.
 │  └───────────────────────────────────────────────────────┘ │
 ```
 
-**It says `copy`, in the accent**, and that label is the whole design. `y` fills
+**It says `copy`**, and that label is the whole design. `y` fills
 the box the way `⏎` does and then means something else by it: what comes back is
 a **new** task, so the line it was copied from is not the line `⏎` rewrites.
-The label is the only thing on the screen that says so, which is why it is the
-one of the four that is lit — it said `add` until 2026-08-11, and a box filled
-from the row under the cursor that says `add` in the same grey as every other
-box is a box nobody reads the first word of. Nothing is written until `⏎`, and a
+The label is the only thing on the screen that says so — it said `add` until
+2026-08-11, and a box filled from the row under the cursor that says `add` is a
+box nobody reads the first word of. Every label is in the accent, so what makes
+this one read is the word and not the colour. Nothing is written until `⏎`, and a
 cancelled box leaves the file exactly as it was — which is the difference
 between this and a copy that lands first and is edited afterwards.
 

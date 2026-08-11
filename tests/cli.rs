@@ -1074,7 +1074,10 @@ fn the_input_mode_captures_a_task_and_ctrl_c_only_cancels_it() {
     // is the honest question here — and each keystroke redraws one cell, so what
     // is contiguous in the stream is what a frame painted in one go.
     let (raw, _, file) = run(b"amilk @tomorrow #home\x1bq");
-    assert!(raw.contains(" add ▏"), "no input field opened: {raw:?}");
+    // The label and the caret are two spans and no longer contiguous in the
+    // stream: the label is bold, so the reset sits between them.
+    assert!(raw.contains(" add"), "no input field opened: {raw:?}");
+    assert!(raw.contains("▏"), "no input field opened: {raw:?}");
     assert!(
         raw.contains("due tomorrow ("),
         "the preview never resolved the shorthand: {raw:?}"

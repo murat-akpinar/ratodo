@@ -336,6 +336,18 @@ no. Reopening one requires new information.
 
 ## Reversed
 
+### Only `copy` is lit → every label is (2026-08-12)
+
+**Was:** the input box's first word was dim for `add`, `edit` and `put off`, and
+in the accent only for `copy`, on the grounds that a label which is always lit is
+a label nobody reads. `copy` is the one with something to say — `⏎` will **not**
+rewrite the line the box was just filled from.
+
+**Now:** all four are in the accent. The box is a mode, the label is what names
+it, and a mode whose name is the dimmest thing in it is a mode you have to look
+for. `copy` keeps its job: what makes it read is the word, which is the only
+thing that ever carried the meaning — the colour only ever made someone glance.
+
 ### The input box opens empty → it opens on today (2026-08-12)
 
 **Was:** `a` gave you an empty line, and the date was one more thing to type.

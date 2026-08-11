@@ -1623,13 +1623,7 @@ fn addressed(name: &str, render: Render<'_>) -> Option<Span<'static>> {
 fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'static>>, usize) {
     let dim = Style::default().fg(render.colours.dim);
     let head = format!(" {} {}", input.purpose.label(), render.glyphs.field());
-    // `copy` is the one label worth looking at, because it is the one that says
-    // `⏎` will **not** rewrite the line it just filled the box with. The word
-    // carries that on its own — the colour is what makes somebody read it.
-    let label = match input.purpose {
-        Purpose::Copy => Style::default().fg(render.colours.accent).bold(),
-        _ => dim,
-    };
+    let label = Style::default().fg(render.colours.accent).bold();
     // The window is anchored on the caret, not on the end of the line: what is
     // before it fills the field from the right, and whatever room is left shows
     // what comes after.
@@ -4139,23 +4133,24 @@ mod tests {
         assert_eq!(input.purpose.raw(), None, "a copy rewrites no line");
         assert_eq!(input.at, input.text.len());
 
-        // And the box says so, in the accent, because "this is not the line you
-        // were looking at" is the one thing `y` has to get across.
-        let (lines, _) = input_lines(&input, 60, render(crate::theme::MOCHA));
-        let head = &lines[0].spans[0];
-        assert_eq!(head.content, " copy");
-        assert_eq!(head.style.fg, Some(crate::theme::MOCHA.accent));
-
-        // The other three stay quiet: a label that is always lit is a label
-        // nobody reads.
-        for purpose in [Purpose::Add, Purpose::Edit(String::new())] {
-            let plain = Input::new(String::new(), purpose);
-            let (lines, _) = input_lines(&plain, 60, render(crate::theme::MOCHA));
+        // And the box says so — "this is not the line you were looking at" is the
+        // one thing `y` has to get across, and the word is what carries it: every
+        // label is in the accent, so none of them is read for its colour.
+        for purpose in [
+            Purpose::Copy,
+            Purpose::Add,
+            Purpose::Edit(String::new()),
+            Purpose::Postpone(String::new()),
+        ] {
+            let box_ = Input::new(String::new(), purpose);
+            let (lines, _) = input_lines(&box_, 60, render(crate::theme::MOCHA));
+            let head = &lines[0].spans[0];
+            assert_eq!(head.content, format!(" {}", box_.purpose.label()));
             assert_eq!(
-                lines[0].spans[0].style.fg,
-                Some(crate::theme::MOCHA.dim),
+                head.style.fg,
+                Some(crate::theme::MOCHA.accent),
                 "{:?}",
-                plain.purpose
+                box_.purpose
             );
         }
     }
