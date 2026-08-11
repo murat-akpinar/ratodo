@@ -1,3 +1,8 @@
+## [unreleased]
+
+### ⚙️ Miscellaneous Tasks
+
+- Point the PKGBUILD at v0.7.1 ([24958c1](https://github.com/murat-akpinar/ratodo/commit/24958c1ffb2f19c45d51eed31bc910c36ae2ab6a))
 ## [0.7.1] - 2026-08-11
 
 ### 📚 Documentation
@@ -14,6 +19,7 @@
 ### ⚙️ Miscellaneous Tasks
 
 - Point the PKGBUILD at v0.7.0 ([1801138](https://github.com/murat-akpinar/ratodo/commit/1801138859cbe09a6a533d433d5e78edd5a30956))
+- *(release)* V0.7.1 ([e5124a7](https://github.com/murat-akpinar/ratodo/commit/e5124a755501d3c4dc0c09fd503f4ed626307374))
 ## [0.7.0] - 2026-08-11
 
 ### 🚀 Features
