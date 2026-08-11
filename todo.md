@@ -131,8 +131,9 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
       and it takes the frame and the punctuation with it
 - [~] The bottom line: hints and results done, the input field comes with the
       input mode
-- [~] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `r` · `q` done. `a o ⏎ d u h l z e ?`
-      still to come
+- [~] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `r` · `?` · `esc` · `q` done.
+      `a o ⏎ d u h l z e` still to come — and `e` is blocked on the event-loop
+      question in [notes.md](notes.md)
 - [ ] `h`/`l` fold the group under the cursor — lf/ranger/yazi muscle memory, not "fold LATER"
 - [ ] Input mode: `⏎` save, `esc` cancel, `ctrl-c` cancel (**never quit**), and nothing else can open it
 - [ ] **Live parse preview** under the input — `@thu` resolves as you type
@@ -141,8 +142,8 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
       keeping the typed text waits for the input mode
 - [ ] Selection survives reload — track by identity, not row index
 - [x] A toggled task does not change position until the next reload
-- [ ] Empty state with the file path and a worked example
-- [ ] `?` help overlay
+- [x] Empty state with the file path and a worked example
+- [x] `?` help overlay — only the keys that are built, and `esc` closes it
 - [x] Width breakpoints: ≥60 / 34–59 / <34, in the documented drop order
 - [x] Height under 10 rows: collapse the hint bar
 - [x] `NO_COLOR=1` on a bare TTY still reads correctly

@@ -6,7 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 
 use crate::agenda::{Counts, Group};
 use crate::model::Task;
@@ -23,6 +23,12 @@ pub enum Action {
     Bottom,
     Toggle,
     Reload,
+    /// Opens the key help, and closes it again — the only overlay in the
+    /// product, and the only place a popup is the right answer.
+    Help,
+    /// `esc`: closes the overlay, and does nothing at all otherwise. It must
+    /// never quit — somebody pressing it out of habit keeps their pane.
+    Close,
     /// A key that is bound to nothing on purpose but still owes an answer.
     /// Silence reads as a broken program — docs/tui.md#deliberately-unbound.
     Say(&'static str),
@@ -55,8 +61,12 @@ pub fn action(key: KeyEvent) -> Action {
         KeyCode::Char('u') if ctrl => Action::Move(-10),
         KeyCode::Char(' ') => Action::Toggle,
         KeyCode::Char('r') => Action::Reload,
+        KeyCode::Char('?') => Action::Help,
         // Bound to an answer rather than to nothing. A key that appears broken
         // is worse than one that explains itself.
+        // `esc` never quits, but while the overlay is up it is the obvious way
+        // to put it down, so the loop reads it as a second `?`.
+        KeyCode::Esc => Action::Close,
         KeyCode::Char(':') => Action::Say("no command mode — ? for keys"),
         KeyCode::Char('/') => Action::Say("search comes in v2"),
         _ => Action::Ignore,
@@ -284,10 +294,13 @@ impl Size {
 
 /// Everything the drawing needs that is not the list itself.
 #[derive(Debug, Clone, Copy)]
-pub struct Render {
+pub struct Render<'a> {
     pub colours: Theme,
     pub glyphs: Glyphs,
     pub today: NaiveDate,
+    /// Shown on the empty screen. The promise of this product is that the file
+    /// is yours, so you get told where it is on day one.
+    pub path: &'a str,
 }
 
 /// Display columns — not bytes, and not characters. `ş` is one column and `🚀`
@@ -349,7 +362,7 @@ fn when(task: &Task, today: NaiveDate, size: Size) -> String {
 /// The drop order is the one in docs/tui.md#width — tags, then priority, then
 /// the date shortens, then the title is cut. Tags go before dates because a date
 /// is actionable and a tag is a filter.
-fn task_line(task: &Task, width: usize, render: Render, size: Size) -> Line<'static> {
+fn task_line(task: &Task, width: usize, render: Render<'_>, size: Size) -> Line<'static> {
     let colour = task_colour(task, render.today, render.colours);
     let mark = render.glyphs.mark(task, render.today);
 
@@ -395,7 +408,7 @@ fn task_line(task: &Task, width: usize, render: Render, size: Size) -> Line<'sta
 /// A group heading with a rule out to the right edge. In a narrow pane the eye
 /// needs a horizontal anchor to find where a group starts; a bare word does not
 /// give it — docs/tui.md.
-fn header_line(title: &str, width: usize, render: Render) -> Line<'static> {
+fn header_line(title: &str, width: usize, render: Render<'_>) -> Line<'static> {
     let name = text::plain(title);
     let rule = width.saturating_sub(columns(&name) + 2);
     Line::from(vec![
@@ -447,8 +460,9 @@ pub fn draw(
     frame: &mut Frame,
     screen: &mut Screen,
     counts: Counts,
-    render: Render,
+    render: Render<'_>,
     notice: &Notice,
+    helping: bool,
 ) {
     let whole = frame.area();
     // One row held back, always. The list never moves to make room for a
@@ -494,6 +508,20 @@ pub fn draw(
     let cursor = render.glyphs.cursor();
     let width = (inner.width as usize).saturating_sub(columns(cursor));
 
+    if screen.rows.iter().all(|r| !matches!(r, Row::Task(_))) {
+        empty(frame, area, block, render);
+        if helping {
+            help(frame, area, render);
+        }
+        if let Some(bottom) = bottom {
+            frame.render_widget(
+                Paragraph::new(notice.line(size, whole.height, render.glyphs, render.colours)),
+                bottom,
+            );
+        }
+        return;
+    }
+
     let items: Vec<ListItem> = screen
         .rows
         .iter()
@@ -518,6 +546,9 @@ pub fn draw(
     }
 
     frame.render_stateful_widget(list, area, &mut screen.state);
+    if helping {
+        help(frame, area, render);
+    }
 
     if let Some(bottom) = bottom {
         frame.render_widget(
@@ -526,6 +557,100 @@ pub fn draw(
             bottom,
         );
     }
+}
+
+/// The keys, in a box over the middle of the list. This is the one overlay in
+/// the product and the only place a popup is the right answer: you asked for it,
+/// and it covers nothing you were half-way through reading — docs/tui.md#help.
+///
+/// Only the keys that do something. A help screen listing keys that are not
+/// built yet teaches the wrong thing twice.
+fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
+    const KEYS: [(&str, &str); 8] = [
+        ("j k  ↓ ↑", "move"),
+        ("g G", "top / bottom"),
+        ("ctrl-d ctrl-u", "half page"),
+        ("spc", "toggle done"),
+        ("r", "re-read the file"),
+        (":  /", "answer, for now"),
+        ("? esc", "this, and away again"),
+        ("q  ctrl-c", "quit"),
+    ];
+
+    let width = 40.min(area.width);
+    let height = (KEYS.len() as u16 + 4).min(area.height);
+    // Centred, and clamped: on a pane smaller than the box the box wins the
+    // space it has rather than drawing outside it.
+    let box_area = Rect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    );
+
+    let mut lines = vec![Line::raw("")];
+    for (keys, what) in KEYS {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {keys:<15}"),
+                Style::default().fg(render.colours.accent),
+            ),
+            Span::styled(what, Style::default().fg(render.colours.foreground)),
+        ]));
+    }
+
+    frame.render_widget(Clear, box_area);
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .border_set(render.glyphs.border())
+                .border_style(Style::default().fg(render.colours.accent))
+                .title(" keys ")
+                .style(Style::default().bg(render.colours.background)),
+        ),
+        box_area,
+    );
+}
+
+/// The first thing a new user sees, so it teaches rather than apologises. The
+/// worked example is doing the real work: it shows `@` and `#` in use, which
+/// lands faster than any syntax table — docs/tui.md#empty.
+fn empty(frame: &mut Frame, area: Rect, block: Option<Block<'_>>, render: Render<'_>) {
+    let inner = block.as_ref().map_or(area, |b| b.inner(area));
+    if let Some(block) = block {
+        frame.render_widget(block, area);
+    }
+
+    let dim = Style::default().fg(render.colours.dim);
+    let lines = vec![
+        Line::raw(""),
+        Line::styled(
+            "  Nothing here yet.",
+            Style::default().fg(render.colours.foreground),
+        ),
+        Line::raw(""),
+        Line::styled("  a          add your first task", dim),
+        // Shortened rather than left to run into the frame: a `--file` path can
+        // be arbitrarily long, and a broken right edge on the very first screen
+        // somebody sees is a poor introduction.
+        Line::styled(
+            format!(
+                "  e          open {} in $EDITOR",
+                shorten(render.path, (inner.width as usize).saturating_sub(31))
+            ),
+            dim,
+        ),
+        Line::raw(""),
+        Line::styled(
+            "  Try:  a  then  buy milk @tomorrow #home",
+            Style::default().fg(render.colours.accent),
+        ),
+    ];
+
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(render.colours.background)),
+        inner,
+    );
 }
 
 /// `5 open · 1 overdue` while it fits, `5 · 1!` when it does not — and the same
@@ -564,11 +689,12 @@ mod tests {
         NaiveDate::from_ymd_opt(2026, 8, 10).unwrap()
     }
 
-    fn render(colours: Theme) -> Render {
+    fn render(colours: Theme) -> Render<'static> {
         Render {
             colours,
             glyphs: Glyphs::Unicode,
             today: today(),
+            path: "~/.config/ratodo/todo.md",
         }
     }
 
@@ -637,9 +763,12 @@ mod tests {
     /// matters: pressed out of habit, it must not take the pane down with it.
     #[test]
     fn the_deliberately_unbound_keys_do_nothing() {
-        for code in [KeyCode::Esc, KeyCode::Char('x'), KeyCode::Char('Q')] {
+        for code in [KeyCode::Char('x'), KeyCode::Char('Q'), KeyCode::Char('z')] {
             assert_eq!(action(press(code)), Action::Ignore, "{code:?}");
         }
+        // `esc` is the one that matters. It closes the overlay and does nothing
+        // else — never, under any circumstances, quit.
+        assert_eq!(action(press(KeyCode::Esc)), Action::Close);
     }
 
     /// `:` and `/` are unbound but not silent. A key that appears broken is
@@ -654,6 +783,183 @@ mod tests {
             action(press(KeyCode::Char('/'))),
             Action::Say("search comes in v2")
         );
+    }
+
+    #[test]
+    fn the_help_overlay_opens_and_closes_on_the_keys_that_should() {
+        assert_eq!(action(press(KeyCode::Char('?'))), Action::Help);
+        assert_eq!(action(press(KeyCode::Esc)), Action::Close);
+    }
+
+    /// The overlay covers the list and gives it back. Anything left behind on
+    /// the second draw is a smear the user has to `r` away.
+    #[test]
+    fn the_overlay_covers_the_list_and_leaves_no_trace() {
+        let tasks = tasks(&["pay the invoice @2026-08-01", "call the bank"]);
+        let groups = agenda(&tasks, today());
+        let counts = Counts::of(&tasks, today());
+
+        let paint_help = |helping: bool| {
+            let mut screen = Screen::new(rows(&groups));
+            let mut terminal = Terminal::new(TestBackend::new(60, 16)).unwrap();
+            terminal
+                .draw(|f| {
+                    draw(
+                        f,
+                        &mut screen,
+                        counts,
+                        render(crate::theme::MOCHA),
+                        &Notice::Hints,
+                        helping,
+                    )
+                })
+                .unwrap();
+            terminal
+                .backend()
+                .buffer()
+                .content()
+                .chunks(60)
+                .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
+                .collect::<Vec<String>>()
+        };
+
+        let plain = paint_help(false);
+        let helped = paint_help(true);
+
+        assert!(helped.iter().any(|r| r.contains("keys")), "{helped:?}");
+        assert!(
+            helped.iter().any(|r| r.contains("toggle done")),
+            "{helped:?}"
+        );
+        assert_ne!(plain, helped, "the overlay drew nothing");
+        assert_eq!(
+            plain,
+            paint_help(false),
+            "closing it did not give the list back"
+        );
+    }
+
+    /// Where the box sits, pinned. Centring is four pieces of arithmetic and
+    /// every one of them survived a mutation while the tests only asked whether
+    /// the words were on screen somewhere.
+    #[test]
+    fn the_help_box_is_centred_exactly() {
+        let tasks = tasks(&["a @2026-08-01"]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let mut terminal = Terminal::new(TestBackend::new(48, 14)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    Counts::default(),
+                    render(crate::theme::MOCHA),
+                    &Notice::Hints,
+                    true,
+                )
+            })
+            .unwrap();
+
+        let rows: Vec<String> = terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(48)
+            .map(|r| r.iter().map(|c| c.symbol()).collect())
+            .collect();
+
+        assert_eq!(
+            rows,
+            [
+                "┌ ra┌ keys ────────────────────────────────┐───┐",
+                "│  O│                                      │── │",
+                "│▌ !│  j k  ↓ ↑       move                 │ago│",
+                "│   │  g G            top / bottom         │   │",
+                "│   │  ctrl-d ctrl-u  half page            │   │",
+                "│   │  spc            toggle done          │   │",
+                "│   │  r              re-read the file     │   │",
+                "│   │  :  /           answer, for now      │   │",
+                "│   │  ? esc          this, and away again │   │",
+                "│   │  q  ctrl-c      quit                 │   │",
+                "│   │                                      │   │",
+                "│   └──────────────────────────────────────┘   │",
+                "└──────────────────────────────────────────────┘",
+                " j k  spc  r  ?  q                              ",
+            ]
+        );
+    }
+
+    /// The snapshot above is one pane height, and at that height the vertical
+    /// centring happens to come out as zero — which leaves the arithmetic free
+    /// to be anything. This walks it down three panes.
+    #[test]
+    fn the_help_box_sits_lower_as_the_pane_gets_taller() {
+        let tasks = tasks(&["a @2026-08-01"]);
+        let groups = agenda(&tasks, today());
+
+        for (height, top) in [(14u16, 0usize), (16, 1), (20, 3)] {
+            let mut screen = Screen::new(rows(&groups));
+            let mut terminal = Terminal::new(TestBackend::new(48, height)).unwrap();
+            terminal
+                .draw(|f| {
+                    draw(
+                        f,
+                        &mut screen,
+                        Counts::default(),
+                        render(crate::theme::MOCHA),
+                        &Notice::Hints,
+                        true,
+                    )
+                })
+                .unwrap();
+
+            let at = terminal
+                .backend()
+                .buffer()
+                .content()
+                .chunks(48)
+                .map(|r| r.iter().map(|c| c.symbol()).collect::<String>())
+                .position(|r| r.contains(" keys "))
+                .unwrap_or_else(|| panic!("no overlay at {height} rows"));
+            assert_eq!(at, top, "at {height} rows");
+        }
+    }
+
+    /// Only the keys that work. A help screen listing an unimplemented key
+    /// teaches the wrong thing and then breaks the promise it just made.
+    #[test]
+    fn the_help_lists_nothing_that_is_not_built() {
+        let tasks = tasks(&["a"]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let mut terminal = Terminal::new(TestBackend::new(60, 16)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    Counts::default(),
+                    render(crate::theme::MOCHA),
+                    &Notice::Hints,
+                    true,
+                )
+            })
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+
+        for unbuilt in ["delete", "undo", "$EDITOR", "fold", "edit"] {
+            assert!(
+                !text.contains(unbuilt),
+                "{unbuilt} is advertised but absent"
+            );
+        }
     }
 
     #[test]
@@ -862,7 +1168,16 @@ mod tests {
         let counts = Counts::of(tasks, today());
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render(crate::theme::MOCHA), notice))
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    counts,
+                    render(crate::theme::MOCHA),
+                    notice,
+                    false,
+                )
+            })
             .unwrap();
         terminal
             .backend()
@@ -1065,14 +1380,13 @@ mod tests {
         let mut screen = Screen::new(rows(&groups));
         let counts = Counts::of(&tasks, today());
         let render = Render {
-            colours: crate::theme::MOCHA,
             glyphs: Glyphs::Ascii,
-            today: today(),
+            ..render(crate::theme::MOCHA)
         };
 
         let mut terminal = Terminal::new(TestBackend::new(62, 8)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render, &Notice::Hints))
+            .draw(|f| draw(f, &mut screen, counts, render, &Notice::Hints, false))
             .unwrap();
         let text: String = terminal
             .backend()
@@ -1155,6 +1469,7 @@ mod tests {
                     counts,
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
+                    false,
                 )
             })
             .unwrap();
@@ -1180,7 +1495,16 @@ mod tests {
         let counts = Counts::of(tasks, today());
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render(colours), &Notice::Hints))
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    counts,
+                    render(colours),
+                    &Notice::Hints,
+                    false,
+                )
+            })
             .unwrap();
 
         // Cell by cell, not by searching a flattened string: `│` and `─` are
@@ -1252,7 +1576,7 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render(plain), &Notice::Hints))
+            .draw(|f| draw(f, &mut screen, counts, render(plain), &Notice::Hints, false))
             .unwrap();
 
         for cell in terminal.backend().buffer().content() {
@@ -1356,6 +1680,96 @@ mod tests {
 
         assert_eq!(quiet[..8], noisy[..8], "the list moved to make room");
         assert!(noisy[8].contains("careful"), "{noisy:?}");
+    }
+
+    /// The first thing a new user sees. It has to teach — and it has to say
+    /// where the file is, because the promise of this product is that the file
+    /// is theirs.
+    #[test]
+    fn an_empty_list_teaches_instead_of_apologising() {
+        let screen = rendered(60, 12, &[]);
+        let text = screen.join("\n");
+
+        assert!(text.contains("Nothing here yet"), "{text}");
+        assert!(
+            text.contains("~/.config/ratodo/todo.md"),
+            "the path is missing: {text}"
+        );
+        assert!(
+            text.contains("buy milk @tomorrow #home"),
+            "the worked example is what actually teaches the syntax: {text}"
+        );
+        assert!(text.contains("$EDITOR"), "{text}");
+    }
+
+    /// A `--file` path can be arbitrarily long. It gets shortened, because a
+    /// broken right edge on the first screen somebody sees is a poor
+    /// introduction.
+    #[test]
+    fn a_long_path_on_the_empty_screen_does_not_break_the_frame() {
+        let long = "/home/somebody/very/deeply/nested/dotfiles/config/ratodo/todo.md";
+        let counts = Counts::default();
+        let mut screen = Screen::new(vec![]);
+        let mut terminal = Terminal::new(TestBackend::new(50, 12)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    counts,
+                    Render {
+                        path: long,
+                        ..render(crate::theme::MOCHA)
+                    },
+                    &Notice::Hints,
+                    false,
+                )
+            })
+            .unwrap();
+
+        let rows: Vec<String> = terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(50)
+            .map(|r| r.iter().map(|c| c.symbol()).collect())
+            .collect();
+
+        let frame = rows.len() - 2;
+        for row in &rows[1..frame] {
+            assert!(row.ends_with('│'), "the frame broke: {rows:?}");
+        }
+        assert!(rows.iter().any(|r| r.contains('…')), "{rows:?}");
+    }
+
+    /// A file whose tasks are all filtered away is still a list, not an empty
+    /// one — but a document of nothing but prose has nothing to show.
+    #[test]
+    fn a_document_with_no_tasks_at_all_gets_the_empty_screen() {
+        let with_headers = Screen::new(vec![Row::Header("Work".into()), Row::Spacer]);
+        let counts = Counts::default();
+        let mut screen = with_headers;
+        let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    counts,
+                    render(crate::theme::MOCHA),
+                    &Notice::Hints,
+                    false,
+                )
+            })
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(text.contains("Nothing here yet"), "{text}");
     }
 
     /// A pane can be dragged down to one row. Holding a line back out of two is

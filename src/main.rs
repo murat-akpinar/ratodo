@@ -299,10 +299,12 @@ fn watch(path: &Path, tx: std::sync::mpsc::Sender<Msg>) -> Option<notify::Recomm
 }
 
 fn tui(path: &Path, theme_flag: Option<&str>) -> Result<ExitCode> {
+    let shown_path = path.display().to_string();
     let render = ui::Render {
         colours: active_theme(theme_flag),
         glyphs: ui::Glyphs::for_locale(locale().as_deref()),
         today: Local::now().date_naive(),
+        path: &shown_path,
     };
     let mut live = Live::read(path, render.today)?;
 
@@ -431,13 +433,23 @@ fn run(
     live: &mut Live,
     path: &Path,
     rx: &std::sync::mpsc::Receiver<Msg>,
-    render: ui::Render,
+    render: ui::Render<'_>,
 ) -> Result<ExitCode> {
     let today = render.today;
     let mut notice = ui::Notice::Hints;
+    let mut helping = false;
 
     loop {
-        terminal.draw(|frame| ui::draw(frame, &mut live.screen, live.counts, render, &notice))?;
+        terminal.draw(|frame| {
+            ui::draw(
+                frame,
+                &mut live.screen,
+                live.counts,
+                render,
+                &notice,
+                helping,
+            )
+        })?;
 
         match rx.recv().context("both event sources went away")? {
             Msg::InputGone => return Ok(ExitCode::SUCCESS),
@@ -467,6 +479,10 @@ fn run(
                         live.reload(path, today)?;
                         notice = ui::Notice::Said("reloaded".to_string());
                     }
+                    ui::Action::Help => helping = !helping,
+                    // `esc` puts the overlay down and otherwise does nothing at
+                    // all. It must never quit.
+                    ui::Action::Close => helping = false,
                     ui::Action::Say(what) => notice = ui::Notice::Said(what.to_string()),
                     ui::Action::Ignore => {}
                 }
