@@ -794,6 +794,14 @@ impl Live {
         Ok(ui::Notice::Said(format!("undone: {what}")))
     }
 
+    /// Whether the watcher's news is ours to act on.
+    ///
+    /// `changed` comes first and the `&&` is load-bearing: `stale` reads every
+    /// list off disk, and the loop must not do that twice a second for nothing.
+    fn wants_reload(&self, changed: bool) -> bool {
+        changed && self.stale()
+    }
+
     /// Whether any list on disk says something other than what we last read or
     /// wrote there. Our own save wakes the watcher too, and re-reading it would
     /// throw away the in-place update that keeps a ticked task from jumping.
@@ -938,7 +946,7 @@ fn run(
             changed = true;
         }
 
-        if changed && live.stale() {
+        if live.wants_reload(changed) {
             live.reload(paths, today)?;
             redraw = true;
         }
@@ -1715,6 +1723,12 @@ mod tests {
         // Somebody else's does.
         std::fs::write(dir.join("work.md"), "- [ ] theirs\n- [ ] and mine\n").unwrap();
         assert!(live.stale(), "an outside edit went unnoticed");
+
+        // And the loop only asks the disk when the watcher said something: the
+        // check reads every list, and doing that on every idle wake-up is the
+        // "no fixed FPS" rule broken by the back door.
+        assert!(live.wants_reload(true));
+        assert!(!live.wants_reload(false), "the disk was read for nothing");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
