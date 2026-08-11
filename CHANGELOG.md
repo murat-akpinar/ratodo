@@ -34,6 +34,8 @@ Two screens from docs/tui.md. The empty one teaches instead of apologising: the 
 The keys `lf`, `ranger` and `yazi` users arrive with: `h` collapses the group under the cursor, `l` opens it, `z` does whichever is the opposite of now.
 - *(ui)* Delete with d, take it back with u ([97d615e](https://github.com/murat-akpinar/ratodo/commit/97d615e1a36a40347ef5f030076de8bb9df290cd))
 `d` removes the selected task immediately and `u` puts it back — the trade docs/tui.md makes, where a confirmation prompt would tax every delete to catch the rare wrong one.
+- *(ui)* Input mode, with a live parse preview ([59cdbd0](https://github.com/murat-akpinar/ratodo/commit/59cdbd006044488a68f1608e69f4d4c12fce1673))
+`a` and `o` open a field on the bottom line and `⏎` opens it already holding the selected task. While it is open the keyboard belongs to it — `q` and `d` are letters in there, which is what makes "you can never be in a mode you did not open" true by construction. `esc` and `ctrl-c` both cancel, and `ctrl-c` in here never quits: somebody half-way through a sentence loses the sentence, not the session.
 
 ### 🐛 Bug Fixes
 
