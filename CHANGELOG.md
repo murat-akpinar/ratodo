@@ -52,6 +52,8 @@ The date column is where the lateness is, and it was the one field saying so in 
 The bottom line was chosen so the screen would not change under the reader, and it was right about the wrong thing. This tool lives in a pane in the corner of a tiling layout, which puts that line at the bottom edge of the screen: every capture meant looking down there, away from the row being worked on. The head movement is the interruption.
 - *(ui)* Colour the input field by what the parser took ([2eb9ef2](https://github.com/murat-akpinar/ratodo/commit/2eb9ef250b35b1e3bed4ab98d18eb2f229ec9132))
 The structure of the shorthand was only visible in the preview under the field, a word at a time after the fact. It is on the words themselves now: @thu and the time it took go accent, #home goes tag, !high goes bold, and a @notaday stays plain text because that is what the file will hold.
+- *(ui)* Teach the empty screen with the box it will be typed into ([f7341a9](https://github.com/murat-akpinar/ratodo/commit/f7341a98178d75b0679f73c3026250fc73af64b6))
+The example was a line of text. It is now the same input box `a` opens, drawn by the same code, so the live parse under it already reads the shorthand back as a date. Below ten rows it goes back to a line — the example is the last thing a short pane loses.
 
 ### 🐛 Bug Fixes
 
