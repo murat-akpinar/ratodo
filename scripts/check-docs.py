@@ -21,7 +21,9 @@ def slug(text):
             out.append(ch)
         elif unicodedata.category(ch).startswith('M'):
             out.append(ch)
-    return re.sub(r'\s+', '-', ''.join(out).strip())
+    # GitHub hyphenates each space separately: "a — b" -> "a--b" (the dash is
+    # dropped above, both surrounding spaces are not). Do not collapse runs.
+    return re.sub(r'\s', '-', ''.join(out).strip())
 
 def anchors(path):
     found, in_fence = set(), False
