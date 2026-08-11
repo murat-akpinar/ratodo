@@ -219,9 +219,12 @@ side pane turns into a dashboard nobody leaves open.
       **done**: it is bold and in the row's own colour. Weight, not a twelfth
       theme role, so it still reads under `NO_COLOR`. `!med` and `!low` unchanged
 - [ ] Empty screen and `?` overlay — both correct and both plain
-- [ ] Decide what to do about the help overlay's `↓ ↑` under a non-UTF-8 locale.
+- [x] Decide what to do about the help overlay's `↓ ↑` under a non-UTF-8 locale.
       The main screen goes fully ASCII and the overlay does not; the buffer test
-      never covered it because it does not open the overlay
+      never covered it because it does not open the overlay —
+      **done**: `down up` and `ret`, and the test now opens the overlay. Two more
+      escapes went with it: the `…` on a cut title and the `·` in the input
+      preview. `LC_ALL=C` now puts nothing non-ASCII on the screen
 
 ## Open questions blocking nothing
 

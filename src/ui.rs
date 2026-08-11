@@ -90,7 +90,7 @@ pub fn action(key: KeyEvent) -> Action {
         // `esc` never quits, but while the overlay is up it is the obvious way
         // to put it down, so the loop reads it as a second `?`.
         KeyCode::Esc => Action::Close,
-        KeyCode::Char(':') => Action::Say("no command mode — ? for keys"),
+        KeyCode::Char(':') => Action::Say("no command mode - ? for keys"),
         KeyCode::Char('/') => Action::Say("search comes in v2"),
         _ => Action::Ignore,
     }
@@ -580,6 +580,25 @@ impl Glyphs {
         }
     }
 
+    /// The arrow keys, as the help overlay names them. Two words in ASCII: a
+    /// key help that shows a key the terminal cannot draw is the one screen
+    /// where the fallback matters most.
+    fn arrows(self) -> &'static str {
+        match self {
+            Glyphs::Unicode => "↓ ↑",
+            Glyphs::Ascii => "down up",
+        }
+    }
+
+    /// What a cut title ends in. Three columns in ASCII rather than one, which
+    /// `shorten` has to hold back rather than assume.
+    fn ellipsis(self) -> &'static str {
+        match self {
+            Glyphs::Unicode => "…",
+            Glyphs::Ascii => "...",
+        }
+    }
+
     /// The tick on its own, for the count in a narrow title bar.
     fn tick(self) -> &'static str {
         match self {
@@ -679,29 +698,24 @@ fn columns(text: &str) -> usize {
     Span::raw(text).width()
 }
 
-/// Cuts to `limit` columns, ending in `…`. The title is the last thing to be
-/// shortened and never goes below twelve columns: a row you cannot identify is
-/// not a row, it is noise.
-fn shorten(text: &str, limit: usize) -> String {
+/// Cuts to `limit` columns, ending in the ellipsis. The title is the last thing
+/// to be shortened and never goes below twelve columns: a row you cannot
+/// identify is not a row, it is noise.
+///
+/// The marker is a glyph like any other — `...` costs three columns where `…`
+/// costs one, so what is held back is measured rather than assumed.
+fn shorten(text: &str, limit: usize, glyphs: Glyphs) -> String {
     if columns(text) <= limit {
         return text.to_string();
     }
-    if limit == 0 {
-        return String::new();
+    let ellipsis = glyphs.ellipsis();
+    // Not even room for the marker, so there is nothing to mark: a cell of dots
+    // says less than a cell of the title does.
+    if limit <= columns(ellipsis) {
+        return lead(text, limit);
     }
-
-    let mut out = String::new();
-    let mut used = 0;
-    for c in text.chars() {
-        let w = columns(c.encode_utf8(&mut [0u8; 4]));
-        // One column is held back for the ellipsis.
-        if used + w > limit - 1 {
-            break;
-        }
-        out.push(c);
-        used += w;
-    }
-    out.push('…');
+    let mut out = lead(text, limit - columns(ellipsis));
+    out.push_str(ellipsis);
     out
 }
 
@@ -934,7 +948,7 @@ fn task_line(
         (room, width.saturating_sub(mark_width + right_width))
     };
 
-    let title = shorten(&text::plain(&task.title), for_title);
+    let title = shorten(&text::plain(&task.title), for_title, render.glyphs);
     let gap = pad_to.saturating_sub(columns(&title));
 
     let mut spans = vec![
@@ -1076,7 +1090,8 @@ fn input_lines(
     ]);
 
     let parsed = crate::capture::capture(&input.text, render.today);
-    let left = format!("      {}", crate::text::fields(&parsed, render.today));
+    let (_, dot) = render.glyphs.punctuation();
+    let left = format!("      {}", crate::text::fields(&parsed, render.today, dot));
     let keys = format!("{} save   esc cancel", render.glyphs.enter());
 
     let room = columns(&left) + columns(&keys) + 3;
@@ -1225,21 +1240,24 @@ pub fn draw(
 /// Only the keys that do something. A help screen listing keys that are not
 /// built yet teaches the wrong thing twice.
 fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
-    const KEYS: [(&str, &str); 11] = [
-        ("j k  ↓ ↑", "move"),
-        ("g G", "top / bottom"),
-        ("ctrl-d ctrl-u", "half page"),
-        ("spc", "toggle done"),
-        ("a o  ⏎", "add / edit"),
-        ("d  u", "delete / undo"),
-        ("h l  z", "fold this group"),
+    // Two of these carry a glyph, and the overlay is the one screen where a
+    // character the terminal cannot draw does the most damage: it is the screen
+    // somebody opens *because* they are lost — docs/tui.md#no-colour-no-nerd-font.
+    let keys: [(String, &str); 11] = [
+        (format!("j k  {}", render.glyphs.arrows()), "move"),
+        ("g G".to_string(), "top / bottom"),
+        ("ctrl-d ctrl-u".to_string(), "half page"),
+        ("spc".to_string(), "toggle done"),
+        (format!("a o  {}", render.glyphs.enter()), "add / edit"),
+        ("d  u".to_string(), "delete / undo"),
+        ("h l  z".to_string(), "fold this group"),
         // Two keys to a row, so that the box still fits a fourteen-row pane.
         // At twelve rows of keys the border takes `q  ctrl-c` off the bottom,
         // and a help screen that cuts off at quit is worse than none.
-        ("e  r", "$EDITOR / re-read"),
-        (":  /", "answer, for now"),
-        ("? esc", "this, and away again"),
-        ("q  ctrl-c", "quit"),
+        ("e  r".to_string(), "$EDITOR / re-read"),
+        (":  /".to_string(), "answer, for now"),
+        ("? esc".to_string(), "this, and away again"),
+        ("q  ctrl-c".to_string(), "quit"),
     ];
 
     let width = 40.min(area.width);
@@ -1247,7 +1265,7 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
     // is the difference between the box fitting a 14-row pane and `q  ctrl-c`
     // being the line that falls off it. A help screen that cuts off at quit is
     // worse than no help screen.
-    let height = (KEYS.len() as u16 + 2).min(area.height);
+    let height = (keys.len() as u16 + 2).min(area.height);
     // Centred, and clamped: on a pane smaller than the box the box wins the
     // space it has rather than drawing outside it.
     let box_area = Rect::new(
@@ -1257,8 +1275,8 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
         height,
     );
 
-    let mut lines = Vec::with_capacity(KEYS.len());
-    for (keys, what) in KEYS {
+    let mut lines = Vec::with_capacity(keys.len());
+    for (keys, what) in keys {
         lines.push(Line::from(vec![
             Span::styled(
                 format!("  {keys:<15}"),
@@ -1305,7 +1323,11 @@ fn empty(frame: &mut Frame, area: Rect, block: Option<Block<'_>>, render: Render
         Line::styled(
             format!(
                 "  e          open {} in $EDITOR",
-                shorten(render.path, (inner.width as usize).saturating_sub(31))
+                shorten(
+                    render.path,
+                    (inner.width as usize).saturating_sub(31),
+                    render.glyphs,
+                )
             ),
             dim,
         ),
@@ -1521,7 +1543,7 @@ mod tests {
     fn the_keys_with_nothing_behind_them_still_answer() {
         assert_eq!(
             action(press(KeyCode::Char(':'))),
-            Action::Say("no command mode — ? for keys")
+            Action::Say("no command mode - ? for keys")
         );
         assert_eq!(
             action(press(KeyCode::Char('/'))),
@@ -2167,6 +2189,54 @@ mod tests {
         assert!(text.is_ascii(), "something non-ASCII reached the screen");
     }
 
+    /// The fallback used to stop at the edge of the overlay: `↓ ↑` and `⏎` were
+    /// written into it as literals, and the buffer test above never caught it
+    /// because it does not open the overlay. So this one opens **everything** —
+    /// the help box, the input with its preview, and a title long enough to be
+    /// cut, since the ellipsis is a glyph like any other.
+    #[test]
+    fn the_ascii_fallback_reaches_the_overlay_and_everything_under_it() {
+        let mut long = capture("a @2026-08-09 !high #ops", today());
+        long.title = "an extremely long task title that will not fit in the pane".into();
+        let tasks = [long];
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let render = Render {
+            glyphs: Glyphs::Ascii,
+            ..render(crate::theme::MOCHA)
+        };
+        // Two fields, so the preview line has to put a separator between them.
+        // (The overlay covers the cut title itself; `shorten` is tested with
+        // both glyph sets on its own.)
+        let input = Input::new("buy milk @thu #home".to_string(), None);
+
+        let mut terminal = Terminal::new(TestBackend::new(60, 16)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    Counts::of(&tasks, today()),
+                    render,
+                    &Notice::Hints,
+                    true,
+                    Some(&input),
+                )
+            })
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+
+        assert!(text.contains("down up"), "the arrow keys: {text}");
+        assert!(text.contains("ret"), "the enter key: {text}");
+        assert!(text.is_ascii(), "something non-ASCII reached the screen");
+    }
+
     /// Where the title gets cut, pinned to the column. The two snapshots above
     /// use short titles, which leaves the gap arithmetic free to be wrong by a
     /// column in either direction without anything noticing.
@@ -2709,11 +2779,18 @@ mod tests {
 
     #[test]
     fn shortening_counts_columns_not_bytes() {
-        assert_eq!(shorten("hello", 10), "hello");
-        assert_eq!(shorten("hello there", 8), "hello t…");
-        assert_eq!(shorten("şşşşş", 3), "şş…");
-        assert_eq!(shorten("🚀🚀🚀", 5), "🚀🚀…");
-        assert_eq!(shorten("anything", 0), "");
+        assert_eq!(shorten("hello", 10, Glyphs::Unicode), "hello");
+        assert_eq!(shorten("hello there", 8, Glyphs::Unicode), "hello t…");
+        assert_eq!(shorten("şşşşş", 3, Glyphs::Unicode), "şş…");
+        assert_eq!(shorten("🚀🚀🚀", 5, Glyphs::Unicode), "🚀🚀…");
+        assert_eq!(shorten("anything", 0, Glyphs::Unicode), "");
+
+        // Three columns rather than one, and it is held back rather than
+        // assumed: `...` where `…` fitted cuts two more columns of title.
+        assert_eq!(shorten("hello there", 8, Glyphs::Ascii), "hello...");
+        assert_eq!(shorten("hello", 10, Glyphs::Ascii), "hello");
+        // No room for the marker: the title is worth more than the dots.
+        assert_eq!(shorten("hello", 2, Glyphs::Ascii), "he");
         assert_eq!(columns("şğüöç"), 5);
         assert_eq!(columns("🚀"), 2);
     }

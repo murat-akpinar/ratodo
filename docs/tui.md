@@ -229,7 +229,7 @@ The one case where the tool must interrupt, because the alternative is losing
 someone's work:
 
 ```
- ⚠ changed on disk — nothing was written.  r reload
+ ⚠ changed on disk - nothing was written.  r reload
 ```
 
 Ordinary external changes never reach this screen — inotify re-reads the file and
@@ -449,6 +449,18 @@ becomes `+ - |`, the group rules become `-`, and the `—` and `·` in the title
 become `-` and `/`. A fallback that leaves box-drawing characters in the border
 is not a fallback; it is the same broken screen with tidier checkboxes. The test
 for it asserts the entire buffer `is_ascii()` rather than checking three symbols.
+
+**The whole screen includes the help overlay**, which is where it used to stop:
+`↓ ↑` and `⏎` were written into the key list as literals, and the buffer test
+never caught it because it does not open the overlay. It is the one screen
+somebody opens *because* they are lost, so a key it cannot draw is the worst
+place to put one. The arrows become `down up`, `⏎` becomes `ret` as it does
+everywhere else, and the test now opens the overlay, the input and its preview
+together. The other two that escaped: the `…` on a cut title, now `...` — three
+columns, held back rather than assumed — and the `·` between the fields of the
+input preview, which becomes `/` like the one in the title bar. The messages that
+carried an `—` were reworded rather than made switchable; the bottom line is the
+one place a warning has to be readable however the terminal is set up.
 
 ## Rules that keep it comfortable in a side pane
 

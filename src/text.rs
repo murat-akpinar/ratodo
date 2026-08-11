@@ -94,7 +94,11 @@ pub fn status_json(counts: Counts) -> String {
 /// Everything a capture understood except the title: the date resolved, the
 /// tags, the priority. `ratodo add` prints it after the title, and the TUI's
 /// input preview shows it on its own while the sentence is still being typed.
-pub fn fields(task: &Task, today: NaiveDate) -> String {
+///
+/// The separator is the caller's, because the two callers do not agree on it:
+/// the TUI has to fall back to ASCII when the locale is not UTF-8, and stdout
+/// does not — docs/tui.md#no-colour-no-nerd-font.
+pub fn fields(task: &Task, today: NaiveDate, dot: &str) -> String {
     let mut parts = Vec::new();
     if let Some(due) = task.due {
         parts.push(format!("due {}", relative(due, today)));
@@ -105,13 +109,13 @@ pub fn fields(task: &Task, today: NaiveDate) -> String {
     if let Some(p) = task.priority {
         parts.push(p.as_str().to_string());
     }
-    parts.join("  ·  ")
+    parts.join(&format!("  {dot}  "))
 }
 
 /// The one line `ratodo add` prints before getting out of the way.
 pub fn added(task: &Task, today: NaiveDate) -> String {
     let title = format!("added: {}", plain(&task.title));
-    match fields(task, today) {
+    match fields(task, today, "·") {
         rest if rest.is_empty() => title,
         rest => format!("{title}  ·  {rest}"),
     }

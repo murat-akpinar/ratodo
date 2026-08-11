@@ -474,7 +474,7 @@ impl Live {
             Err(e) if e.downcast_ref::<write::Conflict>().is_some() => {
                 self.doc = before;
                 Ok(Some(ui::Notice::Warned(
-                    "changed on disk — nothing was written.  r reload".to_string(),
+                    "changed on disk - nothing was written.  r reload".to_string(),
                 )))
             }
             Err(e) => {
@@ -607,7 +607,7 @@ impl Live {
             // Nothing is merged and nothing is overwritten — docs/tui.md#write-conflict.
             self.reload(path, today)?;
             return Ok(ui::Notice::Warned(
-                "changed on disk — re-read, ⏎ to save again".to_string(),
+                "changed on disk - re-read, then save again".to_string(),
             ));
         }
 

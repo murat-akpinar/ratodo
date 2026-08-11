@@ -96,6 +96,12 @@ Three lists: what is settled, what was rejected, and what is still open.
   survives the ASCII fallback. The alternatives — dropping the rule from the
   user's headings, or indenting ours — each spent a level of hierarchy the
   design does not have. See [tui.md](tui.md#main-screen).
+- ✅ **The ASCII fallback covers the overlay too** *(2026-08-11)*. `↓ ↑` and `⏎`
+  were literals in the key list, `…` was a literal in `shorten`, and `·` came out
+  of `text::fields`. The separator is now the caller's, because stdout does not
+  fall back and the screen does. Warnings that carried an `—` were reworded
+  instead: the bottom line has to read on any terminal. See
+  [tui.md](tui.md#no-colour-no-nerd-font).
 - ✅ **`!high` is bold, and that is all it gets** *(2026-08-11)*. The one field
   the user typed to mean *urgent* sat in the same grey as the date and the tags.
   Weight rather than a twelfth theme role: a priority colour would have to be
