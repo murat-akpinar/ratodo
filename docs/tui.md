@@ -43,21 +43,18 @@ that changes shape, and it is doing the job vim's status line does:
 | Shows | When |
 |---|---|
 | key hints | default |
-| an input field | while adding or editing |
+| `⏎ save   esc cancel` | while the input box is open |
 | a result message + undo | just after an action |
 | a warning | on a write conflict |
 
-One line, four jobs. Nothing pops over the list, and **the list never moves
-under you** — which is the actual reason for this design, not tidiness. A modal
-dialog that covers the tasks you were reading is exactly the interruption this
-tool exists to avoid.
+One line, four jobs, and **it never changes size**. The list does not move under
+you: not when a message arrives, not when a warning does, and not when the input
+opens — the input is a box over the middle of the list now, and takes no row from
+this line to do it ([decisions.md](decisions.md#reversed)).
 
-The single exception is the input, which takes a **second** row for its parse
-preview and so borrows one row of list for as long as it is open. That is a
-move you asked for and can end with `esc`, which is a different thing from the
-screen rearranging itself while you read it — see
-[decisions.md](decisions.md#reversed). Under ten rows the preview is the half
-that gets dropped; the field is not.
+While the box is open this line names the two keys that end it and nothing else.
+The list keys under it are letters until `esc`, so advertising them would be a
+lie.
 
 The hint bar names six keys, not the whole keymap: it has to fit sixty columns,
 which is the narrowest pane that still counts as wide. `d` and `e` gave up their
@@ -152,24 +149,32 @@ Details that are decisions, not drawing:
 
 ## Adding
 
-`a` opens the input on the bottom line. The list stays exactly where it was:
+`a` opens the input in a box over the middle of the list. Nothing scrolls,
+nothing is given up, and the box lands where the eye already is:
 
 ```
 ┌─ ratodo ────────────────────────────── 5 open · 1 overdue ─┐
 │                                                            │
 │ TODAY ───────────────────────────────────────────────────  │
 │ ▌ ○ pay the invoice                                 #home  │
-│   ○ review the deploy PR                     16:00  #work  │
-│                                                            │
-│ THIS WEEK ───────────────────────────────────────────────  │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │ add ▏call the accountant @thu !high                   │ │
+│  │      due Thursday (2026-08-13)  ·  !high              │ │
+│  └───────────────────────────────────────────────────────┘ │
 │   ○ book a dentist appointment         Thu 09:30  #health  │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
- add ▏call the accountant @thu !high
-      due Thursday (2026-08-13)  ·  !high         ⏎ save   esc cancel
+ ⏎ save   esc cancel
 ```
 
-The second line is a **live parse preview**, and it is the most valuable ten
+**The box, and not the bottom line, because of where the bottom line is.** In a
+pane in the corner of a tiling layout that line sits at the bottom edge of the
+screen, and glancing down there to type is the head movement this tool exists to
+avoid. The box costs the rows it covers for as long as it is open, and gives
+them straight back — which is a different thing from the screen changing shape.
+See [decisions.md](decisions.md#reversed).
+
+Its second line is a **live parse preview**, and it is the most valuable ten
 lines of code in the TUI. As you type `@thu`, it resolves to a real date in front
 of you. That does three things at once: it teaches the syntax without anyone
 reading [format.md](format.md), it catches a typo before it reaches the file, and
@@ -476,7 +481,8 @@ between a tool you leave open and one you close:
 1. **The list does not move under you.** Toggling a task done marks it in place;
    it does not jump to the end of its group until the next reload. Watching a row
    you just touched fly somewhere else is disorienting.
-2. **No dialog ever covers the list**, except the help overlay you asked for.
+2. **Nothing covers the list that you did not open**: the help overlay and the
+   input box, both of which `esc` closes, and neither of which moves a row.
 3. **Every action is one key.** No prefixes, no confirmations, no pending state.
 4. **The selection survives reloads**, tracked by identity rather than index.
 5. **0% CPU when idle** ([architecture.md](architecture.md#the-event-loop)).

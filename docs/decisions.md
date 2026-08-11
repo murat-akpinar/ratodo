@@ -44,9 +44,10 @@ Three lists: what is settled, what was rejected, and what is still open.
   distinction, no command mode, no pending-operator state. The whole state
   machine is list mode plus an input mode that only exists while adding or
   editing. See [tui.md](tui.md).
-- ✅ **One multiplexed bottom line** carrying hints, the input field, results and
-  warnings. No dialog ever covers the list — the help overlay (`?`) is the single
-  exception, and it is one you asked for.
+- ✅ **One multiplexed bottom line** carrying hints, results and warnings, and
+  never changing size. Two things cover the list, both of them opened by a key
+  and closed by `esc`: the help overlay (`?`) and the input box (`a` / `o` /
+  `⏎`). *(The input moved off this line — see below.)*
 - ✅ **Delete is immediate, with `u` to undo.** No confirmation prompt: a prompt
   taxes every delete to protect against the rare wrong one.
 - ✅ **`spc` toggles done, `⏎` edits.** *(Changed from "`⏎` toggles" — see below.)*
@@ -143,6 +144,32 @@ no. Reopening one requires new information.
 | Automatic git commits | Tempting, but touching the user's git is dangerous even opt-in. Maybe an explicit `--commit` flag much later |
 
 ## Reversed
+
+### The input — the bottom line, then a box over the list (2026-08-11)
+
+**Was:** the input opened on the bottom line, borrowing a second row from the
+list for its parse preview. "No dialog ever covers the list" was the rule, and
+the input was written to obey it.
+
+**Now:** `a`, `o` and `⏎` open a box over the middle of the list, four rows tall
+— border, field, preview — centred, and four columns short of the pane so the
+frame stays visible around it. The bottom line goes back to one fixed row and
+shows `⏎ save   esc cancel` for as long as the box is open.
+
+**Why:** the rule was right about the wrong thing. What makes a dialog an
+interruption is the screen changing under you; the bottom line was chosen to
+avoid that. But this tool lives in a pane in the corner of a tiling layout, which
+puts that line at the **bottom edge of the screen** — so every capture and every
+edit meant looking down there, away from the row being worked on. The head
+movement is the interruption. A box that appears where the eye already is costs
+nothing but the rows it covers, and gives them back on `esc`.
+
+**What it cost:** the box covers up to four rows of list while it is open, which
+the fixed line never did. It is clipped rather than moved on a short pane, and
+under three rows of list it is not drawn at all — the bottom line still names the
+way out, so nobody is stranded in a mode they cannot leave. The keys left the
+preview line for the bottom line, which is why they are now in the same place
+whether the box is open or not.
 
 ### The right-hand fields — right-aligned, then columns past eighty (2026-08-11)
 

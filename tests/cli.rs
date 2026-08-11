@@ -979,7 +979,11 @@ fn the_input_mode_captures_a_task_and_ctrl_c_only_cancels_it() {
         raw.contains("due tomorrow ("),
         "the preview never resolved the shorthand: {raw:?}"
     );
-    assert!(raw.contains("esc cancel"), "{raw:?}");
+    // The way out is on the bottom line under the box, painted over the hint bar
+    // that was already there — so the stream repaints only the cells that differ
+    // and `esc cancel` is never contiguous in it. The words are.
+    assert!(raw.contains("save"), "no way out was drawn: {raw:?}");
+    assert!(raw.contains("esc "), "no way out was drawn: {raw:?}");
     assert_eq!(
         file, "- [ ] pay the invoice\n",
         "nothing is written until ⏎"

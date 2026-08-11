@@ -1067,12 +1067,7 @@ impl Notice {
 ///
 /// Returns the column the cursor belongs in as well, because it is the same
 /// arithmetic.
-fn input_lines(
-    input: &Input,
-    width: usize,
-    render: Render<'_>,
-    size: Size,
-) -> (Vec<Line<'static>>, usize) {
+fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'static>>, usize) {
     let dim = Style::default().fg(render.colours.dim);
     let head = format!(
         " {} {}",
@@ -1104,22 +1099,10 @@ fn input_lines(
 
     let parsed = crate::capture::capture(&input.text, render.today);
     let (_, dot) = render.glyphs.punctuation();
-    let left = format!("      {}", crate::text::fields(&parsed, render.today, dot));
-    let keys = format!("{} save   esc cancel", render.glyphs.enter());
-
-    let room = columns(&left) + columns(&keys) + 3;
-    let preview = if size == Size::Wide && room <= width {
-        Line::from(vec![
-            Span::styled(left, Style::default().fg(render.colours.accent)),
-            Span::raw(" ".repeat(width - room + 2)),
-            Span::styled(keys, dim),
-        ])
-    } else {
-        Line::from(Span::styled(
-            left,
-            Style::default().fg(render.colours.accent),
-        ))
-    };
+    let preview = Line::from(Span::styled(
+        format!("      {}", crate::text::fields(&parsed, render.today, dot)),
+        Style::default().fg(render.colours.accent),
+    ));
 
     (vec![field, preview], at.min(width.saturating_sub(1)))
 }
@@ -1134,9 +1117,9 @@ pub fn draw(
     input: Option<&Input>,
 ) {
     let whole = frame.area();
-    // One row held back, always — and a second one while the input is open,
-    // which is the only time the list gives up a row. Nothing else on screen
-    // ever changes its shape: that is the point of a fixed line over a popup.
+    // One row held back, always. The screen never changes shape now: the input
+    // opens as a box over the middle of the list rather than growing this line
+    // — docs/decisions.md#reversed.
     //
     // Written with `Rect::new` rather than struct update syntax: a mutation that
     // drops the `height:` field from `Rect { height: 1, ..whole }` produces a
@@ -1146,8 +1129,7 @@ pub fn draw(
     // Never the whole pane: somebody dragging a splitter past the point of
     // usefulness keeps a row of list, because a lone hint bar helps less than a
     // lone task does.
-    let wanted = if input.is_some() { 2 } else { 1 };
-    let reserved = wanted.min(whole.height.saturating_sub(1));
+    let reserved = 1.min(whole.height.saturating_sub(1));
     let area = Rect::new(whole.x, whole.y, whole.width, whole.height - reserved);
     let bottom = (reserved > 0).then(|| {
         Rect::new(
@@ -1222,28 +1204,73 @@ pub fn draw(
     if helping {
         help(frame, area, render);
     }
+    if let Some(input) = input {
+        input_box(frame, area, input, render);
+    }
 
     let Some(bottom) = bottom else { return };
-    let (lines, at) = match input {
-        Some(input) => {
-            let (lines, at) = input_lines(input, bottom.width as usize, render, size);
-            (lines, Some(at))
-        }
-        None => (
-            vec![notice.line(size, whole.height, render.glyphs, render.colours)],
-            None,
-        ),
+    // While the input is open the line names the two keys that end it, and
+    // nothing else: the list keys under it are letters until `esc`, so
+    // advertising them there would be a lie.
+    let line = match input {
+        Some(_) => Line::from(Span::styled(
+            format!(" {} save   esc cancel", render.glyphs.enter()),
+            Style::default().fg(render.colours.dim),
+        )),
+        None => notice.line(size, whole.height, render.glyphs, render.colours),
     };
 
     frame.render_widget(
-        Paragraph::new(lines).style(Style::default().bg(render.colours.background)),
+        Paragraph::new(line).style(Style::default().bg(render.colours.background)),
         bottom,
+    );
+}
+
+/// The input, in a box over the middle of the list.
+///
+/// It lived on the bottom line until it did not: in a pane in the corner of a
+/// tiling layout that line is at the bottom of the screen, and looking down
+/// there to type is exactly the interruption the fixed line existed to avoid.
+/// The box lands where the eye already is — docs/decisions.md#reversed.
+///
+/// Two rows inside it: the field, and the live parse under it. The keys that end
+/// it stay on the bottom line, so they are in the same place whether or not the
+/// box is open.
+fn input_box(frame: &mut Frame, area: Rect, input: &Input, render: Render<'_>) {
+    // Four columns short of the pane at most, so the frame underneath stays
+    // visible on both sides. A box flush with the border reads as the screen
+    // having changed shape, which is the one thing it must not do.
+    let width = 70.min(area.width.saturating_sub(4));
+    // Border, field, preview — and the preview is what goes first, exactly as it
+    // did on the bottom line. Under three rows there is nothing to draw at all:
+    // two of them are border and the field would have nowhere to sit, so the
+    // pane keeps its tasks and the bottom line still names the keys.
+    let height = 4.min(area.height);
+    if height < 3 {
+        return;
+    }
+    let box_area = Rect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    );
+
+    let (lines, at) = input_lines(input, (width as usize).saturating_sub(2), render);
+
+    frame.render_widget(Clear, box_area);
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .border_set(render.glyphs.border())
+                .border_style(Style::default().fg(render.colours.accent))
+                .style(Style::default().bg(render.colours.background)),
+        ),
+        box_area,
     );
     // The terminal's own cursor, not a drawn block: it blinks the way every
     // other text field the user has ever typed into does, and it costs a line.
-    if let Some(at) = at {
-        frame.set_cursor_position((bottom.x + at as u16, bottom.y));
-    }
+    frame.set_cursor_position((box_area.x + 1 + at as u16, box_area.y + 1));
 }
 
 /// The keys, in a box over the middle of the list. This is the one overlay in
@@ -3199,7 +3226,7 @@ mod tests {
         let long = "a very long sentence that will not fit in a narrow pane at all";
         let mut input = Input::new(long.to_string(), None);
         let field = |input: &Input| {
-            let (lines, at) = input_lines(input, 30, render(crate::theme::MOCHA), Size::Narrow);
+            let (lines, at) = input_lines(input, 30, render(crate::theme::MOCHA));
             (lines[0].to_string(), at)
         };
 
@@ -3259,19 +3286,23 @@ mod tests {
     /// person typing it — docs/tui.md#adding.
     #[test]
     fn the_input_screen_exactly() {
-        let tasks = tasks(&["pay the invoice @2026-08-10"]);
+        let tasks = tasks(&["pay the invoice @2026-08-10", "b", "c", "d"]);
         let input = Input::new("call the accountant @thu !high".to_string(), None);
 
         assert_eq!(
-            with_input(70, 7, &tasks, &input, Glyphs::Unicode),
+            with_input(70, 11, &tasks, &input, Glyphs::Unicode),
             [
-                "┌ ratodo — 1 open · 0 overdue ───────────────────────────────────────┐",
+                "┌ ratodo — 4 open · 0 overdue ───────────────────────────────────────┐",
                 "│  TODAY ─────────────────────────────────────────────────────────── │",
                 "│▌ ○ pay the invoice                                            today│",
+                "│ ┌────────────────────────────────────────────────────────────────┐ │",
+                "│ │ add ▏call the accountant @thu !high                            │ │",
+                "│ │      due Thursday (2026-08-13)  ·  !high                       │ │",
+                "│ └────────────────────────────────────────────────────────────────┘ │",
+                "│                                                                    │",
                 "│                                                                    │",
                 "└────────────────────────────────────────────────────────────────────┘",
-                " add ▏call the accountant @thu !high                                  ",
-                "      due Thursday (2026-08-13)  ·  !high         ⏎ save   esc cancel ",
+                " ⏎ save   esc cancel                                                  ",
             ]
         );
     }
@@ -3281,15 +3312,21 @@ mod tests {
     #[test]
     fn a_sentence_with_no_syntax_in_it_previews_nothing() {
         let input = Input::new("just write it down".to_string(), None);
-        let screen = with_input(70, 7, &tasks(&["a"]), &input, Glyphs::Unicode);
-        assert!(
-            screen[5].starts_with(" add ▏just write it down"),
-            "{screen:?}"
+        let screen = with_input(70, 9, &tasks(&["a"]), &input, Glyphs::Unicode);
+        let field = screen
+            .iter()
+            .position(|r| r.contains(" add ▏just write it down"));
+        let field = field.unwrap_or_else(|| panic!("{screen:?}"));
+
+        assert_eq!(
+            screen[field + 1].replace(['│', ' '], ""),
+            "",
+            "an unparseable line is not an error: {screen:?}"
         );
         assert_eq!(
-            screen[6].trim(),
+            screen[8].trim(),
             "⏎ save   esc cancel",
-            "an unparseable line is not an error: {screen:?}"
+            "the way out is on the line under the box: {screen:?}"
         );
     }
 
@@ -3301,14 +3338,21 @@ mod tests {
             "a very long sentence that will not fit in a narrow pane at all".to_string(),
             Some("- [ ] x".to_string()),
         );
-        let screen = with_input(30, 6, &tasks(&["x"]), &input, Glyphs::Unicode);
+        let screen = with_input(30, 8, &tasks(&["x"]), &input, Glyphs::Unicode);
+        let field = screen
+            .iter()
+            .find(|row| row.contains(" edit ▏"))
+            .unwrap_or_else(|| panic!("{screen:?}"));
 
-        assert!(screen[4].starts_with(" edit ▏"), "{screen:?}");
+        // The border is the row's last column, so the end of the line is the
+        // one before it.
         assert!(
-            screen[4].trim_end().ends_with("at all"),
+            field
+                .trim_end()
+                .trim_end_matches(['│', ' '])
+                .ends_with("at all"),
             "the end scrolled off: {screen:?}"
         );
-        assert_eq!(columns(screen[4].trim_end()), 30, "{screen:?}");
     }
 
     /// The whole screen goes ASCII together, the input line included.
@@ -3329,20 +3373,30 @@ mod tests {
     /// The input is the one thing that moves the list, and it moves it by
     /// exactly the row it borrowed — docs/decisions.md#reversed.
     #[test]
-    fn the_input_costs_the_list_one_row_and_no_more() {
+    fn the_input_covers_the_middle_and_moves_nothing() {
         let tasks = tasks(&["a @2026-08-10", "b", "c", "d"]);
         let quiet = rendered(40, 10, &tasks);
         let busy = with_input(40, 10, &tasks, &Input::adding(), Glyphs::Unicode);
 
-        assert_eq!(quiet[..7], busy[..7], "the list shifted under the reader");
-        assert!(busy[7].starts_with('└'), "{busy:?}");
-        assert!(busy[8].starts_with(" add ▏"), "{busy:?}");
-        // Forty columns is narrow, and the keys are the first thing a narrow
-        // pane gives up — they would fit, which is not the same as belonging.
+        // The box covers four rows of the middle. Everything outside it is the
+        // screen the reader was already looking at — the list does not scroll,
+        // reflow or give up a row, which is what it did when the input lived on
+        // the bottom line.
+        assert_eq!(quiet[..2], busy[..2], "the list shifted under the reader");
+        assert_eq!(quiet[6..9], busy[6..9], "the list shifted under the reader");
         assert!(
-            !busy[9].contains("esc cancel"),
-            "the hint crowded a narrow preview: {busy:?}"
+            busy[8].starts_with('└'),
+            "the frame lost its foot: {busy:?}"
         );
+        assert!(
+            busy[2..6].iter().all(|r| r.contains('│')),
+            "the box is not where it should be: {busy:?}"
+        );
+        assert!(busy[3].contains(" add ▏"), "{busy:?}");
+        // The keys move off the hint bar for as long as the box is open: `a`
+        // and `d` are letters in there, and naming them would be a lie.
+        assert!(busy[9].contains("esc cancel"), "{busy:?}");
+        assert!(!busy[9].contains("spc done"), "{busy:?}");
     }
 
     /// Where the cursor is, which is the only thing saying where the next
@@ -3374,11 +3428,12 @@ mod tests {
             (p.x, p.y)
         };
 
-        // " add ▏" is six columns, and what has been typed follows it.
-        assert_eq!(at("", 10), (6, 8));
-        assert_eq!(at("milk", 10), (10, 8));
-        // A pane with no room for a bottom line at all draws no field, so the
-        // cursor is not sent off the end of the screen to point at one.
+        // The box is 36 wide on a 40-column pane and starts two in, so the
+        // field begins three columns further along: `│ add ▏`.
+        assert_eq!(at("", 10), (9, 3));
+        assert_eq!(at("milk", 10), (13, 3));
+        // A pane with no room for the box draws no field, so the cursor is not
+        // sent off to point at one that is not there.
         assert_eq!(at("milk", 1), (0, 0));
     }
 
@@ -3387,14 +3442,27 @@ mod tests {
     #[test]
     fn a_pane_too_short_for_the_preview_still_shows_the_field() {
         let tasks = tasks(&["a @2026-08-10"]);
-        for height in [1u16, 2, 3] {
+        for height in [1u16, 2, 3, 4, 5] {
             let screen = with_input(40, height, &tasks, &Input::adding(), Glyphs::Unicode);
             assert_eq!(screen.len(), height as usize);
+            // However short the pane gets, the two keys that end the input are
+            // in the same place: the box is what gives way, not the way out.
+            // One row is the exception the bottom line already made — a lone
+            // hint bar helps less than a lone task does.
+            assert!(
+                height == 1 || screen[height as usize - 1].contains("esc cancel"),
+                "{height}: {screen:?}"
+            );
         }
-        assert!(
-            with_input(40, 2, &tasks, &Input::adding(), Glyphs::Unicode)[1].starts_with(" add ▏"),
-            "the field was the row that got dropped"
-        );
+
+        // Four rows: one for the bottom line leaves three, which is a border,
+        // the field, and a border. The preview is the row that goes.
+        let short = with_input(40, 4, &tasks, &Input::adding(), Glyphs::Unicode);
+        assert!(short[1].contains(" add ▏"), "{short:?}");
+        // Three rows leave two, and two rows are both border: nothing is drawn
+        // rather than a box with nowhere to type in it.
+        let shorter = with_input(40, 3, &tasks, &Input::adding(), Glyphs::Unicode);
+        assert!(!shorter.iter().any(|r| r.contains("add")), "{shorter:?}");
     }
 
     /// One row is held back whatever happens, so a message never pushes the list
