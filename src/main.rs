@@ -107,19 +107,22 @@ fn is_broken_pipe(error: &anyhow::Error) -> bool {
 fn dispatch() -> Result<ExitCode> {
     let cli = Cli::parse();
     let paths = lists(cli.file)?;
+    let derived = Derived::real()?;
 
     match cli.command {
-        Some(Command::Add { text }) => add(&paths, &text.join(" "))?,
+        Some(Command::Add { text }) => add(&paths, &derived, &text.join(" "))?,
         Some(Command::Done { text }) => {
-            return done(&paths, &text.join(" "), Local::now().date_naive());
+            return done(&paths, &derived, &text.join(" "), Local::now().date_naive());
         }
         Some(Command::List(args)) => list(&paths, &args)?,
-        Some(Command::Sync) => sync(&paths, true)?,
+        Some(Command::Sync) => sync(&paths, &derived.ics, true)?,
         Some(Command::Theme { what }) => theme_command(what, cli.theme.as_deref())?,
         Some(Command::Status { json }) => return status(&paths, json),
         // `ratodo | wc -l` and `ratodo > out.txt` still have to mean something,
         // and a TUI down a pipe means nothing at all.
-        None if std::io::stdout().is_terminal() => return tui(&paths, cli.theme.as_deref()),
+        None if std::io::stdout().is_terminal() => {
+            return tui(&paths, derived, cli.theme.as_deref());
+        }
         None => list(&paths, &ListArgs::default())?,
     }
     Ok(ExitCode::SUCCESS)
@@ -238,6 +241,31 @@ fn all_tasks(open: &[Open]) -> Vec<ratodo::model::Task> {
     open.iter().flat_map(|o| o.doc.tasks().cloned()).collect()
 }
 
+/// Where the two derived files go, resolved **once** and then carried.
+///
+/// Not looked up again deeper in, for the same reason `write::save` takes its
+/// backup directory as a parameter rather than finding one: a function that
+/// reads the environment writes wherever the environment happens to point, and
+/// the callers furthest from `main` are the tests. Until this existed, running
+/// `cargo test` regenerated the developer's own `~/.local/share/ratodo/todo.ics`
+/// from a fixture and filled `~/.local/state/ratodo` with a backup per case —
+/// twenty-two megabytes of them, on the machine this was found on.
+#[derive(Debug, Clone)]
+struct Derived {
+    backups: PathBuf,
+    ics: PathBuf,
+}
+
+impl Derived {
+    /// The real ones, from the environment. The only place that reads it.
+    fn real() -> Result<Self> {
+        Ok(Derived {
+            backups: backup_dir()?,
+            ics: ics_path()?,
+        })
+    }
+}
+
 /// Derived, so it never lands in the user's dotfiles. `state_dir` is `None` off
 /// Linux, where the cache directory is the closest equivalent.
 fn backup_dir() -> Result<PathBuf> {
@@ -324,14 +352,13 @@ fn ics_path() -> Result<PathBuf> {
 /// A failure here never fails the command that triggered it. The `.ics` is a
 /// convenience and the task is already safely in the file — refusing to capture
 /// because a calendar export went wrong would be the tail wagging the dog.
-fn sync(paths: &[PathBuf], loud: bool) -> Result<()> {
+fn sync(paths: &[PathBuf], to: &Path, loud: bool) -> Result<()> {
     let tasks = all_tasks(&open_all(paths)?);
-    let out = ics_path()?;
 
-    if let Some(parent) = out.parent() {
+    if let Some(parent) = to.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&out, ics::calendar(&tasks, Utc::now()))?;
+    std::fs::write(to, ics::calendar(&tasks, Utc::now()))?;
 
     if loud {
         let exported = tasks.iter().filter(|t| t.open() && t.due.is_some()).count();
@@ -340,13 +367,13 @@ fn sync(paths: &[PathBuf], loud: bool) -> Result<()> {
             "wrote {} dated task{} to {}",
             exported,
             if exported == 1 { "" } else { "s" },
-            out.display()
+            to.display()
         )?;
     }
     Ok(())
 }
 
-fn add(paths: &[PathBuf], input: &str) -> Result<()> {
+fn add(paths: &[PathBuf], derived: &Derived, input: &str) -> Result<()> {
     let today = Local::now().date_naive();
     let task = capture::capture(input, today);
     let summary = text::added(&task, today);
@@ -355,18 +382,18 @@ fn add(paths: &[PathBuf], input: &str) -> Result<()> {
     let loaded = write::load(path)?;
     let mut doc = loaded.doc;
     doc.push_task(task);
-    write::save(path, &doc, loaded.mtime, &backup_dir()?)?;
+    write::save(path, &doc, loaded.mtime, &derived.backups)?;
 
     writeln!(std::io::stdout(), "{summary}")?;
-    quietly_sync(paths);
+    quietly_sync(paths, &derived.ics);
     Ok(())
 }
 
 /// The capture already succeeded and said so. Whatever the calendar export
 /// makes of it, the user's list is written and this is not the moment to make
 /// noise about a derived file.
-fn quietly_sync(paths: &[PathBuf]) {
-    let _ = sync(paths, false);
+fn quietly_sync(paths: &[PathBuf], to: &Path) {
+    let _ = sync(paths, to, false);
 }
 
 /// Whether a directory event is about our list. Watching the directory means
@@ -416,7 +443,7 @@ fn watch(paths: &[PathBuf], tx: std::sync::mpsc::Sender<()>) -> Option<notify::R
     Some(watcher)
 }
 
-fn tui(paths: &[PathBuf], theme_flag: Option<&str>) -> Result<ExitCode> {
+fn tui(paths: &[PathBuf], derived: Derived, theme_flag: Option<&str>) -> Result<ExitCode> {
     // The capture target, because it is the file the empty screen is teaching
     // you to put your first task in.
     let shown_path = capture_target(paths).display().to_string();
@@ -426,7 +453,7 @@ fn tui(paths: &[PathBuf], theme_flag: Option<&str>) -> Result<ExitCode> {
         today: Local::now().date_naive(),
         path: &shown_path,
     };
-    let mut live = Live::read(paths, render.today)?;
+    let mut live = Live::read(paths, render.today, derived)?;
 
     let (tx, rx) = std::sync::mpsc::channel();
     // Kept alive for as long as the TUI runs: dropping it stops the watch.
@@ -458,10 +485,12 @@ struct Live {
     undo: Option<(usize, ratodo::model::Doc, String)>,
     screen: ui::Screen,
     counts: agenda::Counts,
+    /// Resolved by the caller, so nothing under here can reach past it.
+    derived: Derived,
 }
 
 impl Live {
-    fn read(paths: &[PathBuf], today: chrono::NaiveDate) -> Result<Self> {
+    fn read(paths: &[PathBuf], today: chrono::NaiveDate, derived: Derived) -> Result<Self> {
         let files = open_all(paths)?;
         let tasks = all_tasks(&files);
         Ok(Live {
@@ -469,6 +498,7 @@ impl Live {
             screen: ui::Screen::new(ui::rows(&agenda::agenda(&tasks, today))),
             files,
             undo: None,
+            derived,
         })
     }
 
@@ -561,7 +591,7 @@ impl Live {
         // Read it back whatever the editor said: somebody who saves and then
         // exits non-zero still saved.
         self.reload(paths, today)?;
-        quietly_sync(paths);
+        quietly_sync(paths, &self.derived.ics);
 
         Ok(match outcome {
             Ok(_) => ui::Notice::Said("re-read after $EDITOR".to_string()),
@@ -593,16 +623,15 @@ impl Live {
         before: ratodo::model::Doc,
         undo: Option<String>,
     ) -> Result<Option<ui::Notice>> {
-        let backup = backup_dir()?;
         let file = &mut self.files[which];
-        match write::save(&file.path, &file.doc, file.mtime, &backup) {
+        match write::save(&file.path, &file.doc, file.mtime, &self.derived.backups) {
             Ok(()) => {
                 file.seen = write::render(&file.doc);
                 file.mtime = std::fs::metadata(&file.path)
                     .and_then(|m| m.modified())
                     .ok();
                 self.undo = undo.map(|what| (which, before, what));
-                quietly_sync(&self.paths());
+                quietly_sync(&self.paths(), &self.derived.ics);
                 Ok(None)
             }
             // The file still says otherwise, and a screen that disagrees with
@@ -1021,7 +1050,12 @@ fn run(
 /// Across every open list, because the whole point of several of them is that
 /// they are one list to the person using them. Two files holding the same title
 /// is the ambiguous case, not a race between them.
-fn done(paths: &[PathBuf], input: &str, today: chrono::NaiveDate) -> Result<ExitCode> {
+fn done(
+    paths: &[PathBuf],
+    derived: &Derived,
+    input: &str,
+    today: chrono::NaiveDate,
+) -> Result<ExitCode> {
     let mut open = open_all(paths)?;
 
     let mut hits: Vec<(usize, usize)> = Vec::new();
@@ -1069,9 +1103,9 @@ fn done(paths: &[PathBuf], input: &str, today: chrono::NaiveDate) -> Result<Exit
     task.set_state(State::Done, today);
     let summary = text::marked_done(task);
 
-    write::save(&list.path, &list.doc, list.mtime, &backup_dir()?)?;
+    write::save(&list.path, &list.doc, list.mtime, &derived.backups)?;
     writeln!(std::io::stdout(), "{summary}")?;
-    quietly_sync(paths);
+    quietly_sync(paths, &derived.ics);
     Ok(ExitCode::SUCCESS)
 }
 
@@ -1235,12 +1269,62 @@ mod tests {
         let path = dir.join("todo.md");
         std::fs::write(&path, text).unwrap();
 
-        let live = Live::read(std::slice::from_ref(&path), a_day()).unwrap();
+        let live = Live::read(std::slice::from_ref(&path), a_day(), derived(&dir)).unwrap();
         (path, live)
     }
 
     fn a_day() -> chrono::NaiveDate {
         chrono::NaiveDate::from_ymd_opt(2026, 8, 11).unwrap()
+    }
+
+    /// The derived files, inside the case's own directory.
+    ///
+    /// Never `Derived::real()`: these tests drive `write_back` in-process, so
+    /// the backup and the calendar go wherever this says. Pointed at the real
+    /// ones it rewrote the developer's own `todo.ics` from a fixture and left a
+    /// `.bak` per case in `~/.local/state/ratodo`, which is how it was found.
+    fn derived(dir: &std::path::Path) -> Derived {
+        Derived {
+            backups: dir.join("state"),
+            ics: dir.join("data").join("todo.ics"),
+        }
+    }
+
+    /// Both derived files land where the caller pointed them, and the caller is
+    /// `main`.
+    ///
+    /// This is the guard against a whole class of bug rather than one instance
+    /// of it. `write_back` used to call `backup_dir()` and resolve the calendar
+    /// path itself, both of which read the environment — so every in-process
+    /// test wrote into the developer's own `~/.local`, regenerating their real
+    /// `todo.ics` from a fixture and leaving a `.bak` per case behind. Pinning
+    /// that the paths come from the `Derived` handed in is what makes that
+    /// impossible instead of merely fixed.
+    #[test]
+    fn the_derived_files_land_where_the_caller_pointed_them() {
+        let (path, mut live) = open("derived", "- [ ] first @2026-08-20\n");
+        let dir = path.parent().expect("a directory").to_path_buf();
+        let want = derived(&dir);
+
+        live.toggle(a_day()).unwrap();
+
+        assert!(
+            std::fs::read_to_string(&want.ics)
+                .expect("no calendar under the given path")
+                .contains("BEGIN:VCALENDAR"),
+            "the calendar did not go where it was told"
+        );
+        let backups: Vec<PathBuf> = std::fs::read_dir(&want.backups)
+            .expect("no backup directory under the given path")
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .collect();
+        assert_eq!(backups.len(), 1, "expected one backup, got {backups:?}");
+        assert_eq!(
+            std::fs::read_to_string(&backups[0]).unwrap(),
+            "- [ ] first @2026-08-20\n",
+            "the backup does not hold the pre-write list"
+        );
     }
 
     /// Deleting takes one line out and leaves everything else exactly as it was,
@@ -1535,7 +1619,7 @@ mod tests {
 
         let today = chrono::NaiveDate::from_ymd_opt(2026, 8, 11).unwrap();
         std::fs::write(&path, "- [ ] mine\n").unwrap();
-        let mut live = Live::read(std::slice::from_ref(&path), today).unwrap();
+        let mut live = Live::read(std::slice::from_ref(&path), today, derived(&dir)).unwrap();
 
         // Somebody else gets there first. The sleep is for filesystems whose
         // mtime resolution is coarser than two writes in a row.
@@ -1590,7 +1674,7 @@ mod tests {
             .collect();
         paths.sort();
 
-        let live = Live::read(&paths, a_day()).unwrap();
+        let live = Live::read(&paths, a_day(), derived(&dir)).unwrap();
         (dir, paths, live)
     }
 
@@ -1741,14 +1825,14 @@ mod tests {
             .collect();
 
         // In both files: nothing is written and it says so with exit 2.
-        let code = done(&paths, "fix the tap", a_day()).unwrap();
+        let code = done(&paths, &derived(&dir), "fix the tap", a_day()).unwrap();
         assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::from(2)));
         for (path, was) in paths.iter().zip(&before) {
             assert_eq!(&std::fs::read_to_string(path).unwrap(), was, "{path:?}");
         }
 
         // In one file only: ticked there, and the other list is untouched.
-        done(&paths, "ship the tag", a_day()).unwrap();
+        done(&paths, &derived(&dir), "ship the tag", a_day()).unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.join("work.md")).unwrap(),
             "- [ ] fix the tap\n- [x] ship the tag ✓2026-08-11\n"

@@ -32,15 +32,29 @@ impl Drop for TempDir {
 }
 
 /// Every invocation gets its XDG directories pointed at /tmp, so a test run can
-/// never write a backup into the real `~/.local/state`.
+/// never write into the developer's own `~/.local`.
+///
+/// **All four, and `XDG_DATA_HOME` is not optional.** Every write regenerates
+/// the calendar, so a command that runs without it rewrites the real
+/// `~/.local/share/ratodo/todo.ics` — with the fixture's two tasks, or with
+/// none. This was found by running `cargo test` and watching a live list's
+/// calendar file go to 67 bytes.
 fn run(args: &[&str]) -> Output {
-    let scratch = std::env::temp_dir().join(format!("ratodo-cli-xdg-{}", std::process::id()));
-    Command::new(BIN)
-        .args(args)
-        .env("XDG_STATE_HOME", scratch.join("state"))
-        .env("XDG_CACHE_HOME", scratch.join("cache"))
+    xdg(Command::new(BIN).args(args))
         .output()
         .expect("running the binary")
+}
+
+/// The scratch XDG environment, on whatever command is about to run — including
+/// the `script`-wrapped ones, where the binary is a word inside a shell string
+/// and inherits the environment all the same.
+fn xdg(command: &mut Command) -> &mut Command {
+    let scratch = std::env::temp_dir().join(format!("ratodo-cli-xdg-{}", std::process::id()));
+    command
+        .env("XDG_STATE_HOME", scratch.join("state"))
+        .env("XDG_CACHE_HOME", scratch.join("cache"))
+        .env("XDG_DATA_HOME", scratch.join("data"))
+        .env("XDG_CONFIG_HOME", scratch.join("config"))
 }
 
 /// Today, as the tick stamps it. These tests run against the real clock, so the
@@ -98,7 +112,7 @@ fn the_backup_lands_in_the_state_directory_and_nowhere_near_the_list() {
     let state = dir.file("state");
     fs::write(&path, "- [ ] existing\n").unwrap();
 
-    let out = Command::new(BIN)
+    let out = xdg(&mut Command::new(BIN))
         .args(["--file", path.to_str().unwrap(), "add", "second"])
         .env("XDG_STATE_HOME", &state)
         .output()
@@ -351,7 +365,7 @@ fn a_reader_that_stops_early_is_not_an_error() {
         let mut full = vec!["--file", path.to_str().unwrap()];
         full.extend_from_slice(&args);
 
-        let mut child = Command::new(BIN)
+        let mut child = xdg(&mut Command::new(BIN))
             .args(&full)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -499,7 +513,7 @@ fn only_open_tasks_reach_the_calendar() {
     .unwrap();
 
     let data = dir.file("data");
-    let out = Command::new(BIN)
+    let out = xdg(&mut Command::new(BIN))
         .args(["--file", path.to_str().unwrap(), "sync"])
         .env("XDG_DATA_HOME", &data)
         .env("XDG_STATE_HOME", dir.file("state"))
@@ -653,7 +667,7 @@ fn ratodo_file_is_used_when_there_is_no_flag() {
     let scratch = std::env::temp_dir().join(format!("ratodo-cli-xdg-{}", std::process::id()));
 
     let with_env = |args: &[&str]| {
-        let out = Command::new(BIN)
+        let out = xdg(&mut Command::new(BIN))
             .args(args)
             .env("RATODO_FILE", &listed)
             .env("XDG_CONFIG_HOME", dir.file("config"))
@@ -707,7 +721,7 @@ fn control_characters_from_the_file_do_not_reach_the_terminal() {
 #[test]
 fn the_default_path_is_the_config_directory() {
     let dir = TempDir::new("xdg");
-    let out = Command::new(BIN)
+    let out = xdg(&mut Command::new(BIN))
         .args(["add", "from the default path"])
         .env("XDG_CONFIG_HOME", &dir.0)
         .env("XDG_DATA_HOME", dir.file("data"))
@@ -772,7 +786,7 @@ fn the_bare_command_opens_a_screen_on_a_terminal_and_gives_it_back() {
 
     // `timeout` so a TUI that stops answering `q` fails the suite instead of
     // hanging it.
-    let out = Command::new("timeout")
+    let out = xdg(&mut Command::new("timeout"))
         .args([
             "10",
             "script",
@@ -891,7 +905,7 @@ fn the_editor_key_hands_the_terminal_over_and_takes_it_back() {
     .unwrap();
     fs::set_permissions(&editor, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let mut child = Command::new("timeout")
+    let mut child = xdg(&mut Command::new("timeout"))
         .args([
             "20",
             "script",
@@ -955,7 +969,7 @@ fn the_help_key_opens_the_overlay_and_esc_puts_it_away() {
     fs::write(&path, "- [ ] pay the invoice\n").unwrap();
 
     let after = |keys: &[u8]| {
-        let mut child = Command::new("timeout")
+        let mut child = xdg(&mut Command::new("timeout"))
             .args([
                 "20",
                 "script",
@@ -1015,7 +1029,7 @@ fn the_input_mode_captures_a_task_and_ctrl_c_only_cancels_it() {
 
     let run = |keys: &[u8]| {
         fs::write(&path, "- [ ] pay the invoice\n").unwrap();
-        let mut child = Command::new("timeout")
+        let mut child = xdg(&mut Command::new("timeout"))
             .args([
                 "20",
                 "script",
@@ -1114,7 +1128,7 @@ fn the_locale_picks_the_glyphs_the_screen_is_drawn_with() {
     fs::write(&path, "- [ ] pay the invoice\n").unwrap();
 
     let screen_under = |locale: &str| {
-        let mut child = Command::new("timeout")
+        let mut child = xdg(&mut Command::new("timeout"))
             .args([
                 "20",
                 "script",
@@ -1164,7 +1178,7 @@ fn ticking_a_task_on_the_screen_changes_one_byte_of_the_file() {
                   - [ ] second\n\n| a | table |\n|---|---|\n\n> a note\n";
     fs::write(&path, before).unwrap();
 
-    let mut child = Command::new("timeout")
+    let mut child = xdg(&mut Command::new("timeout"))
         .args([
             "20",
             "script",
@@ -1219,7 +1233,7 @@ fn an_edit_from_outside_reaches_the_open_screen() {
     let path = dir.file("todo.md");
     fs::write(&path, "- [ ] the original task\n").unwrap();
 
-    let mut child = Command::new("timeout")
+    let mut child = xdg(&mut Command::new("timeout"))
         .args([
             "20",
             "script",
@@ -1278,7 +1292,7 @@ fn the_calendar_is_written_beside_no_one_and_kept_up_to_date() {
     let with_data = |args: &[&str]| {
         let mut full = vec!["--file", path.to_str().unwrap()];
         full.extend_from_slice(args);
-        let out = Command::new(BIN)
+        let out = xdg(&mut Command::new(BIN))
             .args(&full)
             .env("XDG_DATA_HOME", &data)
             .env("XDG_STATE_HOME", dir.file("state"))
@@ -1321,7 +1335,7 @@ fn the_calendar_is_written_beside_no_one_and_kept_up_to_date() {
 
 /// Runs with `$XDG_CONFIG_HOME` pointed somewhere a `theme.conf` can be planted.
 fn with_config(dir: &TempDir, args: &[&str]) -> Output {
-    Command::new(BIN)
+    xdg(&mut Command::new(BIN))
         .args(args)
         .env("XDG_CONFIG_HOME", dir.file("config"))
         .env("XDG_STATE_HOME", dir.file("state"))
@@ -1422,7 +1436,7 @@ fn a_broken_theme_file_warns_and_never_stops_anything() {
 #[test]
 fn no_color_flattens_every_role() {
     let dir = TempDir::new("no-color");
-    let out = Command::new(BIN)
+    let out = xdg(&mut Command::new(BIN))
         .args(["theme", "dump"])
         .env("XDG_CONFIG_HOME", dir.file("config"))
         .env("NO_COLOR", "1")
@@ -1443,7 +1457,7 @@ fn no_color_flattens_every_role() {
 #[test]
 fn an_empty_no_color_is_not_a_request_for_no_colour() {
     let dir = TempDir::new("no-color-empty");
-    let out = Command::new(BIN)
+    let out = xdg(&mut Command::new(BIN))
         .args(["theme", "dump"])
         .env("XDG_CONFIG_HOME", dir.file("config"))
         .env("NO_COLOR", "")

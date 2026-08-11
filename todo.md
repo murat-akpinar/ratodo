@@ -116,6 +116,15 @@ does not get to block the screen that audience actually opens. See
       *did* appear — so it is VTODO being ignored, not our file being wrong.
       [docs/calendar.md](docs/calendar.md) had khal down as ✅ on nothing more
       than "it is file-based"; corrected
+- [x] **`cargo test` rewrote the real `~/.local`** — `write_back` resolved the
+      backup and calendar paths from the environment, so in-process tests
+      regenerated the developer's own `todo.ics` from a fixture and left a
+      `.bak` per case in `~/.local/state/ratodo`; `tests/cli.rs` set
+      `XDG_STATE_HOME` and forgot `XDG_DATA_HOME` —
+      **done**: both paths are resolved once in `dispatch` and carried, the
+      integration tests set all four XDG directories through one helper, and a
+      test pins that a write lands where the caller pointed it. Found because a
+      calendar being read went empty, not by the suite
 - [ ] Thunderbird, whose Tasks view is a different code path from the month grid
       and is where these would land
 

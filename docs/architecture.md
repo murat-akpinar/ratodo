@@ -114,7 +114,29 @@ tests/
 
 Eleven files, flat. No `mod.rs` pyramid, no trait layer, no plugin system.
 
-Three of them were not in the original plan and are worth naming:
+### Paths are resolved once, at the top, and carried
+
+`main.rs` is the only file that reads the environment, and it does it in one
+place — `Derived::real()`, called from `dispatch` — for the two files the tool
+generates rather than owns: the `.bak` and the `.ics`. Everything below takes
+them as parameters, the same way `write::save` has always taken its backup
+directory rather than finding one.
+
+That is not tidiness. **A function that reads the environment writes wherever
+the environment happens to point, and the callers furthest from `main` are the
+tests.** `write_back` used to call `backup_dir()` itself and resolve the
+calendar path itself, so every in-process test wrote into the developer's own
+`~/.local`: it regenerated their real `todo.ics` from a fixture, and left a
+`.bak` per case in `~/.local/state/ratodo` — twenty-two megabytes of them on the
+machine where this was noticed, and only noticed because a live calendar went
+empty. The integration tests had the same hole from the other side, setting
+`XDG_STATE_HOME` and forgetting `XDG_DATA_HOME`.
+
+Both are pinned now: `the_derived_files_land_where_the_caller_pointed_them`
+asserts a write goes to the `Derived` it was handed, and `tests/cli.rs` sets all
+four XDG directories through one helper instead of per-case.
+
+Three files were not in the original plan and are worth naming:
 
 - **`lib.rs`** exists because a binary-only crate cannot be reached from
   `tests/`. The core is a library and `main.rs` is a thin shell over it, which is

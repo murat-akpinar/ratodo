@@ -18,6 +18,17 @@ Three specific ways a suite lies, and what is in place against each:
 | **The test cannot fail** | An assertion that holds no matter what the code does | `cargo mutants` — deliberately break the code and confirm something goes red |
 | **The generator never generates the interesting case** | 4000 random documents that all happen to be empty | `the_generator_produces_what_we_think_it_does` asserts the corpus really contains CRLF, tabs, `[X]`, emoji, invalid dates, near-miss task lines |
 | **The comparison is too weak to notice** | Comparing parsed models when the bytes are what matter | `the_checker_would_notice_damage` feeds the comparison known-damaged input and requires it to reject each one |
+| **The suite writes outside itself** | Green tests, and the developer's own data quietly rewritten | Every derived path is a parameter — `the_derived_files_land_where_the_caller_pointed_them` — and `tests/cli.rs` sets all four XDG directories through one helper |
+
+That fourth row was added the day it happened. `write_back` resolved the backup
+directory and the calendar path from the environment, so the in-process tests
+wrote into the real `~/.local`: they regenerated the developer's own `todo.ics`
+from a fixture and left a `.bak` per case behind. Every test passed throughout.
+It surfaced only because a calendar someone was actually reading went empty —
+which is to say, not because of the suite at all.
+
+The lesson is the same one as the other three rows: **a test that passes says
+nothing about what the code did on the way there.**
 
 One real example, from writing these: a test asserted that `@9999999d` was
 rejected as an overflow. It was not — 27,000 years from now is a perfectly valid
