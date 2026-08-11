@@ -92,7 +92,9 @@ Chat with the maintainer in **Turkish**.
    user's shell.
 6. **No fixed FPS.** Draw on events only; block when idle.
 7. **Never write `- [!]`** to the file. `!` is a screen symbol derived from the
-   date; the file only ever contains `[ ]` and `[x]`.
+   date. The file contains exactly three states — `[ ]`, `[x]` and `[-]` — and
+   `[-]` is the only one ever added to that list
+   ([docs/decisions.md](docs/decisions.md#settled)).
 8. **A broken `theme.conf` must never prevent startup.** Warn on stderr, fall back.
 9. **No new dependencies** without asking. The seven allowed crates: `ratatui`,
    `crossterm`, `clap`, `chrono`, `notify`, `directories`, `anyhow`. In

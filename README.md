@@ -45,12 +45,20 @@ Then, when you want the overview, `ratodo` opens the agenda:
 │  LATER ─────────────────────────────────────────────────── │
 │  ○ write the release notes                           Aug 20│
 └────────────────────────────────────────────────────────────┘
- j k move   spc done   a add   ⏎ edit   ? keys   q quit
+ j k move  spc done  a add  ⏎ edit  X cancel  ? keys  q quit
 ```
 
 Vim keys, no vim modes: `j` `k` `g` `G` `ctrl-d` to move, `spc` to tick, `a` to
-add and `⏎` to edit, `d` to delete and `u` to take it back, `h` `l` `z` to fold a
-group, `e` for `$EDITOR` — one key per action, and `?` for the rest.
+add and `⏎` to edit, `d` to delete and `u` to take it back, `X` to cancel and `p`
+to put a date off, `h` `l` `z` to fold a group, `e` for `$EDITOR` — one key per
+action, and `?` for the rest.
+
+Ticking something turns the row green and records the day in the file
+(`✓2026-08-11`); the row then shows when it was finished rather than when it was
+due. `X` is the third state — decided against, not done — which stays on the list
+as `- [-]` instead of being deleted, out of the counts and never overdue. `p`
+asks how long (`2`, `3d`, `1w`, `fri`) and moves the date alone, keeping the time
+and everything else on the line.
 
 Adding and editing are the only thing that opens a second mode, and `esc` or
 `ctrl-c` always closes it — in there `ctrl-c` costs you the sentence, never the
@@ -97,11 +105,12 @@ decision in [`docs/`](docs/README.md) follows from it.
 
 | Syntax | Meaning |
 |---|---|
-| `- [ ]` / `- [x]` | open / completed task |
+| `- [ ]` / `- [x]` / `- [-]` | open / completed / cancelled task |
 | `## Heading` | section |
 | `@2026-08-12` | due date (`@2026-08-12 16:00` with a time) |
 | `#tag` | tag, any number of them |
 | `!high` `!med` `!low` | priority |
+| `✓2026-08-11` | when it was completed — written for you when you tick it |
 
 When adding, shorthand is allowed — `@today`, `@tomorrow`, `@mon`…`@sun`, `@3d`,
 `@2w` — and always stored as an ISO date. Full spec:
@@ -122,13 +131,14 @@ $ ls ~/.config/ratodo/
 2026.md  personal.md  theme.conf  work.md
 
 $ ratodo                    # all three, one agenda
-$ ratodo --file work.md     # only this one
+$ ratodo --file ~/.config/ratodo/work.md    # only this one
 ```
 
 Dated groups mix — overdue is overdue, whichever file it came from — and undated
 headings say where they are from (`## Sprint (work.md)`). A change is written
 back to the file it came out of and nowhere else; a capture goes to `todo.md`,
-or `ratodo --file work.md add '...'` to put it elsewhere. Full rules:
+or `ratodo --file ~/.config/ratodo/work.md add '...'` to put it elsewhere. Full
+rules:
 [`docs/cli.md`](docs/cli.md#several-lists).
 
 Sync is your git. There is no account, no server, no telemetry, and nothing

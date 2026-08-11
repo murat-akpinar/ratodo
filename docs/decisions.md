@@ -167,6 +167,35 @@ Three lists: what is settled, what was rejected, and what is still open.
   `ratodo list | head` made `println!` panic. Every stdout write goes through
   `writeln!`, and `BrokenPipe` alone exits 0. See
   [cli.md](cli.md#behaving-like-a-unix-program).
+- ✅ **A third state: `- [-]`, cancelled** *(2026-08-11)*. A list whose only exit
+  is deletion cannot record having *decided against* something — the task and
+  the decision go together. `[-]` is the Obsidian and Logseq convention, so a
+  file with one in it still reads correctly in the two tools most likely to open
+  it next. It is out of the counts, never overdue, and not exported. `X` sets it
+  and `X` takes it back. Hard invariant 7 said the file only ever contains `[ ]`
+  and `[x]`; this widens it to three and no further — `[!]` is still derived from
+  the date and still never written. See [format.md](format.md#the-three-states).
+- ✅ **The completion date is stamped: `✓2026-08-11`** *(2026-08-11)*. Ticking
+  something recorded the fact and lost the day, which is the half people
+  actually want later. Three shapes were on the table: `%2026-08-11`, a new
+  sigil in the same family as `@` and `#`; `done:2026-08-11`, no sigil but
+  colliding with any title containing `done:`; and `✓2026-08-11`, matching the
+  symbol already on the screen. **`✓` was chosen**, and it is the one non-ASCII
+  thing the tool writes — a deliberate exception, since ASCII fallback is a rule
+  about the *screen* and the file has always been free to hold any UTF-8. The
+  cost is real and known: it is harder to grep and harder to type by hand.
+  Mitigated by requiring the date — a bare `✓` in a title is the user's and is
+  never written over, which the `gnarly.md` fixture caught the first time it was
+  not. See [format.md](format.md#the-completion-stamp).
+- ✅ **`p` puts a date off, and takes a bare number of days** *(2026-08-11)*.
+  Moving a date meant reopening the whole line with `⏎` and retyping it. `p`
+  reuses the input box — same caret, same rule, same way out — but asks a
+  different question, and the preview answers it with the day it lands on. It
+  takes everything `@` takes plus a bare number, which is `p`'s alone: a box
+  that has just asked *how long* has one reading of `2`, and `@2` in a sentence
+  does not. It moves `@` and nothing else; the time stays put. This is **not**
+  the `~date` deferral of [roadmap.md](roadmap.md) v3 — that hides a task until
+  a date, this changes when it is due. See [tui.md](tui.md#putting-a-date-off--p).
 
 ## Rejected
 
@@ -189,6 +218,51 @@ no. Reopening one requires new information.
 | Automatic git commits | Tempting, but touching the user's git is dangerous even opt-in. Maybe an explicit `--commit` flag much later |
 
 ## Reversed
+
+### A finished row — grey, then green (2026-08-11)
+
+**Was:** a completed task was drawn in `done_text`, a grey. `done` — the green —
+existed as a theme role and was spent on one thing: the progress bar in the
+title rule.
+
+**Now:** the row itself is green. The grey moves to cancelled rows, where it
+belongs.
+
+**Why:** [design.md](design.md#rules) reserved green for completed and then
+never gave it to the thing that completes. Ticking a task was the one action on
+the screen that said nothing back — the row simply went quiet. The old reasoning
+was that finished work should recede, and it should, but receding and being
+unacknowledged are different. The `✓` and the position already do the receding;
+the colour is the acknowledgement. Nothing new was added: `done` was in every
+built-in theme from the start, waiting.
+
+### `x` unbound → still unbound, and `X` cancels (2026-08-11)
+
+**Was:** `x` was deliberately bound to nothing — "in vim it deletes a character,
+in a checklist it means tick the box; two strong and opposite intuitions on one
+key, so it gets neither."
+
+**Now:** `x` is *still* unbound. When cancelling needed a key, `x` was the
+obvious candidate and was rejected on the same grounds: a **third** meaning on a
+key already pulling two ways is worse than either of them. `X` took the job.
+
+**Why:** the capital reads as a bigger version of the tick it is related to, it
+was free, and shift makes it the deliberate act that "decided against" ought to
+be. Cancelling should be harder to reach than finishing.
+
+### The help overlay — `:` and `/` listed, then not (2026-08-11)
+
+**Was:** the overlay listed `:  /  answer, for now`, so that the two unbound
+keys were documented where people look.
+
+**Now:** the row is gone. Both keys still answer when pressed, on the status
+line.
+
+**Why:** the overlay's own rule is that it lists keys that *do something*, and
+those two do not — it was one row short of consistent with itself. Pressing
+either is the moment they teach anything, and that already works. The row they
+were costing is what keeps `X  p` inside the twelve that fit a fourteen-row pane
+— see [tui.md](tui.md#help).
 
 ### The input — the bottom line, then a box over the list (2026-08-11)
 

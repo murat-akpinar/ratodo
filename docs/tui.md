@@ -56,10 +56,25 @@ While the box is open this line names the two keys that end it and nothing else.
 The list keys under it are letters until `esc`, so advertising them would be a
 lie.
 
-The hint bar names six keys, not the whole keymap: it has to fit sixty columns,
-which is the narrowest pane that still counts as wide. `d` and `e` gave up their
-slots when the capture keys arrived — adding a task is what the tool is for, and
-`?` lists the rest.
+**The hint bar fills whatever the pane gives it.** `? keys` and `q quit` are
+pinned to the end — however little room there is, the way to the rest of the
+keymap and the way out both stay — and everything before them goes in until the
+next one would not fit. The order is how often a key is reached for:
+
+```
+move · done · add · edit · cancel · put off
+```
+
+So sixty columns, the narrowest pane that still counts as wide, gets through
+`⏎ edit`; a little wider brings `X cancel`, and eighty brings `p put off`. `d`
+and `e` are not on it at any width — delete and `$EDITOR` are both a keystroke
+away in `?`, and neither is what somebody glancing at a side pane is about to
+press. Below the wide threshold the bar drops to bare keys, `j k  spc  a  X  p
+?  q`.
+
+This replaced a fixed list of six, which had to be re-argued every time a key
+was added and was wrong at both ends: clipped on a narrow pane, and wasting
+twenty columns on a wide one.
 
 ## Main screen
 
@@ -75,7 +90,8 @@ slots when the capture keys arrived — adding a task is what the tool is for, a
 │                                                            │
 │ THIS WEEK ───────────────────────────────────────────────  │
 │   ○ book a dentist appointment         Thu 09:30  #health  │
-│   ✓ migrate the server                                     │
+│   ✓ migrate the server                          Mon        │
+│   ✗ rewrite the docs                                 #docs │
 │                                                            │
 │ ## Someday ──────────────────────────────────────────────  │
 │   ○ finish chapter 13 of the Rust book               !low  │
@@ -84,13 +100,24 @@ slots when the capture keys arrived — adding a task is what the tool is for, a
 │                                                            │
 └────────────────────────────────────────────────────────────┘
 
- j k move   spc done   a add   ⏎ edit   ? keys   q quit
+ j k move  spc done  a add  ⏎ edit  X cancel  ? keys  q quit
 ```
 
 Details that are decisions, not drawing:
 
 - **`▌` is the selection**, in `accent`, with the row on `selection` background.
   A colour alone is not enough — see [design.md](design.md#rules).
+- **A finished row is green** — `done`, the colour [design.md](design.md#rules)
+  reserved for exactly this and had spent only on the progress bar. Ticking a
+  task was the one action on this screen that said nothing back. A **cancelled**
+  row (`✗`) keeps the grey: it is off the list, not finished, and the two must
+  not read alike.
+- **A finished row's date is the day it was finished**, not the day it was due —
+  that deadline stopped applying the moment it was ticked, and the completion
+  date is the one date about it still worth the width. It only ever displaces
+  the due date, so the column stays one date wide, and a task ticked before the
+  stamp existed still shows its old one. The stamp itself is in the file:
+  [format.md](format.md#the-completion-stamp).
 - **Group headers get a rule.** In a narrow pane the eye needs a horizontal
   anchor to find where a group starts; a bare word does not give it. Here it
   runs to the right edge; past eighty columns it stops at the title column
@@ -226,6 +253,38 @@ While the input is open the keyboard belongs to it. `a`, `d` and `q` are letters
 in there, which is how "you can never be in a mode you did not open" is made
 true by construction rather than by discipline.
 
+### Putting a date off — `p`
+
+`p` opens the same box, and it is the same box for a reason: the caret, the
+scrolling, the rule and the way out are all already right, and a second kind of
+prompt would be a second thing to get wrong. What changes is the question.
+
+```
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │ put off ▏2                                            │ │
+│  ├───────────────────────────────────────────────────────┤ │
+│  │      Wednesday (2026-08-12)                           │ │
+│  └───────────────────────────────────────────────────────┘ │
+```
+
+What goes in is a length of time, not a sentence, so the field does not colour
+it as task syntax — it is `accent` once it resolves to a day and plain until
+then, which is the same promise the sentence field makes. The preview answers
+the question the box asked: **which day does this land on**. `2w` is exactly the
+input nobody works out in their head.
+
+It takes everything `@` takes — `3d`, `1w`, `fri`, `tomorrow`, `2026-09-01` —
+plus a **bare number meaning days**, because a box that has just asked *how long*
+has no other reading of `2`. That reading is `p`'s alone: `@2` in a sentence is
+somebody typing about the number two. An empty box says `how long?  2  3d  1w
+fri` rather than nothing, and anything unparseable is refused before the file is
+opened.
+
+It moves `@` and nothing else. The time stays — putting "Friday at 09:30" off by
+a week is still half past nine — and a task with no date at all gets one, which
+is the only sense `p` can make of it. Before this, moving a date meant reopening
+the whole line with `⏎` and retyping it, which is a lot of keys for "not today".
+
 ## Editing
 
 `⏎` on a selected task opens the same input, pre-filled with the task's text as
@@ -327,9 +386,9 @@ the file is yours — you should be told where it is on day one.
 │  spc             toggle done           │
 │  a o  ⏎          add / edit            │
 │  d  u            delete / undo         │
+│  X  p            cancel / put off      │
 │  h l  z          fold this group       │
 │  e  r            $EDITOR / re-read     │
-│  :  /            answer, for now       │
 │  q  ctrl-c       quit                  │
 └────────── esc or ? to close ───────────┘
 ```
@@ -342,7 +401,12 @@ The way out is on the bottom border, where it costs no row. Ten keys plus two of
 border is twelve, and twelve is what fits a fourteen-row pane: the last line of a
 help screen must never be the one that falls off, least of all when it is quit.
 Grouping the keys into blocks with blank lines between them would cost four rows
-and exactly that. Only keys that are built are listed.
+and exactly that.
+
+Only keys that are built are listed — which is why `:` and `/` are **not** here
+any more. They do nothing, pressing either answers in the status line, and that
+is where they teach anything at all; the row they were costing is what keeps
+`X  p` inside the same twelve.
 
 ## Keys
 
@@ -356,6 +420,8 @@ and exactly that. Only keys that are built are listed.
 | `⏎` | edit the selected task | |
 | `d` | delete | Immediate, with `u` to undo |
 | `u` | undo the last change | |
+| `X` | cancel — decided against | `- [-]` in the file; `X` again takes it back, the same way `spc` does. Out of the counts, never overdue, not exported. **Capital**, and see the note on `x` under [Deliberately unbound](#deliberately-unbound). See [format.md](format.md#the-three-states) |
+| `p` | put the date off | Opens the input box to ask how long — `2`, `3d`, `1w`, `fri` — and moves `@` alone. Retyping the whole line through `⏎` was the only way to move a date, which is a lot of keys for "not today" |
 | `h` / `l` | fold / unfold the group under the cursor | Not "fold LATER". In `lf`, `ranger` and `yazi` — which this audience uses daily — `h` and `l` collapse and expand *what is under the cursor*, and that muscle memory arrives with them |
 | `z` | the same, as one toggle | `z` is the vim fold prefix |
 | `e` | open `$EDITOR` | The escape hatch — a settled decision, see [product.md](product.md#product-decisions) |
@@ -366,7 +432,11 @@ and exactly that. Only keys that are built are listed.
 ### Deliberately unbound
 
 - **`x`** — in vim it deletes a character, in a checklist it means "tick the box".
-  Two strong and opposite intuitions on one key, so it gets neither.
+  Two strong and opposite intuitions on one key, so it still gets neither. When
+  cancelling needed a key it was the obvious candidate and was rejected for the
+  same reason: a *third* meaning on a key already pulling two ways is worse than
+  either. `X` took it instead — plainly related to the tick, and the shift makes
+  it the deliberate act that "decided against" ought to be.
 - **`esc` in list mode** — does nothing. It must never quit. Someone hitting
   `esc` out of habit should not lose the pane.
 - **`:`** — there is no command mode. Pressing it prints `no command mode — ? for

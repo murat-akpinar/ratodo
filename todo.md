@@ -239,6 +239,25 @@ side pane turns into a dashboard nobody leaves open.
       and a capture goes to `todo.md`. The file is attached to a task only when
       there is more than one, so a single-file setup keeps its identities and its
       calendar UIDs. See [docs/cli.md](docs/cli.md#several-lists)
+- [x] **A finished task is grey, and finishing one says nothing back.** Green is
+      reserved for completed — [docs/design.md](docs/design.md) — and the only thing
+      wearing it is the progress bar. Ticking a task should show in the row, and
+      the file should record *when*: `✓2026-08-11`, a fourth field beside `@`,
+      `#` and `!` — **done**: the row is green, the stamp is written and taken
+      back off by unticking, and the date column on a finished row shows the day
+      it was finished rather than the deadline that stopped applying
+- [x] **There is no third state.** A task that is neither done nor still wanted
+      can only be deleted, which loses the record of having decided against it.
+      `- [-]` — the Obsidian/Logseq convention — with `X` to set it, out of the
+      counts and never overdue — **done**: `✗` on screen in the grey a finished
+      row gave up, out of the counts, never overdue, never exported, and `X`
+      takes it back. `x` itself stays unbound, for the reason it always was
+- [x] **Pushing a date out means retyping the whole line.** `⏎` reopens the
+      input for a task whose only problem is that it is not today's problem.
+      `p` should ask for how long — `2`, `3d`, `1w`, `fri` — and move `@` alone,
+      keeping the time and everything the parser did not understand —
+      **done**: the same input box with a different question, and a preview that
+      answers it with the day it lands on
 - [ ] `cargo publish` — blocked on a verified email address on crates.io
 - [ ] `flake.nix` (`rustPlatform.buildRustPackage`) and an AUR `PKGBUILD`
 

@@ -27,7 +27,7 @@ Global flags:
 
 | Flag | Meaning |
 |---|---|
-| `--file <path>` | Work on exactly this file, and nothing else |
+| `--file <path>` | Work on exactly this file, and nothing else. A **path**, resolved against the working directory — not a list name, so a bare `work.md` means one in `$PWD` |
 | `--theme <name>` | Run once with a different theme, overriding `theme.conf`. See [theming.md](theming.md) |
 | `--help` / `--version` | clap defaults |
 
@@ -48,7 +48,7 @@ $ ls ~/.config/ratodo/
 2026.md  personal.md  theme.conf  work.md
 
 $ ratodo                    # all three, one agenda
-$ ratodo --file work.md     # only this one
+$ ratodo --file ~/.config/ratodo/work.md    # only this one
 ```
 
 Four rules, and they are the whole feature:
@@ -63,7 +63,7 @@ Four rules, and they are the whole feature:
 4. **A capture goes to `todo.md`** — or to the first list alphabetically when
    there is no `todo.md`. It is a fixed answer on purpose: `a` must not mean a
    different file depending on what the cursor happens to be over. Somewhere
-   else is `ratodo --file work.md add '...'`.
+   else is `ratodo --file ~/.config/ratodo/work.md add '...'`.
 
 `done '<text>'` reads every list, so a title in the second file is found. A
 title in *two* files is ambiguous — it prints both and writes nothing, which is
