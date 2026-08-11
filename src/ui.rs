@@ -649,6 +649,15 @@ impl Glyphs {
         }
     }
 
+    /// Where the rule inside the input box meets the frame. A rule that butts
+    /// straight into the side border reads as a broken frame.
+    fn tee(self) -> (&'static str, &'static str) {
+        match self {
+            Glyphs::Unicode => ("├", "┤"),
+            Glyphs::Ascii => ("+", "+"),
+        }
+    }
+
     /// The dash between the name and the counts, and the one between the counts.
     fn punctuation(self) -> (&'static str, &'static str) {
         match self {
@@ -1129,8 +1138,15 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
         format!("      {}", crate::text::fields(&parsed, render.today, dot)),
         Style::default().fg(render.colours.accent),
     ));
+    // A rule between the two, because they are not the same thing: above it is
+    // what you are typing and below it is what the file will get. Without it the
+    // caret looks like it could be moved down into the preview, and people try.
+    let rule = Line::from(Span::styled(
+        render.glyphs.rule().to_string().repeat(width),
+        Style::default().fg(render.colours.border),
+    ));
 
-    (vec![field, preview], at.min(width.saturating_sub(1)))
+    (vec![field, rule, preview], at.min(width.saturating_sub(1)))
 }
 
 pub fn draw(
@@ -1267,11 +1283,11 @@ fn input_box(frame: &mut Frame, area: Rect, input: &Input, render: Render<'_>) {
     // visible on both sides. A box flush with the border reads as the screen
     // having changed shape, which is the one thing it must not do.
     let width = 70.min(area.width.saturating_sub(4));
-    // Border, field, preview — and the preview is what goes first, exactly as it
-    // did on the bottom line. Under three rows there is nothing to draw at all:
-    // two of them are border and the field would have nowhere to sit, so the
+    // Border, field, rule, preview — and the preview is what goes first, exactly
+    // as it did on the bottom line. Under three rows there is nothing to draw at
+    // all: two of them are border and the field would have nowhere to sit, so the
     // pane keeps its tasks and the bottom line still names the keys.
-    let height = 4.min(area.height);
+    let height = 5.min(area.height);
     if height < 3 {
         return;
     }
@@ -1282,7 +1298,13 @@ fn input_box(frame: &mut Frame, area: Rect, input: &Input, render: Render<'_>) {
         height,
     );
 
-    let (lines, at) = input_lines(input, (width as usize).saturating_sub(2), render);
+    let (mut lines, at) = input_lines(input, (width as usize).saturating_sub(2), render);
+    // A pane with one row to spare gives it to the preview: the rule is there to
+    // separate two things, and with only one of them on screen it separates
+    // nothing while costing the more useful line.
+    if height < 5 {
+        lines.remove(1);
+    }
 
     frame.render_widget(Clear, box_area);
     frame.render_widget(
@@ -1294,9 +1316,26 @@ fn input_box(frame: &mut Frame, area: Rect, input: &Input, render: Render<'_>) {
         ),
         box_area,
     );
+    if height >= 5 {
+        tee(frame, box_area, render.glyphs, render.colours.accent);
+    }
     // The terminal's own cursor, not a drawn block: it blinks the way every
     // other text field the user has ever typed into does, and it costs a line.
     frame.set_cursor_position((box_area.x + 1 + at as u16, box_area.y + 1));
+}
+
+/// Joins the rule under the field to the two side borders. The rule is drawn as
+/// text inside the block, which knows nothing about it, so the two cells where
+/// they meet are set afterwards — a rule butting into `│` reads as a frame that
+/// broke rather than a divider.
+fn tee(frame: &mut Frame, box_area: Rect, glyphs: Glyphs, colour: Color) {
+    let (left, right) = glyphs.tee();
+    let y = box_area.y + 2;
+    let buffer = frame.buffer_mut();
+    buffer[(box_area.x, y)].set_symbol(left).set_fg(colour);
+    buffer[(box_area.x + box_area.width - 1, y)]
+        .set_symbol(right)
+        .set_fg(colour);
 }
 
 /// The keys, in a box over the middle of the list. This is the one overlay in
@@ -1402,10 +1441,10 @@ fn empty(frame: &mut Frame, area: Rect, block: Option<Block<'_>>, render: Render
         ),
         Line::raw(""),
     ];
-    // Four rows for the box under the six above it. Where they do not fit, the
+    // Five rows for the box under the six above it. Where they do not fit, the
     // example stays a line of text: it is the part that teaches, so it is the
     // last thing a short pane is allowed to lose.
-    let room = inner.height >= 10 && inner.width >= 34;
+    let room = inner.height >= 11 && inner.width >= 34;
     if !room {
         lines.push(Line::styled(
             format!("  Try:  a  then  {EXAMPLE}"),
@@ -1434,7 +1473,7 @@ const EXAMPLE: &str = "buy milk @tomorrow #home";
 /// what marks the box that has the keyboard — this one is a picture of it.
 fn example(frame: &mut Frame, inner: Rect, render: Render<'_>) {
     let width = 48.min(inner.width.saturating_sub(4));
-    let area = Rect::new(inner.x + 2, inner.y + 6, width, 4);
+    let area = Rect::new(inner.x + 2, inner.y + 6, width, 5);
     let (lines, _) = input_lines(
         &Input::new(EXAMPLE.to_string(), None),
         (width as usize).saturating_sub(2),
@@ -1449,6 +1488,7 @@ fn example(frame: &mut Frame, inner: Rect, render: Render<'_>) {
         ),
         area,
     );
+    tee(frame, area, render.glyphs, render.colours.border);
 }
 
 /// `5 open · 1 overdue` while it fits, `5 · 1!` when it does not — and the same
@@ -3429,9 +3469,9 @@ mod tests {
             [
                 "┌ ratodo — 4 open · 0 overdue ───────────────────────────────────────┐",
                 "│  TODAY ─────────────────────────────────────────────────────────── │",
-                "│▌ ○ pay the invoice                                            today│",
-                "│ ┌────────────────────────────────────────────────────────────────┐ │",
+                "│▌┌────────────────────────────────────────────────────────────────┐y│",
                 "│ │ add ▏call the accountant @thu !high                            │ │",
+                "│ ├────────────────────────────────────────────────────────────────┤ │",
                 "│ │      due Thursday (2026-08-13)  ·  !high                       │ │",
                 "│ └────────────────────────────────────────────────────────────────┘ │",
                 "│                                                                    │",
@@ -3453,8 +3493,10 @@ mod tests {
             .position(|r| r.contains(" add ▏just write it down"));
         let field = field.unwrap_or_else(|| panic!("{screen:?}"));
 
+        // Two rows down, because the rule sits between the field and what it
+        // will become.
         assert_eq!(
-            screen[field + 1].replace(['│', ' '], ""),
+            screen[field + 2].replace(['│', ' '], ""),
             "",
             "an unparseable line is not an error: {screen:?}"
         );
@@ -3513,18 +3555,18 @@ mod tests {
         let quiet = rendered(40, 10, &tasks);
         let busy = with_input(40, 10, &tasks, &Input::adding(), Glyphs::Unicode);
 
-        // The box covers four rows of the middle. Everything outside it is the
+        // The box covers five rows of the middle. Everything outside it is the
         // screen the reader was already looking at — the list does not scroll,
         // reflow or give up a row, which is what it did when the input lived on
         // the bottom line.
         assert_eq!(quiet[..2], busy[..2], "the list shifted under the reader");
-        assert_eq!(quiet[6..9], busy[6..9], "the list shifted under the reader");
+        assert_eq!(quiet[7..9], busy[7..9], "the list shifted under the reader");
         assert!(
             busy[8].starts_with('└'),
             "the frame lost its foot: {busy:?}"
         );
         assert!(
-            busy[2..6].iter().all(|r| r.contains('│')),
+            busy[2..7].iter().all(|r| r.contains('│')),
             "the box is not where it should be: {busy:?}"
         );
         assert!(busy[3].contains(" add ▏"), "{busy:?}");

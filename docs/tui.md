@@ -159,6 +159,7 @@ nothing is given up, and the box lands where the eye already is:
 │ ▌ ○ pay the invoice                                 #home  │
 │  ┌───────────────────────────────────────────────────────┐ │
 │  │ add ▏call the accountant @thu !high                   │ │
+│  ├───────────────────────────────────────────────────────┤ │
 │  │      due Thursday (2026-08-13)  ·  !high              │ │
 │  └───────────────────────────────────────────────────────┘ │
 │   ○ book a dentist appointment         Thu 09:30  #health  │
@@ -173,6 +174,12 @@ screen, and glancing down there to type is the head movement this tool exists to
 avoid. The box costs the rows it covers for as long as it is open, and gives
 them straight back — which is a different thing from the screen changing shape.
 See [decisions.md](decisions.md#reversed).
+
+**A rule separates the two halves of the box.** Above it is what you are typing;
+below it is what the file will get. Without it the caret looks like something
+that could be moved down into the preview, and people try — the box is one
+field, not two. The rule goes when the pane is too short to have both, since it
+then separates nothing while costing the more useful line.
 
 Its second line is a **live parse preview**, and it is the most valuable ten
 lines of code in the TUI. As you type `@thu`, it resolves to a real date in front
@@ -283,6 +290,7 @@ The first thing a new user sees, so it has to teach rather than apologise:
 │                                                            │
 │  ┌──────────────────────────────────────────────┐          │
 │  │ add ▏buy milk @tomorrow #home                │          │
+│  ├──────────────────────────────────────────────┤          │
 │  │      due tomorrow (2026-08-11)  ·  #home     │          │
 │  └──────────────────────────────────────────────┘          │
 │                                                            │
@@ -296,7 +304,7 @@ anything has been typed, which is the part of the syntax worth teaching. The
 border is the frame's colour, not the accent: the accent border marks the box
 that has the keyboard, and this one is a picture of it.
 
-Below ten rows the box does not fit and the example goes back to being a line —
+Below eleven rows the box does not fit and the example goes back to being a line —
 `Try:  a  then  buy milk @tomorrow #home`. It is the part that teaches, so it is
 the last thing a short pane loses.
 

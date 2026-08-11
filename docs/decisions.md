@@ -134,13 +134,20 @@ Three lists: what is settled, what was rejected, and what is still open.
   `due tomorrow (2026-08-11) · #home`. The shorthand is the thing worth teaching
   and it now teaches itself before a key is pressed. No new concept and no new
   colour: the frame's own border colour, because the accent border is what marks
-  the box that has the keyboard. Under ten rows it goes back to being a line —
+  the box that has the keyboard. Under eleven rows it goes back to being a line —
   the example is the last thing a short pane is allowed to lose. In the help
   overlay `? esc  this, and away again` left the key list for the bottom border
   as `esc or ? to close`, which costs no row and takes the box back to twelve.
   Grouping the keys with blank lines was the alternative and it costs four rows,
   which is `q  ctrl-c` falling off a fourteen-row pane. See
   [tui.md](tui.md#empty).
+- ✅ **A rule splits the input box in two** *(2026-08-11)*. The field and the
+  live parse sat in one box with nothing between them, and the caret read as
+  something that could be moved down into the preview. The box costs a fifth
+  row; on a pane too short for one the rule goes rather than the preview. It is
+  drawn as text inside the block, so the two cells where it meets the frame are
+  set to `├` and `┤` afterwards — a rule butting into `│` reads as a frame that
+  broke. See [tui.md](tui.md#adding).
 - ✅ **A reader that closes the pipe is not an error** *(2026-08-11)*.
   `ratodo list | head` made `println!` panic. Every stdout write goes through
   `writeln!`, and `BrokenPipe` alone exits 0. See
