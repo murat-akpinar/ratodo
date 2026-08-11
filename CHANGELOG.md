@@ -30,6 +30,10 @@ Two screens from docs/tui.md. The empty one teaches instead of apologising: the 
 `completions/ratodo.{bash,zsh,fish}`, and no `clap_complete` — that would be an eighth dependency for a subcommand list that is short and fixed.
 - *(ui)* Open $EDITOR on e, and poll instead of parking a thread ([7190d34](https://github.com/murat-akpinar/ratodo/commit/7190d34b43d90b35c40a2ae6184bb22974535682))
 `e` hands the terminal to `$VISUAL` or `$EDITOR`, waits, takes it back and re-reads the file. The escape hatch: whatever the tool cannot do, the file can, and the file is Markdown the user already knows how to edit.
+- *(ui)* Fold a group with h, l and z ([d7601e1](https://github.com/murat-akpinar/ratodo/commit/d7601e19a36171b2d33fffea6503f4cf440dbb26))
+The keys `lf`, `ranger` and `yazi` users arrive with: `h` collapses the group under the cursor, `l` opens it, `z` does whichever is the opposite of now.
+- *(ui)* Delete with d, take it back with u ([97d615e](https://github.com/murat-akpinar/ratodo/commit/97d615e1a36a40347ef5f030076de8bb9df290cd))
+`d` removes the selected task immediately and `u` puts it back — the trade docs/tui.md makes, where a confirmation prompt would tax every delete to catch the rare wrong one.
 
 ### 🐛 Bug Fixes
 
