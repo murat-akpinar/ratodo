@@ -214,8 +214,10 @@ side pane turns into a dashboard nobody leaves open.
       … 1d ago`. It is finished; the lateness stopped being true —
       **done**: it shows the plain date (`Aug 8`) instead, and stays in
       `OVERDUE`, where membership was always positional
-- [ ] **`!high` is easy to miss**, sitting dim next to the tags. It is the one
-      field the user typed to mean *urgent* and the screen barely says so
+- [x] **`!high` is easy to miss**, sitting dim next to the tags. It is the one
+      field the user typed to mean *urgent* and the screen barely says so —
+      **done**: it is bold and in the row's own colour. Weight, not a twelfth
+      theme role, so it still reads under `NO_COLOR`. `!med` and `!low` unchanged
 - [ ] Empty screen and `?` overlay — both correct and both plain
 - [ ] Decide what to do about the help overlay's `↓ ↑` under a non-UTF-8 locale.
       The main screen goes fully ASCII and the overlay does not; the buffer test

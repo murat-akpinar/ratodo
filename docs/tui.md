@@ -127,6 +127,13 @@ Details that are decisions, not drawing:
   instead (`Aug 8`) — still a fact, and still worth seeing. The task stays in
   `OVERDUE` all the same: membership there is positional, and the list does not
   move under you.
+- **`!high` is bold**, in the row's own colour rather than the grey the rest of
+  the right-hand fields sit in. It is the one field the user typed to mean
+  *urgent*, and saying it back in the same whisper as the date wastes it. Weight,
+  not a twelfth theme colour: it reads the same on a bare TTY with `NO_COLOR=1`,
+  where a colour would have said nothing at all. `!med` and `!low` stay quiet —
+  three loud rows teach nothing about which of them is which — and a ticked task
+  is not urgent however it was filed.
 - Counts in the title bar are the same numbers a waybar module will show in v4
   ([roadmap.md](roadmap.md)). Same wording, one source.
 - **What is finished sits on the right of the title rule**, as eight cells and a

@@ -96,6 +96,12 @@ Three lists: what is settled, what was rejected, and what is still open.
   survives the ASCII fallback. The alternatives — dropping the rule from the
   user's headings, or indenting ours — each spent a level of hierarchy the
   design does not have. See [tui.md](tui.md#main-screen).
+- ✅ **`!high` is bold, and that is all it gets** *(2026-08-11)*. The one field
+  the user typed to mean *urgent* sat in the same grey as the date and the tags.
+  Weight rather than a twelfth theme role: a priority colour would have to be
+  themed, would collide with `overdue` on the rows that have both, and would say
+  nothing under `NO_COLOR`. `!med` and `!low` stay dim. See
+  [tui.md](tui.md#main-screen).
 - ✅ **A finished task is never late** *(2026-08-11)*. `1d ago` on a ticked line
   states something that stopped being true, and the counts already left finished
   work out of `overdue`. It shows the plain date instead, and keeps its place in

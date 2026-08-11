@@ -9,7 +9,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 
 use crate::agenda::{Counts, Group, Kind};
-use crate::model::Task;
+use crate::model::{Priority, Task};
 use crate::text;
 use crate::theme::Theme;
 
@@ -891,7 +891,19 @@ fn task_line(
     let dim = Style::default().fg(render.colours.dim);
     push(date, cols.date, dim);
     if size == Size::Wide {
-        push(prio.unwrap_or_default(), cols.prio, dim);
+        // `!high` is the one field the user typed to mean *urgent*, and dim
+        // beside the tags is the screen saying it back in a whisper. Weight
+        // rather than a twelfth theme colour: nothing on this screen may be
+        // carried by colour alone — docs/design.md#rules. `!med` and `!low` stay
+        // where they were, or three loud rows teach nothing about which is which,
+        // and a ticked task is not urgent however it was filed.
+        let urgent = task.priority == Some(Priority::High) && !task.done;
+        let style = if urgent {
+            Style::default().fg(colour).bold()
+        } else {
+            dim
+        };
+        push(prio.unwrap_or_default(), cols.prio, style);
         // What is left of the row after the columns. A tag that does not fit is
         // dropped whole rather than cut: `#hea…` is not a filter, it is a
         // riddle. Tags go before the title — docs/tui.md#width.
@@ -2387,6 +2399,49 @@ mod tests {
                 "{missing} was drawn past the budget: {screen:?}"
             );
         }
+    }
+
+    /// `!high` is the one field the user typed to mean *urgent*, and it sat in
+    /// the same grey as the date and the tags. Weight says so without spending a
+    /// twelfth theme colour, and without leaning on colour at all
+    /// — docs/design.md#rules.
+    #[test]
+    fn high_priority_carries_weight_and_the_other_two_stay_quiet() {
+        let colours = crate::theme::MOCHA;
+        let style_of = |spec: &str, done: bool| {
+            let mut task = capture(spec, today());
+            task.set_done(done);
+            let rows = [Row::Task(task.clone())];
+            let cols = Columns::of(&rows, 86, render(colours), Size::Wide);
+            let line = task_line(&task, 86, cols, render(colours), Size::Wide);
+            line.spans
+                .iter()
+                .find(|s| s.content.starts_with('!'))
+                .expect("the priority is on the row")
+                .style
+        };
+
+        let high = style_of("a @2026-08-14 !high", false);
+        assert_eq!(high.fg, Some(colours.foreground));
+        assert!(
+            high.add_modifier.contains(ratatui::style::Modifier::BOLD),
+            "the loud field is not loud: {high:?}"
+        );
+
+        for quiet in ["a @2026-08-14 !med", "a @2026-08-14 !low"] {
+            let style = style_of(quiet, false);
+            assert_eq!(style.fg, Some(colours.dim), "{quiet}");
+            assert!(
+                !style.add_modifier.contains(ratatui::style::Modifier::BOLD),
+                "{quiet}"
+            );
+        }
+
+        // Finished work is not urgent, however it was filed — the same reason a
+        // ticked task stops saying how late it is.
+        let ticked = style_of("a @2026-08-14 !high", true);
+        assert_eq!(ticked.fg, Some(colours.dim));
+        assert!(!ticked.add_modifier.contains(ratatui::style::Modifier::BOLD));
     }
 
     /// A row is built to a width and ratatui clips whatever overruns it, so an
