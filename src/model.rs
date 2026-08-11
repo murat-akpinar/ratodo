@@ -134,6 +134,24 @@ impl Task {
         self.raw = String::from_utf8(bytes).expect("the checkbox byte is ASCII");
     }
 
+    /// Everything after the checkbox: what the input field is pre-filled with,
+    /// and what an edit replaces.
+    pub fn body(&self) -> &str {
+        self.raw.get(self.checkbox + 2..).unwrap_or("").trim_start()
+    }
+
+    /// Swaps the body for a freshly captured one and keeps everything up to and
+    /// including the checkbox byte for byte — the indentation, the bullet, and
+    /// whether the box is ticked. The user retyped the line's content, not its
+    /// shape, and a nested task has to stay nested.
+    pub fn retype(&mut self, fields: Task) {
+        self.raw = format!("{} {}", &self.raw[..self.checkbox + 2], fields.body());
+        self.title = fields.title;
+        self.due = fields.due;
+        self.tags = fields.tags;
+        self.priority = fields.priority;
+    }
+
     pub fn line(&self) -> String {
         if self.dirty {
             self.render_fields()
@@ -208,6 +226,34 @@ mod task_tests {
     fn an_undated_task_is_never_overdue() {
         let task = Task::new(false, "a".into(), None, vec![], None);
         assert!(!task.is_overdue(ymd(2026, 8, 10)));
+    }
+
+    /// What the input field shows: the line's own text, not our rendering of it.
+    #[test]
+    fn the_body_is_whatever_follows_the_checkbox() {
+        let doc = crate::parse::parse("  * [x]   wash up @2026-08-12\n- [ ] plain\n- [ ]\n");
+        let bodies: Vec<&str> = doc.tasks().map(|t| t.body()).collect();
+        assert_eq!(bodies, ["wash up @2026-08-12", "plain", ""]);
+    }
+
+    /// Retyping a line replaces what the user typed and nothing else. The
+    /// indentation, the bullet they chose and the tick survive, because the
+    /// input field was never showing them in the first place.
+    #[test]
+    fn retyping_keeps_the_indent_the_bullet_and_the_tick() {
+        let doc = crate::parse::parse("  * [x] wash up @2026-08-12 #home\n");
+        let mut task = doc.tasks().next().unwrap().clone();
+
+        task.retype(crate::capture::capture(
+            "wash up tonight #home !high",
+            ymd(2026, 8, 11),
+        ));
+
+        assert_eq!(task.line(), "  * [x] wash up tonight #home !high");
+        assert!(task.done, "the tick was not the user's to retype");
+        assert_eq!(task.title, "wash up tonight");
+        assert_eq!(task.due, None, "the date was dropped, so it goes");
+        assert_eq!(task.priority, Some(Priority::High));
     }
 }
 

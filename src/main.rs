@@ -557,6 +557,64 @@ impl Live {
         Ok(ui::Notice::Said(format!("deleted \"{title}\"    u undo")))
     }
 
+    /// Saves what was typed on the input line: a new task, or the selected one
+    /// rewritten.
+    ///
+    /// An edit replaces the line's body and keeps its prefix byte for byte, so
+    /// the indentation and the bullet the user chose survive being retyped —
+    /// docs/architecture.md#round-trip-fidelity.
+    fn save_typed(
+        &mut self,
+        path: &Path,
+        today: chrono::NaiveDate,
+        input: &ui::Input,
+    ) -> Result<ui::Notice> {
+        let typed = input.text.trim();
+        if typed.is_empty() {
+            return Ok(ui::Notice::Said("nothing typed".to_string()));
+        }
+
+        let fields = capture::capture(typed, today);
+        let title = text::plain(&fields.title);
+        let before = self.doc.clone();
+
+        let what = match &input.editing {
+            Some(raw) => {
+                let Some(task) = self.doc.tasks_mut().find(|t| &t.raw == raw) else {
+                    return Ok(ui::Notice::Warned(
+                        "that task is not there any more.  esc, then look again".to_string(),
+                    ));
+                };
+                if task.body() == typed {
+                    return Ok(ui::Notice::Said("unchanged".to_string()));
+                }
+                task.retype(fields);
+                "edited"
+            }
+            None => {
+                self.doc.push_task(fields);
+                "added"
+            }
+        };
+
+        if self
+            .write_back(path, before, Some(format!("{what}: {title}")))?
+            .is_some()
+        {
+            // Refused. Re-read here rather than leaving it to `r`, because the
+            // caller is going to hand the sentence straight back to the field
+            // and the next `⏎` has to go against the file as it now is.
+            // Nothing is merged and nothing is overwritten — docs/tui.md#write-conflict.
+            self.reload(path, today)?;
+            return Ok(ui::Notice::Warned(
+                "changed on disk — re-read, ⏎ to save again".to_string(),
+            ));
+        }
+
+        self.rebuild(today);
+        Ok(ui::Notice::Said(format!("{what}: {title}    u undo")))
+    }
+
     /// Puts the document back the way it was before the last change.
     ///
     /// One level, and the whole document rather than an inverse operation: an
@@ -599,6 +657,9 @@ fn run(
     let today = render.today;
     let mut notice = ui::Notice::Hints;
     let mut helping = false;
+    // The other mode. `Some` for exactly as long as a line is being typed, and
+    // only ever put there by `a`, `o` or `⏎`.
+    let mut input: Option<ui::Input> = None;
     // Drawing is still driven by events, not by the timer: a wake-up that finds
     // nothing to do draws nothing.
     let mut redraw = true;
@@ -613,6 +674,7 @@ fn run(
                     render,
                     &notice,
                     helping,
+                    input.as_ref(),
                 )
             })?;
             redraw = false;
@@ -622,37 +684,78 @@ fn run(
             // A resize or a paste falls through to the redraw and nothing else.
             redraw = true;
             if let Event::Key(key) = event::read()? {
-                // What the key means lives in `ui`, where it can be tested; this
-                // loop only knows how to read one and how to obey.
-                match ui::action(key) {
-                    ui::Action::Quit => return Ok(ExitCode::SUCCESS),
-                    ui::Action::Move(n) => {
-                        live.screen.move_by(n);
-                        notice = ui::Notice::Hints;
-                    }
-                    ui::Action::Top => live.screen.top(),
-                    ui::Action::Bottom => live.screen.bottom(),
-                    ui::Action::Toggle => notice = live.toggle(path, today)?,
-                    ui::Action::Delete => notice = live.delete(path, today)?,
-                    ui::Action::Undo => notice = live.undo(path, today)?,
-                    ui::Action::Fold(want) => {
-                        if let Some(complaint) = live.screen.fold(want) {
-                            notice = ui::Notice::Said(complaint.to_string());
+                // While the input is open the small keymap has the keyboard, and
+                // that is what makes "nothing else can open it" true: an `a` in
+                // there is a letter. `ctrl-c` cancels and never quits.
+                if let Some(typing) = input.as_mut() {
+                    match ui::typing(key) {
+                        ui::Typed::Char(c) => typing.text.push(c),
+                        ui::Typed::Back => {
+                            typing.text.pop();
                         }
+                        ui::Typed::Cancel => {
+                            input = None;
+                            notice = ui::Notice::Hints;
+                        }
+                        ui::Typed::Save => {
+                            let typed = input.take().expect("the input was open a line ago");
+                            notice = live.save_typed(path, today, &typed)?;
+                            // A refusal keeps the field, and the sentence in it.
+                            // Losing it is the one thing docs/tui.md promises
+                            // will not happen.
+                            if matches!(notice, ui::Notice::Warned(_)) {
+                                input = Some(typed);
+                            }
+                        }
+                        ui::Typed::Ignore => {}
                     }
-                    ui::Action::Edit => {
-                        notice = live.edit(terminal, path, today)?;
+                } else {
+                    // What the key means lives in `ui`, where it can be tested;
+                    // this loop only knows how to read one and how to obey.
+                    match ui::action(key) {
+                        ui::Action::Quit => return Ok(ExitCode::SUCCESS),
+                        ui::Action::Move(n) => {
+                            live.screen.move_by(n);
+                            notice = ui::Notice::Hints;
+                        }
+                        ui::Action::Top => live.screen.top(),
+                        ui::Action::Bottom => live.screen.bottom(),
+                        ui::Action::Toggle => notice = live.toggle(path, today)?,
+                        ui::Action::Delete => notice = live.delete(path, today)?,
+                        ui::Action::Undo => notice = live.undo(path, today)?,
+                        // The overlay comes down with it: a box over the list
+                        // while a line is being typed covers the thing the line
+                        // is about.
+                        ui::Action::Add => {
+                            input = Some(ui::Input::adding());
+                            helping = false;
+                        }
+                        ui::Action::Change => match live.screen.task() {
+                            Some(task) => {
+                                input = Some(ui::Input::editing(task));
+                                helping = false;
+                            }
+                            None => notice = ui::Notice::Said("nothing to edit here".to_string()),
+                        },
+                        ui::Action::Fold(want) => {
+                            if let Some(complaint) = live.screen.fold(want) {
+                                notice = ui::Notice::Said(complaint.to_string());
+                            }
+                        }
+                        ui::Action::Edit => {
+                            notice = live.edit(terminal, path, today)?;
+                        }
+                        ui::Action::Reload => {
+                            live.reload(path, today)?;
+                            notice = ui::Notice::Said("reloaded".to_string());
+                        }
+                        ui::Action::Help => helping = !helping,
+                        // `esc` puts the overlay down and otherwise does nothing
+                        // at all. It must never quit.
+                        ui::Action::Close => helping = false,
+                        ui::Action::Say(what) => notice = ui::Notice::Said(what.to_string()),
+                        ui::Action::Ignore => {}
                     }
-                    ui::Action::Reload => {
-                        live.reload(path, today)?;
-                        notice = ui::Notice::Said("reloaded".to_string());
-                    }
-                    ui::Action::Help => helping = !helping,
-                    // `esc` puts the overlay down and otherwise does nothing at
-                    // all. It must never quit.
-                    ui::Action::Close => helping = false,
-                    ui::Action::Say(what) => notice = ui::Notice::Said(what.to_string()),
-                    ui::Action::Ignore => {}
                 }
             }
         }
@@ -968,6 +1071,145 @@ mod tests {
 
         live.undo(&path, a_day()).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    fn typed(text: &str, editing: Option<&str>) -> ui::Input {
+        ui::Input {
+            text: text.to_string(),
+            editing: editing.map(str::to_string),
+        }
+    }
+
+    /// `a` then a sentence then `⏎`. It lands where `ratodo add` puts it — after
+    /// the last task, not at the end of the file — and `u` takes it back.
+    #[test]
+    fn the_input_adds_a_task_and_undo_takes_it_away_again() {
+        let before = "## Work\n- [ ] first\n\n> a note\n";
+        let (path, mut live) = open("input-add", before);
+
+        let notice = live
+            .save_typed(
+                &path,
+                a_day(),
+                &typed("call the bank @tomorrow #work", None),
+            )
+            .unwrap();
+        assert!(
+            matches!(&notice, ui::Notice::Said(s) if s.contains("added: call the bank") && s.contains("u undo")),
+            "{notice:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "## Work\n- [ ] first\n- [ ] call the bank @2026-08-12 #work\n\n> a note\n"
+        );
+        assert_eq!(live.counts.open, 2, "the screen did not catch up");
+
+        live.undo(&path, a_day()).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// `⏎` on a task rewrites that line and leaves every other byte in the file
+    /// alone — including the shape of the line it rewrote.
+    #[test]
+    fn the_input_edits_one_line_and_keeps_its_prefix() {
+        let before = "# List\n  * [x] wash up @2026-08-01\n- [ ] second\n";
+        let (path, mut live) = open("input-edit", before);
+
+        let notice = live
+            .save_typed(
+                &path,
+                a_day(),
+                &typed(
+                    "wash up properly !high",
+                    Some("  * [x] wash up @2026-08-01"),
+                ),
+            )
+            .unwrap();
+        assert!(
+            matches!(&notice, ui::Notice::Said(s) if s.contains("edited: wash up properly")),
+            "{notice:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "# List\n  * [x] wash up properly !high\n- [ ] second\n"
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// Two ways of asking for nothing, and neither of them touches the file or
+    /// spends the undo: an empty line, and an edit that changed nothing.
+    #[test]
+    fn an_input_that_says_nothing_writes_nothing() {
+        let before = "- [ ] first\n";
+        let (path, mut live) = open("input-nothing", before);
+
+        for input in [typed("   ", None), typed("first", Some("- [ ] first"))] {
+            let notice = live.save_typed(&path, a_day(), &input).unwrap();
+            assert!(matches!(&notice, ui::Notice::Said(_)), "{notice:?}");
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+            assert!(
+                live.undo.is_none(),
+                "a write that did not happen left an undo"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// Somebody else wrote first. Nothing is merged and nothing is overwritten,
+    /// but the file is re-read on the spot, because the caller is about to hand
+    /// the sentence back to the field and the next `⏎` has to have a chance of
+    /// working.
+    #[test]
+    fn a_refused_capture_re_reads_so_the_second_try_goes_through() {
+        let (path, mut live) = open("input-conflict", "- [ ] first\n");
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&path, "- [ ] first\n- [ ] theirs\n").unwrap();
+
+        let input = typed("mine", None);
+        let refused = live.save_typed(&path, a_day(), &input).unwrap();
+        assert!(
+            matches!(&refused, ui::Notice::Warned(w) if w.contains("changed on disk")),
+            "{refused:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "- [ ] first\n- [ ] theirs\n",
+            "the refused write went through anyway"
+        );
+
+        // The sentence is still the caller's to keep, and now it lands — on top
+        // of the other writer's line, not instead of it.
+        live.save_typed(&path, a_day(), &input).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "- [ ] first\n- [ ] theirs\n- [ ] mine\n"
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// The line being edited went away while it was being typed — a `git pull`,
+    /// or the other pane. Saying so beats writing the sentence somewhere it does
+    /// not belong.
+    #[test]
+    fn editing_a_line_that_is_no_longer_there_writes_nothing() {
+        let (path, mut live) = open("input-vanished", "- [ ] first\n");
+
+        let notice = live
+            .save_typed(&path, a_day(), &typed("whatever", Some("- [ ] gone")))
+            .unwrap();
+        assert!(
+            matches!(&notice, ui::Notice::Warned(w) if w.contains("not there any more")),
+            "{notice:?}"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "- [ ] first\n");
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }

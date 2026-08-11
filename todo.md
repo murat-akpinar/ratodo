@@ -130,18 +130,19 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
 - [x] Draw the grouped agenda with header rules, `○ ✓ !` symbols, `▌` selection
 - [x] ASCII fallback: `[ ]` `[x]` `[!]`, `>` selection — chosen from the locale,
       and it takes the frame and the punctuation with it
-- [~] The bottom line: hints and results done, the input field comes with the
-      input mode
-- [~] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `d u` · `h l z` · `e` · `r` · `?` ·
-      `esc` · `q` done. `a o ⏎` wait for the input mode
+- [x] The bottom line: hints, results, warnings and the input field
+- [x] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `a o ⏎` · `d u` · `h l z` · `e` ·
+      `r` · `?` · `esc` · `q`
 - [x] `h`/`l` fold the group under the cursor — lf/ranger/yazi muscle memory, not
       "fold LATER". A collapsed group is selectable, which is the only way back
-- [ ] Input mode: `⏎` save, `esc` cancel, `ctrl-c` cancel (**never quit**), and nothing else can open it
-- [ ] **Live parse preview** under the input — `@thu` resolves as you type
+- [x] Input mode: `⏎` save, `esc` cancel, `ctrl-c` cancel (**never quit**), and nothing else can open it
+- [x] **Live parse preview** under the input — `@thu` resolves as you type. It
+      costs the list a row while it is open — see
+      [docs/decisions.md](docs/decisions.md#reversed)
 - [x] `d` deletes immediately; `u` undoes delete / toggle. Edit joins it with the
       input mode
-- [~] Write-conflict line with `r` reload — the line and the reload are in;
-      keeping the typed text waits for the input mode
+- [x] Write-conflict line with `r` reload. A refusal while the input is open
+      re-reads by itself and hands the typed text back to the field
 - [ ] Selection survives reload — track by identity, not row index
 - [x] A toggled task does not change position until the next reload
 - [x] Empty state with the file path and a worked example

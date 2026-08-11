@@ -47,10 +47,22 @@ that changes shape, and it is doing the job vim's status line does:
 | a result message + undo | just after an action |
 | a warning | on a write conflict |
 
-One line, four jobs. Nothing pops over the list, nothing shifts the layout, and
-**the list never moves under you** — which is the actual reason for this design,
-not tidiness. A modal dialog that covers the tasks you were reading is exactly
-the interruption this tool exists to avoid.
+One line, four jobs. Nothing pops over the list, and **the list never moves
+under you** — which is the actual reason for this design, not tidiness. A modal
+dialog that covers the tasks you were reading is exactly the interruption this
+tool exists to avoid.
+
+The single exception is the input, which takes a **second** row for its parse
+preview and so borrows one row of list for as long as it is open. That is a
+move you asked for and can end with `esc`, which is a different thing from the
+screen rearranging itself while you read it — see
+[decisions.md](decisions.md#reversed). Under ten rows the preview is the half
+that gets dropped; the field is not.
+
+The hint bar names six keys, not the whole keymap: it has to fit sixty columns,
+which is the narrowest pane that still counts as wide. `d` and `e` gave up their
+slots when the capture keys arrived — adding a task is what the tool is for, and
+`?` lists the rest.
 
 ## Main screen
 
@@ -75,7 +87,7 @@ the interruption this tool exists to avoid.
 │                                                            │
 └────────────────────────────────────────────────────────────┘
 
- j k move   spc done   a add   ⏎ edit   d del   e $EDITOR   ? keys   q quit
+ j k move   spc done   a add   ⏎ edit   ? keys   q quit
 ```
 
 Details that are decisions, not drawing:
@@ -119,8 +131,8 @@ Details that are decisions, not drawing:
 │   ○ book a dentist appointment         Thu 09:30  #health  │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
- add ▏call the accountant @thu !high█
-     due Thu 2026-08-13  ·  !high              ⏎ save   esc cancel
+ add ▏call the accountant @thu !high
+      due Thursday (2026-08-13)  ·  !high         ⏎ save   esc cancel
 ```
 
 The second line is a **live parse preview**, and it is the most valuable ten
@@ -132,17 +144,30 @@ it proves the shorthand actually did what you meant.
 If nothing parses, the preview line stays empty rather than showing an error —
 plain text is a perfectly good task.
 
-`⏎` saves and closes. `esc` cancels and the text is discarded. `e` is still the
-way out to `$EDITOR` for anything more involved.
+`⏎` saves and closes. `esc` cancels and the text is discarded. `ctrl-c` does the
+same — in here it is not the quit key. `e` is still the way out to `$EDITOR` for
+anything more involved.
+
+The typed line scrolls rather than truncating: what you are typing is at the end
+of it, and a capture box that hides that is not a capture box. An empty line
+saves nothing.
+
+While the input is open the keyboard belongs to it. `a`, `d` and `q` are letters
+in there, which is how "you can never be in a mode you did not open" is made
+true by construction rather than by discipline.
 
 ## Editing
 
 `⏎` on a selected task opens the same input, pre-filled with the task's text as
-it appears in the file. Same preview line, same keys.
+it appears in the file — everything after the checkbox, byte for byte. Same
+preview line, same keys.
 
-Editing writes back **only** the fields that changed; the rest of the line stays
-byte-for-byte identical, which is the invariant in
-[architecture.md](architecture.md#round-trip-fidelity).
+Saving replaces exactly that: the **prefix survives untouched**, so the
+indentation, the bullet the user chose (`-`, `*` or `+`) and whether the box is
+ticked all come through a retype unharmed. Nothing else in the file is written,
+which is the invariant in
+[architecture.md](architecture.md#round-trip-fidelity). Retyping a line without
+changing it writes nothing at all and does not spend the undo.
 
 ## Deleting — no confirmation dialog
 
@@ -170,13 +195,17 @@ The one case where the tool must interrupt, because the alternative is losing
 someone's work:
 
 ```
- ⚠ todo.md changed on disk since it was read — not saved.
-   r reload (your edit is kept in the input line)   e open $EDITOR
+ ⚠ changed on disk — nothing was written.  r reload
 ```
 
 Ordinary external changes never reach this screen — inotify re-reads the file and
 the list updates silently. This appears only when *we* were about to write on top
 of a change we had not seen.
+
+A refusal that arrives while the input is open re-reads the file itself and hands
+the sentence back to the field, so the next `⏎` goes against the list as it now
+is. Nothing is merged and nothing is overwritten; the typed text is kept, which
+is the promise. `r` is not needed in there, and could not be typed anyway.
 
 **The selection survives a reload.** It is tracked by task identity, not row
 index — if a `git pull` adds four tasks above the one you were looking at, your
@@ -217,8 +246,8 @@ one.
 │           a o   add        ⏎   edit          │
 │           d     delete     u   undo          │
 │                                              │
-│  view     l     LATER fold / unfold          │
-│           z     fold this group              │
+│  view     h l   fold / unfold this group     │
+│           z     the same, as one toggle      │
 │                                              │
 │  file     e     $EDITOR    r   reload        │
 │                                              │

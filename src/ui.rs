@@ -22,6 +22,11 @@ pub enum Action {
     Top,
     Bottom,
     Toggle,
+    /// `a` `o` — open the input on an empty line. `o` because a vim user will
+    /// reach for it to open a new one.
+    Add,
+    /// `⏎` — the same input, pre-filled with the selected task.
+    Change,
     /// `h` `l` `z` — collapse or open the group under the cursor.
     Fold(Fold),
     /// `d` — immediately, with `u` to take it back.
@@ -71,6 +76,8 @@ pub fn action(key: KeyEvent) -> Action {
         KeyCode::Char('d') => Action::Delete,
         KeyCode::Char('u') => Action::Undo,
         KeyCode::Char(' ') => Action::Toggle,
+        KeyCode::Char('a') | KeyCode::Char('o') => Action::Add,
+        KeyCode::Enter => Action::Change,
         KeyCode::Char('h') | KeyCode::Left => Action::Fold(Fold::Close),
         KeyCode::Char('l') | KeyCode::Right => Action::Fold(Fold::Open),
         // `z` is the vim fold prefix, and here it is the whole of it.
@@ -95,6 +102,69 @@ pub enum Fold {
     Close,
     Open,
     Toggle,
+}
+
+/// The other mode, and the whole of it: a line being typed, and what it is for.
+///
+/// It only ever exists because `a`, `o` or `⏎` made it — docs/tui.md#two-modes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Input {
+    pub text: String,
+    /// The raw line being rewritten. `None` is a new task.
+    pub editing: Option<String>,
+}
+
+impl Input {
+    pub fn adding() -> Self {
+        Input {
+            text: String::new(),
+            editing: None,
+        }
+    }
+
+    /// Pre-filled with the task's text as it stands in the file, so an edit
+    /// starts from what is actually written there rather than from our reading
+    /// of it.
+    pub fn editing(task: &Task) -> Self {
+        Input {
+            text: task.body().to_string(),
+            editing: Some(task.raw.clone()),
+        }
+    }
+}
+
+/// What a keypress means while the input is open. A second, much smaller keymap
+/// rather than a branch inside `action`: it is what makes "nothing else can open
+/// it" true by construction — an `a` in here is a letter, not a command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Typed {
+    Char(char),
+    Back,
+    Save,
+    /// `esc` **and** `ctrl-c`. Somebody half-way through a sentence who reaches
+    /// for the universal "stop that" key loses the sentence, not the session.
+    Cancel,
+    Ignore,
+}
+
+pub fn typing(key: KeyEvent) -> Typed {
+    if key.kind == KeyEventKind::Release {
+        return Typed::Ignore;
+    }
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+
+    match key.code {
+        KeyCode::Char('c') if ctrl => Typed::Cancel,
+        KeyCode::Esc => Typed::Cancel,
+        KeyCode::Enter => Typed::Save,
+        KeyCode::Backspace => Typed::Back,
+        // Every other modified key is left alone: `ctrl-v`, `alt-f` and the rest
+        // mean things in a terminal that a one-line field has no business
+        // claiming, and a stray control character in a task title is a file the
+        // user cannot read back.
+        KeyCode::Char(c) if !ctrl && !key.modifiers.contains(KeyModifiers::ALT) => Typed::Char(c),
+        _ => Typed::Ignore,
+    }
 }
 
 /// One line of the list. Only a `Task` can hold the selection; the rest is
@@ -413,6 +483,23 @@ impl Glyphs {
         }
     }
 
+    /// The `⏎` in the hints and on the input line. It is a key name, so it goes
+    /// the way every other glyph goes when the locale is not UTF-8.
+    fn enter(self) -> &'static str {
+        match self {
+            Glyphs::Unicode => "⏎",
+            Glyphs::Ascii => "ret",
+        }
+    }
+
+    /// The bar the typed text sits behind.
+    fn field(self) -> &'static str {
+        match self {
+            Glyphs::Unicode => "▏",
+            Glyphs::Ascii => "|",
+        }
+    }
+
     fn rule(self) -> char {
         match self {
             Glyphs::Unicode => '─',
@@ -511,6 +598,26 @@ fn shorten(text: &str, limit: usize) -> String {
         used += w;
     }
     out.push('…');
+    out
+}
+
+/// The last `limit` columns of a string. The input field scrolls rather than
+/// truncating: what you are typing is at the end of the line, and a capture box
+/// that hides it is not a capture box.
+fn tail(text: &str, limit: usize) -> String {
+    if columns(text) <= limit {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for c in text.chars().rev() {
+        let w = columns(c.encode_utf8(&mut [0u8; 4]));
+        if used + w > limit {
+            break;
+        }
+        out.insert(0, c);
+        used += w;
+    }
     out
 }
 
@@ -629,11 +736,18 @@ impl Notice {
             // Only the keys that do something. A hint bar advertising a key that
             // is not implemented yet is a worse lie than no hint bar.
             Notice::Hints if height < 10 => (" ?".to_string(), colours.dim),
+            // Six keys, not the whole keymap: the bar has to fit the narrowest
+            // pane that still counts as wide, which is sixty columns. `d` and
+            // `e` gave up their slots to the capture keys when those arrived —
+            // adding a task is what the tool is for, and `?` lists the rest.
             Notice::Hints if size == Size::Wide => (
-                " j k move   spc done   d del   e $EDITOR   ? keys   q quit".to_string(),
+                format!(
+                    " j k move   spc done   a add   {} edit   ? keys   q quit",
+                    glyphs.enter()
+                ),
                 colours.dim,
             ),
-            Notice::Hints => (" j k  spc  d  e  ?  q".to_string(), colours.dim),
+            Notice::Hints => (" j k  spc  a  d  e  ?  q".to_string(), colours.dim),
             Notice::Said(text) => (format!(" {text}"), colours.dim),
             Notice::Warned(text) => {
                 let mark = match glyphs {
@@ -647,6 +761,61 @@ impl Notice {
     }
 }
 
+/// The input field, and under it what the typed text will actually become.
+///
+/// The preview is the most valuable ten lines in the TUI: `@thu` resolving to a
+/// real date while you type teaches the syntax without anyone opening
+/// docs/format.md, catches the typo before it reaches the file, and proves the
+/// shorthand did what you meant. Nothing parseable leaves it empty rather than
+/// showing an error — plain text is a perfectly good task.
+///
+/// Returns the column the cursor belongs in as well, because it is the same
+/// arithmetic.
+fn input_lines(
+    input: &Input,
+    width: usize,
+    render: Render<'_>,
+    size: Size,
+) -> (Vec<Line<'static>>, usize) {
+    let dim = Style::default().fg(render.colours.dim);
+    let head = format!(
+        " {} {}",
+        if input.editing.is_some() {
+            "edit"
+        } else {
+            "add"
+        },
+        render.glyphs.field()
+    );
+    let shown = tail(&input.text, width.saturating_sub(columns(&head)));
+    let at = columns(&head) + columns(&shown);
+
+    let field = Line::from(vec![
+        Span::styled(head, dim),
+        Span::styled(shown, Style::default().fg(render.colours.foreground)),
+    ]);
+
+    let parsed = crate::capture::capture(&input.text, render.today);
+    let left = format!("      {}", crate::text::fields(&parsed, render.today));
+    let keys = format!("{} save   esc cancel", render.glyphs.enter());
+
+    let room = columns(&left) + columns(&keys) + 3;
+    let preview = if size == Size::Wide && room <= width {
+        Line::from(vec![
+            Span::styled(left, Style::default().fg(render.colours.accent)),
+            Span::raw(" ".repeat(width - room + 2)),
+            Span::styled(keys, dim),
+        ])
+    } else {
+        Line::from(Span::styled(
+            left,
+            Style::default().fg(render.colours.accent),
+        ))
+    };
+
+    (vec![field, preview], at.min(width.saturating_sub(1)))
+}
+
 pub fn draw(
     frame: &mut Frame,
     screen: &mut Screen,
@@ -654,31 +823,32 @@ pub fn draw(
     render: Render<'_>,
     notice: &Notice,
     helping: bool,
+    input: Option<&Input>,
 ) {
     let whole = frame.area();
-    // One row held back, always. The list never moves to make room for a
-    // message, which is the point of having a fixed line rather than a popup.
+    // One row held back, always — and a second one while the input is open,
+    // which is the only time the list gives up a row. Nothing else on screen
+    // ever changes its shape: that is the point of a fixed line over a popup.
     //
     // Written with `Rect::new` rather than struct update syntax: a mutation that
     // drops the `height:` field from `Rect { height: 1, ..whole }` produces a
     // rectangle that is clipped back to the same one row, so it is a change no
     // test can ever object to. Positional arguments leave nothing to drop.
-    let (area, bottom) = if whole.height <= 1 {
-        // One row goes to the list. A pane this short is somebody dragging a
-        // splitter past the point of usefulness, and a lone hint bar helps less
-        // than a lone task does.
-        (whole, None)
-    } else {
-        (
-            Rect::new(whole.x, whole.y, whole.width, whole.height - 1),
-            Some(Rect::new(
-                whole.x,
-                whole.y + whole.height - 1,
-                whole.width,
-                1,
-            )),
+    //
+    // Never the whole pane: somebody dragging a splitter past the point of
+    // usefulness keeps a row of list, because a lone hint bar helps less than a
+    // lone task does.
+    let wanted = if input.is_some() { 2 } else { 1 };
+    let reserved = wanted.min(whole.height.saturating_sub(1));
+    let area = Rect::new(whole.x, whole.y, whole.width, whole.height - reserved);
+    let bottom = (reserved > 0).then(|| {
+        Rect::new(
+            whole.x,
+            whole.y + whole.height - reserved,
+            whole.width,
+            reserved,
         )
-    };
+    });
     let size = Size::of(area.width);
 
     // Under 34 columns the frame is two of them, which is a tenth of the pane.
@@ -701,54 +871,60 @@ pub fn draw(
 
     if screen.rows.iter().all(|r| !matches!(r, Row::Task(_))) {
         empty(frame, area, block, render);
-        if helping {
-            help(frame, area, render);
+    } else {
+        let items: Vec<ListItem> = screen
+            .rows
+            .iter()
+            .filter(|row| !(size < Size::Wide && matches!(row, Row::Spacer)))
+            .map(|row| match row {
+                Row::Task(t) => ListItem::new(task_line(t, width, render, size)),
+                Row::Header { title, hidden } => {
+                    ListItem::new(header_line(title, *hidden, width, render))
+                }
+                Row::Spacer => ListItem::new(""),
+            })
+            .collect();
+
+        let mut list = List::new(items)
+            .style(Style::default().bg(render.colours.background))
+            .highlight_symbol(cursor)
+            // Background only. Setting a foreground here would repaint the
+            // selected row in the accent colour, and an overdue task would stop
+            // being red the moment you moved the cursor onto it — which is the
+            // one row you are most likely to be looking at. docs/design.md: red
+            // only ever means late.
+            .highlight_style(Style::default().bg(render.colours.selection));
+        if let Some(block) = block {
+            list = list.block(block);
         }
-        if let Some(bottom) = bottom {
-            frame.render_widget(
-                Paragraph::new(notice.line(size, whole.height, render.glyphs, render.colours)),
-                bottom,
-            );
-        }
-        return;
+
+        frame.render_stateful_widget(list, area, &mut screen.state);
     }
 
-    let items: Vec<ListItem> = screen
-        .rows
-        .iter()
-        .filter(|row| !(size < Size::Wide && matches!(row, Row::Spacer)))
-        .map(|row| match row {
-            Row::Task(t) => ListItem::new(task_line(t, width, render, size)),
-            Row::Header { title, hidden } => {
-                ListItem::new(header_line(title, *hidden, width, render))
-            }
-            Row::Spacer => ListItem::new(""),
-        })
-        .collect();
-
-    let mut list = List::new(items)
-        .style(Style::default().bg(render.colours.background))
-        .highlight_symbol(cursor)
-        // Background only. Setting a foreground here would repaint the selected
-        // row in the accent colour, and an overdue task would stop being red the
-        // moment you moved the cursor onto it — which is the one row you are
-        // most likely to be looking at. docs/design.md: red only ever means late.
-        .highlight_style(Style::default().bg(render.colours.selection));
-    if let Some(block) = block {
-        list = list.block(block);
-    }
-
-    frame.render_stateful_widget(list, area, &mut screen.state);
     if helping {
         help(frame, area, render);
     }
 
-    if let Some(bottom) = bottom {
-        frame.render_widget(
-            Paragraph::new(notice.line(size, whole.height, render.glyphs, render.colours))
-                .style(Style::default().bg(render.colours.background)),
-            bottom,
-        );
+    let Some(bottom) = bottom else { return };
+    let (lines, at) = match input {
+        Some(input) => {
+            let (lines, at) = input_lines(input, bottom.width as usize, render, size);
+            (lines, Some(at))
+        }
+        None => (
+            vec![notice.line(size, whole.height, render.glyphs, render.colours)],
+            None,
+        ),
+    };
+
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(render.colours.background)),
+        bottom,
+    );
+    // The terminal's own cursor, not a drawn block: it blinks the way every
+    // other text field the user has ever typed into does, and it costs a line.
+    if let Some(at) = at {
+        frame.set_cursor_position((bottom.x + at as u16, bottom.y));
     }
 }
 
@@ -764,10 +940,13 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
         ("g G", "top / bottom"),
         ("ctrl-d ctrl-u", "half page"),
         ("spc", "toggle done"),
+        ("a o  ⏎", "add / edit"),
         ("d  u", "delete / undo"),
         ("h l  z", "fold this group"),
-        ("e", "open $EDITOR"),
-        ("r", "re-read the file"),
+        // Two keys to a row, so that the box still fits a fourteen-row pane.
+        // At twelve rows of keys the border takes `q  ctrl-c` off the bottom,
+        // and a help screen that cuts off at quit is worse than none.
+        ("e  r", "$EDITOR / re-read"),
         (":  /", "answer, for now"),
         ("? esc", "this, and away again"),
         ("q  ctrl-c", "quit"),
@@ -1011,6 +1190,7 @@ mod tests {
                         render(crate::theme::MOCHA),
                         &Notice::Hints,
                         helping,
+                        None,
                     )
                 })
                 .unwrap();
@@ -1057,6 +1237,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     true,
+                    None,
                 )
             })
             .unwrap();
@@ -1077,15 +1258,15 @@ mod tests {
                 "│▌ !│  g G            top / bottom         │ago│",
                 "│   │  ctrl-d ctrl-u  half page            │   │",
                 "│   │  spc            toggle done          │   │",
+                "│   │  a o  ⏎         add / edit           │   │",
                 "│   │  d  u           delete / undo        │   │",
                 "│   │  h l  z         fold this group      │   │",
-                "│   │  e              open $EDITOR         │   │",
-                "│   │  r              re-read the file     │   │",
+                "│   │  e  r           $EDITOR / re-read    │   │",
                 "│   │  :  /           answer, for now      │   │",
                 "│   │  ? esc          this, and away again │   │",
                 "│   │  q  ctrl-c      quit                 │   │",
                 "└───└──────────────────────────────────────┘───┘",
-                " j k  spc  d  e  ?  q                           ",
+                " j k  spc  a  d  e  ?  q                        ",
             ]
         );
     }
@@ -1110,6 +1291,7 @@ mod tests {
                         render(crate::theme::MOCHA),
                         &Notice::Hints,
                         true,
+                        None,
                     )
                 })
                 .unwrap();
@@ -1143,6 +1325,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     true,
+                    None,
                 )
             })
             .unwrap();
@@ -1154,7 +1337,10 @@ mod tests {
             .map(|c| c.symbol())
             .collect();
 
-        for unbuilt in ["add", "edit", "$VISUAL"] {
+        for built in ["add / edit", "$EDITOR", "delete / undo"] {
+            assert!(text.contains(built), "{built} is built but not listed");
+        }
+        for unbuilt in ["search", "sort", "filter", "$VISUAL"] {
             assert!(
                 !text.contains(unbuilt),
                 "{unbuilt} is advertised but absent"
@@ -1390,6 +1576,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     notice,
                     false,
+                    None,
                 )
             })
             .unwrap();
@@ -1425,7 +1612,7 @@ mod tests {
                 "│                                                            │",
                 "│                                                            │",
                 "└────────────────────────────────────────────────────────────┘",
-                " j k move   spc done   d del   e $EDITOR   ? keys   q quit    ",
+                " j k move   spc done   a add   ⏎ edit   ? keys   q quit       ",
             ]
         );
     }
@@ -1600,7 +1787,7 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(62, 8)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render, &Notice::Hints, false))
+            .draw(|f| draw(f, &mut screen, counts, render, &Notice::Hints, false, None))
             .unwrap();
         let text: String = terminal
             .backend()
@@ -1684,6 +1871,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     false,
+                    None,
                 )
             })
             .unwrap();
@@ -1717,6 +1905,7 @@ mod tests {
                     render(colours),
                     &Notice::Hints,
                     false,
+                    None,
                 )
             })
             .unwrap();
@@ -1790,7 +1979,17 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render(plain), &Notice::Hints, false))
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    counts,
+                    render(plain),
+                    &Notice::Hints,
+                    false,
+                    None,
+                )
+            })
             .unwrap();
 
         for cell in terminal.backend().buffer().content() {
@@ -1847,7 +2046,14 @@ mod tests {
             shown(&Notice::Hints, Size::Wide, 20, Glyphs::Unicode).contains("spc done"),
             "the hints have to name the keys"
         );
-        assert!(shown(&Notice::Hints, Size::Wide, 20, Glyphs::Unicode).contains("e $EDITOR"));
+        assert!(shown(&Notice::Hints, Size::Wide, 20, Glyphs::Unicode).contains("a add"));
+        // Sixty columns is the narrowest pane that still counts as wide, and the
+        // bar has to fit it — in both alphabets, `ret` being the longer of the
+        // two. A hint bar that gets clipped is advertising half a key.
+        for glyphs in [Glyphs::Unicode, Glyphs::Ascii] {
+            let bar = shown(&Notice::Hints, Size::Wide, 20, glyphs);
+            assert!(columns(&bar) <= 60, "{} columns: {bar}", columns(&bar));
+        }
         assert_eq!(
             shown(&Notice::Hints, Size::Wide, 9, Glyphs::Unicode),
             " ?",
@@ -1882,6 +2088,266 @@ mod tests {
             ),
             " ! nope",
             "the warning mark has an ASCII form too"
+        );
+    }
+
+    /// The two keys that open the input, and the one that opens it already
+    /// holding the task under the cursor.
+    #[test]
+    fn the_keys_that_open_the_input() {
+        assert_eq!(action(press(KeyCode::Char('a'))), Action::Add);
+        assert_eq!(
+            action(press(KeyCode::Char('o'))),
+            Action::Add,
+            "a vim user reaches for `o` to open a new line"
+        );
+        assert_eq!(action(press(KeyCode::Enter)), Action::Change);
+    }
+
+    /// The one key that means two different things in the two modes: in the list
+    /// it quits, in the input it cancels. Somebody half-way through typing a
+    /// task who reaches for the universal "stop that" key should lose the
+    /// sentence, not the session — docs/tui.md#two-modes.
+    #[test]
+    fn ctrl_c_quits_the_list_and_only_cancels_the_input() {
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert_eq!(action(ctrl_c), Action::Quit);
+        assert_eq!(typing(ctrl_c), Typed::Cancel);
+        assert_eq!(typing(press(KeyCode::Esc)), Typed::Cancel);
+    }
+
+    /// Every list key is just a letter in here, which is what makes "nothing
+    /// else can open it" true by construction rather than by discipline.
+    #[test]
+    fn the_input_takes_letters_and_leaves_everything_else_alone() {
+        // `c` among them on purpose: it is `ctrl-c` that cancels, and a bare one
+        // that cancelled would eat the sentence on a typo.
+        for c in ['a', 'q', 'd', 'c', ' ', 'ş', '@'] {
+            assert_eq!(typing(press(KeyCode::Char(c))), Typed::Char(c), "{c}");
+        }
+        assert_eq!(typing(press(KeyCode::Backspace)), Typed::Back);
+        assert_eq!(typing(press(KeyCode::Enter)), Typed::Save);
+
+        // A modified key is nothing at all: `ctrl-v` and `alt-f` mean things in
+        // a terminal that a one-line field has no business claiming, and a
+        // control character in a title is a file the user cannot read back.
+        for m in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+            assert_eq!(typing(KeyEvent::new(KeyCode::Char('d'), m)), Typed::Ignore);
+        }
+        let mut held = press(KeyCode::Char('a'));
+        held.kind = KeyEventKind::Release;
+        assert_eq!(
+            typing(held),
+            Typed::Ignore,
+            "a key being let go is not a press"
+        );
+    }
+
+    /// `⏎` starts from what the file actually says, not from our reading of it —
+    /// which is also what lets the prefix survive an edit untouched.
+    #[test]
+    fn editing_is_pre_filled_from_the_line_as_the_file_has_it() {
+        let doc = crate::parse::parse("  * [x] wash up @2026-08-12 #home\n");
+        let task = doc.tasks().next().unwrap();
+
+        let input = Input::editing(task);
+        assert_eq!(input.text, "wash up @2026-08-12 #home");
+        assert_eq!(
+            input.editing.as_deref(),
+            Some("  * [x] wash up @2026-08-12 #home")
+        );
+        assert_eq!(Input::adding().editing, None);
+    }
+
+    fn with_input(
+        width: u16,
+        height: u16,
+        tasks: &[Task],
+        input: &Input,
+        glyphs: Glyphs,
+    ) -> Vec<String> {
+        let groups = agenda(tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let counts = Counts::of(tasks, today());
+        let render = Render {
+            glyphs,
+            ..render(crate::theme::MOCHA)
+        };
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    counts,
+                    render,
+                    &Notice::Hints,
+                    false,
+                    Some(input),
+                )
+            })
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(width as usize)
+            .map(|row| row.iter().map(|c| c.symbol()).collect())
+            .collect()
+    }
+
+    /// The field, the preview and the keys, pinned to the column. The preview is
+    /// the point of the whole screen: `@thu` becomes a real date in front of the
+    /// person typing it — docs/tui.md#adding.
+    #[test]
+    fn the_input_screen_exactly() {
+        let tasks = tasks(&["pay the invoice @2026-08-10"]);
+        let input = Input {
+            text: "call the accountant @thu !high".to_string(),
+            editing: None,
+        };
+
+        assert_eq!(
+            with_input(70, 7, &tasks, &input, Glyphs::Unicode),
+            [
+                "┌ ratodo — 1 open · 0 overdue ───────────────────────────────────────┐",
+                "│  TODAY ─────────────────────────────────────────────────────────── │",
+                "│▌ ○ pay the invoice                                            today│",
+                "│                                                                    │",
+                "└────────────────────────────────────────────────────────────────────┘",
+                " add ▏call the accountant @thu !high                                  ",
+                "      due Thursday (2026-08-13)  ·  !high         ⏎ save   esc cancel ",
+            ]
+        );
+    }
+
+    /// Nothing parseable leaves the preview empty rather than showing an error:
+    /// plain text is a perfectly good task.
+    #[test]
+    fn a_sentence_with_no_syntax_in_it_previews_nothing() {
+        let input = Input {
+            text: "just write it down".to_string(),
+            editing: None,
+        };
+        let screen = with_input(70, 7, &tasks(&["a"]), &input, Glyphs::Unicode);
+        assert!(
+            screen[5].starts_with(" add ▏just write it down"),
+            "{screen:?}"
+        );
+        assert_eq!(
+            screen[6].trim(),
+            "⏎ save   esc cancel",
+            "an unparseable line is not an error: {screen:?}"
+        );
+    }
+
+    /// A capture box that hides what you are typing is not a capture box, so the
+    /// field scrolls with the end of the line rather than truncating it.
+    #[test]
+    fn a_line_longer_than_the_pane_keeps_its_end_on_screen() {
+        let input = Input {
+            text: "a very long sentence that will not fit in a narrow pane at all".to_string(),
+            editing: Some("- [ ] x".to_string()),
+        };
+        let screen = with_input(30, 6, &tasks(&["x"]), &input, Glyphs::Unicode);
+
+        assert!(screen[4].starts_with(" edit ▏"), "{screen:?}");
+        assert!(
+            screen[4].trim_end().ends_with("at all"),
+            "the end scrolled off: {screen:?}"
+        );
+        assert_eq!(columns(screen[4].trim_end()), 30, "{screen:?}");
+    }
+
+    /// The whole screen goes ASCII together, the input line included.
+    #[test]
+    fn the_input_line_has_an_ascii_form_too() {
+        let input = Input {
+            text: "milk @tomorrow".to_string(),
+            editing: None,
+        };
+        let screen = with_input(62, 7, &tasks(&["a"]), &input, Glyphs::Ascii);
+        let text = screen.join("\n");
+
+        assert!(text.contains(" add |milk @tomorrow"), "{text}");
+        assert!(text.contains("ret save   esc cancel"), "{text}");
+        assert!(
+            text.is_ascii(),
+            "something non-ASCII reached the screen: {text}"
+        );
+    }
+
+    /// The input is the one thing that moves the list, and it moves it by
+    /// exactly the row it borrowed — docs/decisions.md#reversed.
+    #[test]
+    fn the_input_costs_the_list_one_row_and_no_more() {
+        let tasks = tasks(&["a @2026-08-10", "b", "c", "d"]);
+        let quiet = rendered(40, 10, &tasks);
+        let busy = with_input(40, 10, &tasks, &Input::adding(), Glyphs::Unicode);
+
+        assert_eq!(quiet[..7], busy[..7], "the list shifted under the reader");
+        assert!(busy[7].starts_with('└'), "{busy:?}");
+        assert!(busy[8].starts_with(" add ▏"), "{busy:?}");
+        // Forty columns is narrow, and the keys are the first thing a narrow
+        // pane gives up — they would fit, which is not the same as belonging.
+        assert!(
+            !busy[9].contains("esc cancel"),
+            "the hint crowded a narrow preview: {busy:?}"
+        );
+    }
+
+    /// Where the cursor is, which is the only thing saying where the next
+    /// character will land. It is the terminal's own — it blinks like every
+    /// other text field — so nothing on the screen would show it missing.
+    #[test]
+    fn the_cursor_follows_the_end_of_what_has_been_typed() {
+        let tasks = tasks(&["a @2026-08-10"]);
+        let at = |text: &str, height: u16| {
+            let groups = agenda(&tasks, today());
+            let mut screen = Screen::new(rows(&groups));
+            let counts = Counts::of(&tasks, today());
+            let input = Input {
+                text: text.to_string(),
+                editing: None,
+            };
+            let mut terminal = Terminal::new(TestBackend::new(40, height)).unwrap();
+            terminal
+                .draw(|f| {
+                    draw(
+                        f,
+                        &mut screen,
+                        counts,
+                        render(crate::theme::MOCHA),
+                        &Notice::Hints,
+                        false,
+                        Some(&input),
+                    )
+                })
+                .unwrap();
+            let p = terminal.get_cursor_position().unwrap();
+            (p.x, p.y)
+        };
+
+        // " add ▏" is six columns, and what has been typed follows it.
+        assert_eq!(at("", 10), (6, 8));
+        assert_eq!(at("milk", 10), (10, 8));
+        // A pane with no room for a bottom line at all draws no field, so the
+        // cursor is not sent off the end of the screen to point at one.
+        assert_eq!(at("milk", 1), (0, 0));
+    }
+
+    /// A pane dragged down to two rows keeps a row of list: the preview is the
+    /// half of the input that can be given up, and the field is not.
+    #[test]
+    fn a_pane_too_short_for_the_preview_still_shows_the_field() {
+        let tasks = tasks(&["a @2026-08-10"]);
+        for height in [1u16, 2, 3] {
+            let screen = with_input(40, height, &tasks, &Input::adding(), Glyphs::Unicode);
+            assert_eq!(screen.len(), height as usize);
+        }
+        assert!(
+            with_input(40, 2, &tasks, &Input::adding(), Glyphs::Unicode)[1].starts_with(" add ▏"),
+            "the field was the row that got dropped"
         );
     }
 
@@ -1952,6 +2418,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     false,
+                    None,
                 )
             })
             .unwrap();
@@ -2124,6 +2591,7 @@ mod tests {
                     },
                     &Notice::Hints,
                     false,
+                    None,
                 )
             })
             .unwrap();
@@ -2160,6 +2628,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     false,
+                    None,
                 )
             })
             .unwrap();

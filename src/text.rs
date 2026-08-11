@@ -91,9 +91,11 @@ pub fn status_json(counts: Counts) -> String {
     )
 }
 
-/// The one line `ratodo add` prints before getting out of the way.
-pub fn added(task: &Task, today: NaiveDate) -> String {
-    let mut parts = vec![format!("added: {}", plain(&task.title))];
+/// Everything a capture understood except the title: the date resolved, the
+/// tags, the priority. `ratodo add` prints it after the title, and the TUI's
+/// input preview shows it on its own while the sentence is still being typed.
+pub fn fields(task: &Task, today: NaiveDate) -> String {
+    let mut parts = Vec::new();
     if let Some(due) = task.due {
         parts.push(format!("due {}", relative(due, today)));
     }
@@ -104,6 +106,15 @@ pub fn added(task: &Task, today: NaiveDate) -> String {
         parts.push(p.as_str().to_string());
     }
     parts.join("  ·  ")
+}
+
+/// The one line `ratodo add` prints before getting out of the way.
+pub fn added(task: &Task, today: NaiveDate) -> String {
+    let title = format!("added: {}", plain(&task.title));
+    match fields(task, today) {
+        rest if rest.is_empty() => title,
+        rest => format!("{title}  ·  {rest}"),
+    }
 }
 
 /// The one line `ratodo done` prints. Deliberately the same shape as `added`.

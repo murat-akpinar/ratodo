@@ -116,6 +116,31 @@ no. Reopening one requires new information.
 
 ## Reversed
 
+### The bottom line — one row, two while the input is open (2026-08-11)
+
+**Was:** "there is one reserved line under the frame … nothing shifts the layout,
+and **the list never moves under you**." One row, four jobs.
+
+**Now:** the input takes two — the field, and the parse preview under it — so
+opening it costs the list one row until `⏎` or `esc`. Everything else is
+unchanged: hints, results and warnings still get exactly one.
+
+**Why:** [tui.md](tui.md) contradicted itself. The rule said one row and the
+*Adding* sketch drew two, and the sketch is the half that matters: the preview
+is the reason the input exists at all. `@thu` resolving to a real date while you
+type is what teaches the syntax, catches the typo, and proves the shorthand did
+what you meant — that does not fit beside the text it is commenting on.
+
+The rule survives, read the way it was meant: **the list does not move on its
+own.** A row given up because the user pressed `a`, and taken back on `esc`, is
+not the screen rearranging itself under a reader — it is the same deliberate
+exception the help overlay already is. What the rule forbids is a layout that
+shifts while you are only looking at it, and that is still forbidden.
+
+**What it cost:** one row, and only while typing. The preview is also the half
+that gets dropped first: under ten rows, or in a pane dragged down to two, the
+field stays and the preview goes.
+
 ### The event loop — a blocking channel, then `poll` again (2026-08-11)
 
 **Was:** a thread parked in `crossterm::event::read` sending keys down the same

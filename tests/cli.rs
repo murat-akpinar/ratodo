@@ -915,6 +915,99 @@ fn the_help_key_opens_the_overlay_and_esc_puts_it_away() {
     );
 }
 
+/// The second mode, through a terminal — the only place the whole of it is
+/// real: `a` opens the input, the preview resolves the shorthand while it is
+/// still being typed, `⏎` writes the file, and `ctrl-c` costs a sentence rather
+/// than the session.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_input_mode_captures_a_task_and_ctrl_c_only_cancels_it() {
+    use std::io::Write;
+
+    let dir = TempDir::new("input");
+    let path = dir.file("todo.md");
+
+    let run = |keys: &[u8]| {
+        fs::write(&path, "- [ ] pay the invoice\n").unwrap();
+        let mut child = Command::new("timeout")
+            .args([
+                "20",
+                "script",
+                "-qec",
+                &format!("stty rows 16 cols 64; {BIN} --file {}", path.display()),
+                "/dev/null",
+            ])
+            .env("LC_ALL", "C.UTF-8")
+            .env("LANG", "C.UTF-8")
+            .env("XDG_STATE_HOME", dir.file("state"))
+            .env("XDG_DATA_HOME", dir.file("data"))
+            .env("XDG_CONFIG_HOME", dir.file("config"))
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("script(1) is needed for this test — it is in util-linux");
+
+        // Every sequence ends with its own way out: `q` is a letter while the
+        // input is open, so there is no key that always quits.
+        let mut stdin = child.stdin.take().expect("stdin");
+        for key in keys {
+            stdin.write_all(&[*key]).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(60));
+        }
+        drop(stdin);
+
+        let out = child.wait_with_output().expect("waiting");
+        assert!(out.status.success(), "ratodo did not exit cleanly");
+        let raw = String::from_utf8_lossy(&out.stdout).into_owned();
+        (
+            raw.clone(),
+            replay(&raw, 64, 16).join("\n"),
+            fs::read_to_string(&path).unwrap(),
+        )
+    };
+
+    // Mid-sentence: `a` opened a field and `@tomorrow` resolved to a date under
+    // it, while the file was still untouched.
+    //
+    // Read from the stream, not the replayed screen. `esc` is the only way back
+    // out of the input and it repaints the two rows in question, so "was drawn"
+    // is the honest question here — and each keystroke redraws one cell, so what
+    // is contiguous in the stream is what a frame painted in one go.
+    let (raw, _, file) = run(b"amilk @tomorrow #home\x1bq");
+    assert!(raw.contains(" add ▏"), "no input field opened: {raw:?}");
+    assert!(
+        raw.contains("due tomorrow ("),
+        "the preview never resolved the shorthand: {raw:?}"
+    );
+    assert!(raw.contains("esc cancel"), "{raw:?}");
+    assert_eq!(
+        file, "- [ ] pay the invoice\n",
+        "nothing is written until ⏎"
+    );
+
+    // `⏎` saves, and what lands in the file is the resolved date, not `@tomorrow`.
+    let (_, screen, file) = run(b"amilk @tomorrow #home\rq");
+    let added = file
+        .lines()
+        .nth(1)
+        .unwrap_or_else(|| panic!("nothing was added: {file:?}"));
+    assert!(
+        added.starts_with("- [ ] milk @20") && added.ends_with(" #home"),
+        "{added:?}"
+    );
+    assert!(screen.contains("added: milk"), "{screen}");
+    assert!(screen.contains("u undo"), "{screen}");
+
+    // `ctrl-c` in the input cancels it. The `d` afterwards is what proves the
+    // session is still there and back in the list: if ctrl-c had quit, nothing
+    // would have been deleted.
+    let (_, _, file) = run(b"amilk @tomorrow\x03dq");
+    assert_eq!(
+        file, "",
+        "ctrl-c took the session down instead of the sentence, or wrote the line"
+    );
+}
+
 /// The locale reaches the screen. Asserted through a terminal because the
 /// wiring between `$LC_ALL` and the glyphs is the part a unit test cannot see.
 #[cfg(target_os = "linux")]
