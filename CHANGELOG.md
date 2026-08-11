@@ -44,6 +44,8 @@ Eight cells and a `3/8` on the right of the top border. The screen had nothing t
 The right-aligned block only reads down its edge when every row ends in the same field, and they do not: `3d ago  !high  #ops` and `1d ago #home` are aligned as a blob, so the dates land somewhere different on every row. Past eighty columns the date, the priority and the tags become real columns, the title column is the widest title in the list, and the group rule stops where that column ends instead of running to an edge fifty columns away.
 - *(ui)* Keep the markdown marker on the user's own headings ([9d0d3cb](https://github.com/murat-akpinar/ratodo/commit/9d0d3cb0ebaad4f01a30e38a8029954e54636def))
 OVERDUE is ours and Work came out of the file, and as the same bold word plus the same rule nothing on the screen said which was which. The user's headings now keep the ## they already carry in the file: no second colour, no third level of hierarchy, and it survives the ASCII fallback.
+- *(ui)* Give !high the weight the user meant by it ([22ef83d](https://github.com/murat-akpinar/ratodo/commit/22ef83d25f5378c5b8413a8289de4a0f4ea8aa60))
+The one field somebody typed to mean urgent sat in the same grey as the date and the tags. It is bold now, in the row's own colour — weight rather than a twelfth theme role, so it still reads under NO_COLOR and does not collide with overdue on the rows that have both. !med and !low stay quiet, and a ticked task is not urgent however it was filed.
 
 ### 🐛 Bug Fixes
 
