@@ -723,6 +723,123 @@ fn the_bare_command_opens_a_screen_on_a_terminal_and_gives_it_back() {
     );
 }
 
+/// Replays what a terminal would have done with this byte stream and returns
+/// the screen it would be showing.
+///
+/// Searching the raw stream instead does not work for anything that gets undone:
+/// ratatui redraws only the cells that changed, so a closed overlay is still in
+/// the bytes from when it was open. This is the difference between "was ever
+/// drawn" and "is on screen".
+#[cfg(target_os = "linux")]
+fn replay(stream: &str, width: usize, height: usize) -> Vec<String> {
+    let mut grid = vec![vec![' '; width]; height];
+    let (mut row, mut col) = (0usize, 0usize);
+    let mut chars = stream.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            match c {
+                '\r' => col = 0,
+                '\n' => row += 1,
+                _ => {
+                    if row < height && col < width {
+                        grid[row][col] = c;
+                    }
+                    col += 1;
+                }
+            }
+            continue;
+        }
+
+        if chars.peek() != Some(&'[') {
+            chars.next();
+            continue;
+        }
+        chars.next();
+
+        let mut params = String::new();
+        let mut final_byte = ' ';
+        for c in chars.by_ref() {
+            if c.is_ascii_alphabetic() {
+                final_byte = c;
+                break;
+            }
+            params.push(c);
+        }
+
+        match final_byte {
+            'H' => {
+                let mut parts = params.split(';');
+                row = parts.next().and_then(|p| p.parse().ok()).unwrap_or(1) - 1;
+                col = parts.next().and_then(|p| p.parse().ok()).unwrap_or(1) - 1;
+            }
+            'J' => grid = vec![vec![' '; width]; height],
+            _ => {}
+        }
+    }
+
+    grid.into_iter().map(|r| r.into_iter().collect()).collect()
+}
+
+/// `?` is drawn well and tested well one level down, and until this existed
+/// nothing checked that the key was wired to it at all — a mutant turning the
+/// toggle into a no-op went unnoticed.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_help_key_opens_the_overlay_and_esc_puts_it_away() {
+    use std::io::Write;
+
+    let dir = TempDir::new("help");
+    let path = dir.file("todo.md");
+    fs::write(&path, "- [ ] pay the invoice\n").unwrap();
+
+    let after = |keys: &[u8]| {
+        let mut child = Command::new("timeout")
+            .args([
+                "20",
+                "script",
+                "-qec",
+                &format!("stty rows 18 cols 60; {BIN} --file {}", path.display()),
+                "/dev/null",
+            ])
+            .env("XDG_STATE_HOME", dir.file("state"))
+            .env("XDG_CONFIG_HOME", dir.file("config"))
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("script(1) is needed for this test — it is in util-linux");
+
+        let mut stdin = child.stdin.take().expect("stdin");
+        for key in keys {
+            stdin.write_all(&[*key]).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(120));
+        }
+        stdin.write_all(b"q").unwrap();
+        drop(stdin);
+        let raw = String::from_utf8_lossy(&child.wait_with_output().expect("waiting").stdout)
+            .into_owned();
+        replay(&raw, 60, 18).join("\n")
+    };
+
+    assert!(
+        !after(b"").contains("toggle done"),
+        "the overlay was up without being asked for"
+    );
+    assert!(
+        after(b"?").contains("toggle done"),
+        "? did not open the overlay"
+    );
+    // `esc` closes it — and, as ever, does not quit.
+    assert!(
+        !after(b"?\x1b").contains("toggle done"),
+        "esc did not put the overlay away"
+    );
+    assert!(
+        !after(b"??").contains("toggle done"),
+        "a second ? did not put the overlay away"
+    );
+}
+
 /// The locale reaches the screen. Asserted through a terminal because the
 /// wiring between `$LC_ALL` and the glyphs is the part a unit test cannot see.
 #[cfg(target_os = "linux")]
