@@ -54,6 +54,8 @@ Four defects that two audience design reviews turned up in code that was already
 - *(docs)* Match GitHub's anchor slugs, which hyphenate every space ([4a092ea](https://github.com/murat-akpinar/ratodo/commit/4a092eab7a82987273ace0f8d486f6864fb3d47d))
 - *(ui)* Let the caret move through the line being typed ([c9f7aba](https://github.com/murat-akpinar/ratodo/commit/c9f7aba3797ac44dc2b897f1440a025c78539474))
 The input field only ever appended: backspace took the last character and there was no way to reach any other one, so a typo four words back meant retyping four words. The caret now moves with the arrows, home and end, inserts and deletes where it stands, and the field scrolls with the caret rather than with the end of the line.
+- *(ui)* Stop calling a finished task late ([55affb0](https://github.com/murat-akpinar/ratodo/commit/55affb0598cc4ffc376b5d76b6330db999ab4b1f))
+A ticked line showing "1d ago" states something that stopped being true when the box was ticked, and contradicts the counts, which already leave finished work out of overdue. It falls through to the plain date instead. The task keeps its place in OVERDUE: membership there is positional.
 
 ### 🚜 Refactor
 
