@@ -110,26 +110,73 @@ pub enum Fold {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Input {
     pub text: String,
+    /// Where the next character goes, as a byte index into `text`. Always on a
+    /// char boundary — every move steps by a whole `char`.
+    pub at: usize,
     /// The raw line being rewritten. `None` is a new task.
     pub editing: Option<String>,
 }
 
 impl Input {
-    pub fn adding() -> Self {
+    /// The only way to build one: the caret starts at the end of `text`, which
+    /// is where a retype begins.
+    pub fn new(text: String, editing: Option<String>) -> Self {
         Input {
-            text: String::new(),
-            editing: None,
+            at: text.len(),
+            text,
+            editing,
         }
+    }
+
+    pub fn adding() -> Self {
+        Input::new(String::new(), None)
     }
 
     /// Pre-filled with the task's text as it stands in the file, so an edit
     /// starts from what is actually written there rather than from our reading
     /// of it.
     pub fn editing(task: &Task) -> Self {
-        Input {
-            text: task.body().to_string(),
-            editing: Some(task.raw.clone()),
+        Input::new(task.body().to_string(), Some(task.raw.clone()))
+    }
+
+    pub fn insert(&mut self, c: char) {
+        self.text.insert(self.at, c);
+        self.at += c.len_utf8();
+    }
+
+    /// Backspace: the character *before* the caret.
+    pub fn back(&mut self) {
+        if let Some(c) = self.text[..self.at].chars().next_back() {
+            self.at -= c.len_utf8();
+            self.text.remove(self.at);
         }
+    }
+
+    /// Delete: the character *under* the caret; the caret does not move.
+    pub fn delete(&mut self) {
+        if self.at < self.text.len() {
+            self.text.remove(self.at);
+        }
+    }
+
+    pub fn left(&mut self) {
+        if let Some(c) = self.text[..self.at].chars().next_back() {
+            self.at -= c.len_utf8();
+        }
+    }
+
+    pub fn right(&mut self) {
+        if let Some(c) = self.text[self.at..].chars().next() {
+            self.at += c.len_utf8();
+        }
+    }
+
+    pub fn home(&mut self) {
+        self.at = 0;
+    }
+
+    pub fn end(&mut self) {
+        self.at = self.text.len();
     }
 }
 
@@ -140,6 +187,11 @@ impl Input {
 pub enum Typed {
     Char(char),
     Back,
+    Delete,
+    Left,
+    Right,
+    Home,
+    End,
     Save,
     /// `esc` **and** `ctrl-c`. Somebody half-way through a sentence who reaches
     /// for the universal "stop that" key loses the sentence, not the session.
@@ -158,6 +210,13 @@ pub fn typing(key: KeyEvent) -> Typed {
         KeyCode::Esc => Typed::Cancel,
         KeyCode::Enter => Typed::Save,
         KeyCode::Backspace => Typed::Back,
+        KeyCode::Delete => Typed::Delete,
+        // A field you can only append to is not a field. The caret moves, and
+        // the line scrolls to keep up — docs/tui.md#adding.
+        KeyCode::Left => Typed::Left,
+        KeyCode::Right => Typed::Right,
+        KeyCode::Home => Typed::Home,
+        KeyCode::End => Typed::End,
         // Every other modified key is left alone: `ctrl-v`, `alt-f` and the rest
         // mean things in a terminal that a one-line field has no business
         // claiming, and a stray control character in a task title is a file the
@@ -638,8 +697,8 @@ fn shorten(text: &str, limit: usize) -> String {
 }
 
 /// The last `limit` columns of a string. The input field scrolls rather than
-/// truncating: what you are typing is at the end of the line, and a capture box
-/// that hides it is not a capture box.
+/// truncating: what you are typing is under the caret, and a capture box that
+/// hides it is not a capture box.
 fn tail(text: &str, limit: usize) -> String {
     if columns(text) <= limit {
         return text.to_string();
@@ -652,6 +711,25 @@ fn tail(text: &str, limit: usize) -> String {
             break;
         }
         out.insert(0, c);
+        used += w;
+    }
+    out
+}
+
+/// The first `limit` columns, and no ellipsis: the other half of the scrolling
+/// input field — what sits after the caret, in whatever room is left.
+fn lead(text: &str, limit: usize) -> String {
+    if columns(text) <= limit {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for c in text.chars() {
+        let w = columns(c.encode_utf8(&mut [0u8; 4]));
+        if used + w > limit {
+            break;
+        }
+        out.push(c);
         used += w;
     }
     out
@@ -953,12 +1031,23 @@ fn input_lines(
         },
         render.glyphs.field()
     );
-    let shown = tail(&input.text, width.saturating_sub(columns(&head)));
-    let at = columns(&head) + columns(&shown);
+    // The window is anchored on the caret, not on the end of the line: what is
+    // before it fills the field from the right, and whatever room is left shows
+    // what comes after.
+    let room = width.saturating_sub(columns(&head));
+    let before = tail(&input.text[..input.at], room);
+    let after = lead(
+        &input.text[input.at..],
+        room.saturating_sub(columns(&before)),
+    );
+    let at = columns(&head) + columns(&before);
 
     let field = Line::from(vec![
         Span::styled(head, dim),
-        Span::styled(shown, Style::default().fg(render.colours.foreground)),
+        Span::styled(
+            format!("{before}{after}"),
+            Style::default().fg(render.colours.foreground),
+        ),
     ]);
 
     let parsed = crate::capture::capture(&input.text, render.today);
@@ -2806,6 +2895,11 @@ mod tests {
         }
         assert_eq!(typing(press(KeyCode::Backspace)), Typed::Back);
         assert_eq!(typing(press(KeyCode::Enter)), Typed::Save);
+        assert_eq!(typing(press(KeyCode::Left)), Typed::Left);
+        assert_eq!(typing(press(KeyCode::Right)), Typed::Right);
+        assert_eq!(typing(press(KeyCode::Home)), Typed::Home);
+        assert_eq!(typing(press(KeyCode::End)), Typed::End);
+        assert_eq!(typing(press(KeyCode::Delete)), Typed::Delete);
 
         // A modified key is nothing at all: `ctrl-v` and `alt-f` mean things in
         // a terminal that a one-line field has no business claiming, and a
@@ -2836,6 +2930,65 @@ mod tests {
             Some("  * [x] wash up @2026-08-12 #home")
         );
         assert_eq!(Input::adding().editing, None);
+        // At the end, so a retype carries on from where the line stops.
+        assert_eq!(input.at, input.text.len());
+    }
+
+    /// A field you can only append to is not a field: the fix for a typo four
+    /// words back must not be retyping four words — docs/tui.md#adding.
+    #[test]
+    fn the_caret_moves_through_the_line_and_edits_where_it_stands() {
+        let mut input = Input::new("wash şu".to_string(), None);
+
+        // Multi-byte on purpose: every move steps by a whole char, or the next
+        // slice panics.
+        input.left();
+        input.left();
+        assert_eq!(input.at, "wash ".len());
+        input.insert('b');
+        assert_eq!(input.text, "wash bşu");
+
+        input.home();
+        input.right();
+        input.back();
+        assert_eq!((input.text.as_str(), input.at), ("ash bşu", 0));
+
+        // Backspace at the start and delete at the end are both no-ops rather
+        // than a wrap-around or a panic.
+        input.back();
+        input.end();
+        input.right();
+        input.delete();
+        assert_eq!((input.text.as_str(), input.at), ("ash bşu", 8));
+
+        input.home();
+        input.delete();
+        assert_eq!((input.text.as_str(), input.at), ("sh bşu", 0));
+    }
+
+    /// The window follows the caret. Scrolling only ever to the end of the line
+    /// would hide the very character being typed.
+    #[test]
+    fn a_long_line_scrolls_to_wherever_the_caret_is() {
+        let long = "a very long sentence that will not fit in a narrow pane at all";
+        let mut input = Input::new(long.to_string(), None);
+        let field = |input: &Input| {
+            let (lines, at) = input_lines(input, 30, render(crate::theme::MOCHA), Size::Narrow);
+            (lines[0].to_string(), at)
+        };
+
+        let (end, at) = field(&input);
+        assert!(end.ends_with("at all"), "{end:?}");
+        assert_eq!(at, 29, "the caret sits at the end of what is shown");
+
+        input.home();
+        let (start, at) = field(&input);
+        assert!(start.starts_with(" add ▏a very long"), "{start:?}");
+        assert!(
+            !start.contains("at all"),
+            "the caret scrolled off: {start:?}"
+        );
+        assert_eq!(at, columns(" add ▏"));
     }
 
     fn with_input(
@@ -2881,10 +3034,7 @@ mod tests {
     #[test]
     fn the_input_screen_exactly() {
         let tasks = tasks(&["pay the invoice @2026-08-10"]);
-        let input = Input {
-            text: "call the accountant @thu !high".to_string(),
-            editing: None,
-        };
+        let input = Input::new("call the accountant @thu !high".to_string(), None);
 
         assert_eq!(
             with_input(70, 7, &tasks, &input, Glyphs::Unicode),
@@ -2904,10 +3054,7 @@ mod tests {
     /// plain text is a perfectly good task.
     #[test]
     fn a_sentence_with_no_syntax_in_it_previews_nothing() {
-        let input = Input {
-            text: "just write it down".to_string(),
-            editing: None,
-        };
+        let input = Input::new("just write it down".to_string(), None);
         let screen = with_input(70, 7, &tasks(&["a"]), &input, Glyphs::Unicode);
         assert!(
             screen[5].starts_with(" add ▏just write it down"),
@@ -2924,10 +3071,10 @@ mod tests {
     /// field scrolls with the end of the line rather than truncating it.
     #[test]
     fn a_line_longer_than_the_pane_keeps_its_end_on_screen() {
-        let input = Input {
-            text: "a very long sentence that will not fit in a narrow pane at all".to_string(),
-            editing: Some("- [ ] x".to_string()),
-        };
+        let input = Input::new(
+            "a very long sentence that will not fit in a narrow pane at all".to_string(),
+            Some("- [ ] x".to_string()),
+        );
         let screen = with_input(30, 6, &tasks(&["x"]), &input, Glyphs::Unicode);
 
         assert!(screen[4].starts_with(" edit ▏"), "{screen:?}");
@@ -2941,10 +3088,7 @@ mod tests {
     /// The whole screen goes ASCII together, the input line included.
     #[test]
     fn the_input_line_has_an_ascii_form_too() {
-        let input = Input {
-            text: "milk @tomorrow".to_string(),
-            editing: None,
-        };
+        let input = Input::new("milk @tomorrow".to_string(), None);
         let screen = with_input(62, 7, &tasks(&["a"]), &input, Glyphs::Ascii);
         let text = screen.join("\n");
 
@@ -2985,10 +3129,7 @@ mod tests {
             let groups = agenda(&tasks, today());
             let mut screen = Screen::new(rows(&groups));
             let counts = Counts::of(&tasks, today());
-            let input = Input {
-                text: text.to_string(),
-                editing: None,
-            };
+            let input = Input::new(text.to_string(), None);
             let mut terminal = Terminal::new(TestBackend::new(40, height)).unwrap();
             terminal
                 .draw(|f| {

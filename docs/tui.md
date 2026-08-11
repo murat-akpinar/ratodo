@@ -159,9 +159,15 @@ plain text is a perfectly good task.
 same — in here it is not the quit key. `e` is still the way out to `$EDITOR` for
 anything more involved.
 
-The typed line scrolls rather than truncating: what you are typing is at the end
-of it, and a capture box that hides that is not a capture box. An empty line
-saves nothing.
+`←` and `→` move the caret, `home` and `end` jump to the ends of the line,
+`backspace` takes the character before it and `del` the one under it. A field you
+can only append to is not a field: fixing a typo four words back should not mean
+retyping four words.
+
+The typed line scrolls rather than truncating, and it scrolls with the **caret**
+rather than with the end of the line: what you are typing is always on screen,
+and a capture box that hides that is not a capture box. An empty line saves
+nothing.
 
 While the input is open the keyboard belongs to it. `a`, `d` and `q` are letters
 in there, which is how "you can never be in a mode you did not open" is made

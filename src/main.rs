@@ -689,10 +689,13 @@ fn run(
                 // there is a letter. `ctrl-c` cancels and never quits.
                 if let Some(typing) = input.as_mut() {
                     match ui::typing(key) {
-                        ui::Typed::Char(c) => typing.text.push(c),
-                        ui::Typed::Back => {
-                            typing.text.pop();
-                        }
+                        ui::Typed::Char(c) => typing.insert(c),
+                        ui::Typed::Back => typing.back(),
+                        ui::Typed::Delete => typing.delete(),
+                        ui::Typed::Left => typing.left(),
+                        ui::Typed::Right => typing.right(),
+                        ui::Typed::Home => typing.home(),
+                        ui::Typed::End => typing.end(),
                         ui::Typed::Cancel => {
                             input = None;
                             notice = ui::Notice::Hints;
@@ -1076,10 +1079,7 @@ mod tests {
     }
 
     fn typed(text: &str, editing: Option<&str>) -> ui::Input {
-        ui::Input {
-            text: text.to_string(),
-            editing: editing.map(str::to_string),
-        }
+        ui::Input::new(text.to_string(), editing.map(str::to_string))
     }
 
     /// `a` then a sentence then `⏎`. It lands where `ratodo add` puts it — after
