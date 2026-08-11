@@ -22,11 +22,14 @@ The row under the input was one accent-coloured string, which said the parser ha
 format.md gains the state and stamp rows plus the two sections behind them; tui.md gains the `p` box, the finished-row colour and date, and an adaptive hint bar in place of a fixed six. decisions.md records three settled decisions and three reversals — grey to green, `x` staying unbound while `X` takes the job, and `:` `/` leaving the overlay to make room.
 - *(calendar)* Khal does not show these, todoman does ([26858dd](https://github.com/murat-akpinar/ratodo/commit/26858dd7794d3bb71c301db93409986b26cee0de))
 The `.ics` had been verified as *parseable* — by Python's icalendar, a different implementation of the same RFC — and never as *displayed*. todo.md had that open as "the one that catches a client quietly ignoring VTODO", and it caught one on the first try.
+- *(calendar)* Todoman verified against a packaged install ([9709e4d](https://github.com/murat-akpinar/ratodo/commit/9709e4dc3e6c995d7efeddc435e2ffdb7681d49b))
 
 ### 🧪 Testing
 
 - *(cli)* Pin what Live knows about its files ([4c122de](https://github.com/murat-akpinar/ratodo/commit/4c122de870e115e311c6f70013c723cc0cfd0364))
 - *(cli)* Pin that the loop only reads the disk when the watcher spoke ([07be08a](https://github.com/murat-akpinar/ratodo/commit/07be08a3c36782475957e1523d114d95ac7f0be0))
+- *(cli)* Pin the way back out of every state, and what p writes ([72ad547](https://github.com/murat-akpinar/ratodo/commit/72ad54773f68bb63fbe8be787ccaac126bb1f608))
+`cargo mutants` found three holes, all of them in code added an hour ago and all of them the same shape: the *return* path was never driven. Deleting the `State::Done` arm of `toggle`, the `State::Cancelled` arm of `cancel`, or the `Purpose::Postpone` arm of `save_typed` broke nothing any test objected to — so "the same key both ways" and "p moves the date" were claims made in comments and documentation with nothing behind them.
 ## [0.1.0] - 2026-08-11
 
 ### 🚀 Features
