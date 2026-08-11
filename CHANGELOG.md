@@ -1,5 +1,10 @@
 ## [unreleased]
 
+### 🚀 Features
+
+- *(ui)* A date field on tab ([e9ff077](https://github.com/murat-akpinar/ratodo/commit/e9ff0777df2b0ac473fe86abc97eea121ec9b3a3))
+`@2026-13-45` is a date the text box takes and the preview can only say is wrong. `tab` opens a field where that date does not exist: `↑ ↓` on the part in brackets, `← →` between the three, and digits filling them in order, so `13082026` is the 13th of August in eight keystrokes — a part that cannot take another digit hands the cursor on by itself.
+
 ### ⚙️ Miscellaneous Tasks
 
 - Add a flake and an Arch PKGBUILD ([ccf4d16](https://github.com/murat-akpinar/ratodo/commit/ccf4d163f5096928a051580c5259c3608aabc974))
