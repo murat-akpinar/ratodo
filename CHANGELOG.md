@@ -28,6 +28,8 @@ The screens in docs/tui.md, drawn: `○ ✓ !` marks, a `▌` selection, group h
 Two screens from docs/tui.md. The empty one teaches instead of apologising: the worked example lands the `@` and `#` syntax faster than any table, and it names the file path, because the promise of this product is that the file is yours and you should be told where it is on day one. A long `--file` path is shortened rather than left to run into the frame.
 - *(cli)* Hand-written completions for bash, zsh and fish ([ad80c0c](https://github.com/murat-akpinar/ratodo/commit/ad80c0c7e5c00ffc53965a96e47d62493e0f597d))
 `completions/ratodo.{bash,zsh,fish}`, and no `clap_complete` — that would be an eighth dependency for a subcommand list that is short and fixed.
+- *(ui)* Open $EDITOR on e, and poll instead of parking a thread ([7190d34](https://github.com/murat-akpinar/ratodo/commit/7190d34b43d90b35c40a2ae6184bb22974535682))
+`e` hands the terminal to `$VISUAL` or `$EDITOR`, waits, takes it back and re-reads the file. The escape hatch: whatever the tool cannot do, the file can, and the file is Markdown the user already knows how to edit.
 
 ### 🐛 Bug Fixes
 
