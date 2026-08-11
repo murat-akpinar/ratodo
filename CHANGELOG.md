@@ -70,3 +70,5 @@ The last missed mutant in the sweep: `helping = !helping` turned into `helping =
 - Add agent working rules and a Rust gitignore ([6449064](https://github.com/murat-akpinar/ratodo/commit/644906428c4fa86dd1c0c64352274950cff90de5))
 CLAUDE.md carries the workflow (write, self-review, test, commit, changelog, push), the conventional-commit format cliff.toml requires, and the nine hard invariants that must not be broken without an explicit decision — round-trip fidelity first among them.
 - Keep changelog commits out of the changelog ([41aabd3](https://github.com/murat-akpinar/ratodo/commit/41aabd378b79b68a147e6c8b4b293d20877937d3))
+- *(cli)* Settle the colour gate and trim the published crate ([551eb14](https://github.com/murat-akpinar/ratodo/commit/551eb14023586953f86669150b3d94c55d488728))
+Two of the three things left before a tag.
