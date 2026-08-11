@@ -1,3 +1,13 @@
+## [unreleased]
+
+### 📚 Documentation
+
+- Record a demo gif for the readme ([b392334](https://github.com/murat-akpinar/ratodo/commit/b39233479513e7e649519f32c8db5a14ac3f21a4))
+scripts/demo.py drives a release build on a pty inside one throwaway kitty window and lets menyoki record it, against a throwaway XDG tree so the real ~/.config/ratodo is never in scope. The window size is the compositor's call under a tiling WM, so the pty is sized from the window rather than the other way round, and the session ends by closing the pty rather than with q — a quit tears the alternate screen down, and a bare prompt is the frame a looping gif rests on.
+
+### ⚙️ Miscellaneous Tasks
+
+- Point the PKGBUILD at v0.5.0 ([ed2a068](https://github.com/murat-akpinar/ratodo/commit/ed2a068ba862a7aec3dafb93aaab1095381478d7))
 ## [0.5.0] - 2026-08-11
 
 ### 🚀 Features
@@ -8,6 +18,7 @@ Both out of the same report: the row read as one run-on line, and the box `y` fi
 ### ⚙️ Miscellaneous Tasks
 
 - Point the PKGBUILD at v0.4.0 ([2cbd2b0](https://github.com/murat-akpinar/ratodo/commit/2cbd2b06bea68646a62b6c6150f850d966bf0129))
+- *(release)* V0.5.0 ([9a4b816](https://github.com/murat-akpinar/ratodo/commit/9a4b8169e7b82198140baacdccec360030e856d2))
 ## [0.4.0] - 2026-08-11
 
 ### 🚀 Features
