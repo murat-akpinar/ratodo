@@ -4,6 +4,10 @@
 
 - *(ui)* [**breaking**] Swap the delete and cancel keys ([e1e5b41](https://github.com/murat-akpinar/ratodo/commit/e1e5b41b9b829b63dffeef2ab58a160c94d129c3))
 `d` cancels and `X` deletes, the other way round from v0.2.0. The shift was on the wrong key: cancelling is reversible — `d` again takes it back and the row stays in the file as `- [-]` — while deleting takes a line out of the user's file behind one level of undo that a `q` spends. The key that costs the most is the one that should cost a shift, and `d` sitting a row from `j` and `k` made the cheap key the destructive one.
+- *(ui)* Say so when an @ can never be a date ([fe648c4](https://github.com/murat-akpinar/ratodo/commit/fe648c41e49faa4dd7e517084256198963dc43be))
+`@2026-13-45` resolves to nothing, so the word falls back to being part of the title. The fallback stays — a word we did not understand belongs to the user — but it was silent, and the preview went quiet in exactly the moment it should speak.
+- *(ui)* Copy the selected task with y ([4e0e6fd](https://github.com/murat-akpinar/ratodo/commit/4e0e6fd709e617eb06193c9fb0a25a85f17d707a))
+A task that is nearly one already on the list had no way in but `a` and the whole line again. `y` opens the input box pre-filled with the task under the cursor, as a new one: edit it, `⏎` saves a second task, `esc` writes nothing.
 
 ### 📚 Documentation
 
