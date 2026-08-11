@@ -1684,6 +1684,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The three answers the rest of the multi-file behaviour is built on, each
+    /// of which a mutation could quietly invert: which files a change syncs, when
+    /// a task is stamped with its file, and whether the screen is out of date.
+    #[test]
+    fn what_live_knows_about_its_files() {
+        let (dir, paths, mut live) = open_several(
+            "live-knows",
+            &[("todo.md", "- [ ] mine\n"), ("work.md", "- [ ] theirs\n")],
+        );
+
+        // Every list, or the calendar would be rebuilt from half of them.
+        assert_eq!(live.paths(), paths);
+
+        // Two files, so a capture is stamped; one file, and it is not — that
+        // boundary is the whole of what keeps single-file identities intact.
+        assert_eq!(live.stamp(0).as_deref(), Some("todo.md"));
+        let (one, single) = open("live-knows-one", "- [ ] mine\n");
+        assert_eq!(single.stamp(0), None);
+        let _ = std::fs::remove_dir_all(one.parent().unwrap());
+
+        // Nothing has moved: the files say what we last read.
+        assert!(!live.stale());
+
+        // Our own write does not count as a change, or the reload it triggers
+        // would throw away the in-place update and let the ticked task jump.
+        live.toggle(a_day()).unwrap();
+        assert!(!live.stale(), "our own save read as somebody else's");
+
+        // Somebody else's does.
+        std::fs::write(dir.join("work.md"), "- [ ] theirs\n- [ ] and mine\n").unwrap();
+        assert!(live.stale(), "an outside edit went unnoticed");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Every `*.md` in the config directory is a list, sorted, and nothing else
     /// in there is. `--file` and `$RATODO_FILE` still name exactly one.
     #[test]
