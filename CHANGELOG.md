@@ -4,6 +4,8 @@
 
 - Record a demo gif for the readme ([b392334](https://github.com/murat-akpinar/ratodo/commit/b39233479513e7e649519f32c8db5a14ac3f21a4))
 scripts/demo.py drives a release build on a pty inside one throwaway kitty window and lets menyoki record it, against a throwaway XDG tree so the real ~/.config/ratodo is never in scope. The window size is the compositor's call under a tiling WM, so the pty is sized from the window rather than the other way round, and the session ends by closing the pty rather than with q — a quit tears the alternate screen down, and a bare prompt is the frame a looping gif rests on.
+- Put !high back in the readme's agenda mockup ([b5dcca8](https://github.com/murat-akpinar/ratodo/commit/b5dcca821820870b8c01c78a241d982ae30422d0))
+Rendered the mockup's own scenario through TestBackend at its own 62 columns: the overdue row carries `!high` between the date and the tags and the mockup did not, and the date field opened on `[11]` where the page's today is the 10th. Everything else — the frame, the progress bar, the hint bar at that width, both input boxes — came back byte-identical.
 
 ### ⚙️ Miscellaneous Tasks
 
