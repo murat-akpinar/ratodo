@@ -1,4 +1,4 @@
-## [unreleased]
+## [0.1.0] - 2026-08-11
 
 ### 🚀 Features
 
@@ -86,6 +86,8 @@ The design record had one screen sketch and a seven-key table. Neither covered w
 - Record what two audience design reviews found ([96d0a2c](https://github.com/murat-akpinar/ratodo/commit/96d0a2cdb9d64dcfe5a665061cced58ecc226454))
 Two reviews were run against the design, one from each profile this tool claims to be for: a tiling-WM ricer and a terminal-bound developer. They ran separately and reached the same objection, which is why it is worth recording rather than arguing with.
 - Point the readme at the command line that now exists ([f5e63b3](https://github.com/murat-akpinar/ratodo/commit/f5e63b36cdbc54e4547227e676370b79bc7704fc))
+- Bring the readme and the record up to the v0.1.0 tag ([f067e5a](https://github.com/murat-akpinar/ratodo/commit/f067e5af2dc003f3893f752a6b8258fbbcc82af8))
+The status blocks still said design phase and unreleased, the agenda in the readme was a hand-drawn mock that had drifted from the real screen, and the line claiming nothing pops over the list stopped being true when the input became a box. Install builds from the tag.
 
 ### 🧪 Testing
 
