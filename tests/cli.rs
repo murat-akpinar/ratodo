@@ -43,6 +43,12 @@ fn run(args: &[&str]) -> Output {
         .expect("running the binary")
 }
 
+/// Today, as the tick stamps it. These tests run against the real clock, so the
+/// expected line has to be built the same way the binary builds it.
+fn stamp() -> String {
+    format!(" ✓{}", chrono::Local::now().date_naive().format("%Y-%m-%d"))
+}
+
 fn stdout_of(path: &Path, args: &[&str]) -> String {
     let mut full = vec!["--file", path.to_str().unwrap()];
     full.extend_from_slice(args);
@@ -382,8 +388,11 @@ fn done_ticks_the_one_match_and_changes_exactly_that_byte() {
     let after = fs::read_to_string(&path).unwrap();
     assert_eq!(
         after,
-        before.replace("- [ ] pay the invoice", "- [x] pay the invoice"),
-        "something other than the one checkbox moved"
+        before.replace(
+            "- [ ] pay the invoice @2026-08-12 #ops",
+            &format!("- [x] pay the invoice @2026-08-12 #ops{}", stamp())
+        ),
+        "something other than the one checkbox and its stamp moved"
     );
 }
 
@@ -434,6 +443,82 @@ fn done_with_no_match_is_exit_2_and_says_so() {
     );
 }
 
+/// A cancelled task is out of every count and out of `done`'s reach — it is off
+/// the list, which is the whole point of it not simply being deleted.
+#[test]
+fn a_cancelled_task_is_neither_open_nor_overdue_nor_matchable() {
+    let dir = TempDir::new("cancelled");
+    let path = dir.file("todo.md");
+    fs::write(
+        &path,
+        "- [ ] still wanted @2026-01-01\n- [-] decided against @2026-01-01 #ops\n",
+    )
+    .unwrap();
+
+    // One open, one overdue — the cancelled one is in neither, though its date
+    // is just as far in the past. Not `stdout_of`: `status` exits non-zero when
+    // something is overdue, which is the documented behaviour.
+    let status = run(&["--file", path.to_str().unwrap(), "status"]);
+    assert_eq!(
+        String::from_utf8_lossy(&status.stdout),
+        "1 open · 1 overdue\n"
+    );
+
+    // It is on screen, with its own state word for a script to branch on.
+    let porcelain = stdout_of(&path, &["list", "--porcelain"]);
+    assert!(
+        porcelain.contains("cancelled\t2026-01-01\tdecided against\tops\t"),
+        "{porcelain:?}"
+    );
+    assert!(stdout_of(&path, &["list"]).contains("[-] decided against"));
+
+    // And `done` will not tick it: there is nothing left to do to it.
+    let out = run(&["--file", path.to_str().unwrap(), "done", "decided"]);
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("already done: decided against"),
+        "{:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "- [ ] still wanted @2026-01-01\n- [-] decided against @2026-01-01 #ops\n",
+        "nothing was written"
+    );
+}
+
+/// The `.ics` is for work still to do. A cancelled task is not that, and neither
+/// is a finished one.
+#[test]
+fn only_open_tasks_reach_the_calendar() {
+    let dir = TempDir::new("ics-states");
+    let path = dir.file("todo.md");
+    fs::write(
+        &path,
+        "- [ ] open @2026-09-01\n- [x] finished @2026-09-02\n- [-] cancelled @2026-09-03\n",
+    )
+    .unwrap();
+
+    let data = dir.file("data");
+    let out = Command::new(BIN)
+        .args(["--file", path.to_str().unwrap(), "sync"])
+        .env("XDG_DATA_HOME", &data)
+        .env("XDG_STATE_HOME", dir.file("state"))
+        .output()
+        .expect("running the binary");
+    assert!(
+        out.status.success(),
+        "{:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let ics = fs::read_to_string(data.join("ratodo").join("todo.ics")).expect("the calendar file");
+
+    assert_eq!(ics.matches("BEGIN:VTODO").count(), 1, "{ics}");
+    assert!(ics.contains("open"), "{ics}");
+    assert!(!ics.contains("cancelled"), "{ics}");
+    assert!(!ics.contains("finished"), "{ics}");
+}
+
 /// "no task matches" would be a lie the user cannot act on, and running it twice
 /// is the ordinary way to find out.
 #[test]
@@ -453,7 +538,8 @@ fn done_twice_says_it_is_already_done_and_succeeds() {
     );
     assert_eq!(
         fs::read_to_string(&path).unwrap(),
-        "- [x] pay the invoice\n"
+        format!("- [x] pay the invoice{}\n", stamp()),
+        "the second `done` changed nothing, stamp included"
     );
 }
 
@@ -981,9 +1067,13 @@ fn the_input_mode_captures_a_task_and_ctrl_c_only_cancels_it() {
     );
     // The way out is on the bottom line under the box, painted over the hint bar
     // that was already there — so the stream repaints only the cells that differ
-    // and `esc cancel` is never contiguous in it. The words are.
+    // and even a whole word is not reliably contiguous in it: whichever letters
+    // happen to match the bar underneath are simply left alone. What the line
+    // says, exactly, is pinned by `the_input_screen_exactly` in `ui.rs`, where a
+    // buffer can be read directly. Here the question is only whether it was
+    // drawn at all.
     assert!(raw.contains("save"), "no way out was drawn: {raw:?}");
-    assert!(raw.contains("esc "), "no way out was drawn: {raw:?}");
+    assert!(raw.contains("canc"), "no way out was drawn: {raw:?}");
     assert_eq!(
         file, "- [ ] pay the invoice\n",
         "nothing is written until ⏎"
@@ -1103,8 +1193,12 @@ fn ticking_a_task_on_the_screen_changes_one_byte_of_the_file() {
     let after = fs::read_to_string(&path).unwrap();
     assert_eq!(
         after,
-        before.replacen("- [ ]   oddly", "- [x]   oddly", 1),
-        "something other than the one checkbox moved"
+        before.replacen(
+            "- [ ]   oddly   spaced  @2026-08-09 #ops",
+            &format!("- [x]   oddly   spaced  @2026-08-09 #ops{}", stamp()),
+            1
+        ),
+        "something other than the one checkbox and its stamp moved"
     );
 
     // And the screen said so, in place — the ticked row is still the first one

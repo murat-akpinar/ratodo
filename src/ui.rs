@@ -9,7 +9,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 
 use crate::agenda::{Counts, Group, Kind};
-use crate::model::{Priority, Task};
+use crate::model::{Priority, State, Task};
 use crate::text;
 use crate::theme::Theme;
 
@@ -31,6 +31,10 @@ pub enum Action {
     Fold(Fold),
     /// `d` — immediately, with `u` to take it back.
     Delete,
+    /// `X` — decided against rather than finished. `- [-]` in the file.
+    Cancel,
+    /// `p` — opens the input to ask how long for, and moves the date alone.
+    Postpone,
     /// `u` — put the last change back.
     Undo,
     /// Hand the terminal to `$EDITOR`. The escape hatch for everything the
@@ -82,6 +86,8 @@ pub fn action(key: KeyEvent) -> Action {
         KeyCode::Char('l') | KeyCode::Right => Action::Fold(Fold::Open),
         // `z` is the vim fold prefix, and here it is the whole of it.
         KeyCode::Char('z') => Action::Fold(Fold::Toggle),
+        KeyCode::Char('X') => Action::Cancel,
+        KeyCode::Char('p') => Action::Postpone,
         KeyCode::Char('e') => Action::Edit,
         KeyCode::Char('r') => Action::Reload,
         KeyCode::Char('?') => Action::Help,
@@ -113,30 +119,66 @@ pub struct Input {
     /// Where the next character goes, as a byte index into `text`. Always on a
     /// char boundary — every move steps by a whole `char`.
     pub at: usize,
-    /// The raw line being rewritten. `None` is a new task.
-    pub editing: Option<String>,
+    pub purpose: Purpose,
+}
+
+/// Why the field is open, and so what `⏎` will do with the line in it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Purpose {
+    /// `a` `o` — a new task, for the capture target.
+    Add,
+    /// `⏎` — the raw line being rewritten.
+    Edit(String),
+    /// `p` — the raw line whose date is moving. What is being typed is a length
+    /// of time, not a task, which is why it is a third purpose and not a flag on
+    /// the second.
+    Postpone(String),
+}
+
+impl Purpose {
+    /// The line this is about, as the file has it. `None` for a new task.
+    pub fn raw(&self) -> Option<&str> {
+        match self {
+            Purpose::Add => None,
+            Purpose::Edit(raw) | Purpose::Postpone(raw) => Some(raw),
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            Purpose::Add => "add",
+            Purpose::Edit(_) => "edit",
+            Purpose::Postpone(_) => "put off",
+        }
+    }
 }
 
 impl Input {
     /// The only way to build one: the caret starts at the end of `text`, which
     /// is where a retype begins.
-    pub fn new(text: String, editing: Option<String>) -> Self {
+    pub fn new(text: String, purpose: Purpose) -> Self {
         Input {
             at: text.len(),
             text,
-            editing,
+            purpose,
         }
     }
 
     pub fn adding() -> Self {
-        Input::new(String::new(), None)
+        Input::new(String::new(), Purpose::Add)
     }
 
     /// Pre-filled with the task's text as it stands in the file, so an edit
     /// starts from what is actually written there rather than from our reading
     /// of it.
     pub fn editing(task: &Task) -> Self {
-        Input::new(task.body().to_string(), Some(task.raw.clone()))
+        Input::new(task.body().to_string(), Purpose::Edit(task.raw.clone()))
+    }
+
+    /// Empty, because the answer is short and pre-filling it with a guess would
+    /// make the common case *delete* something before typing.
+    pub fn postponing(task: &Task) -> Self {
+        Input::new(String::new(), Purpose::Postpone(task.raw.clone()))
     }
 
     pub fn insert(&mut self, c: char) {
@@ -551,13 +593,15 @@ impl Glyphs {
     }
 
     fn mark(self, task: &Task, today: NaiveDate) -> &'static str {
-        match (self, task.done, task.is_overdue(today)) {
-            (Glyphs::Unicode, true, _) => "✓",
-            (Glyphs::Unicode, false, true) => "!",
-            (Glyphs::Unicode, false, false) => "○",
-            (Glyphs::Ascii, true, _) => "[x]",
-            (Glyphs::Ascii, false, true) => "[!]",
-            (Glyphs::Ascii, false, false) => "[ ]",
+        match (self, task.state, task.is_overdue(today)) {
+            (Glyphs::Unicode, State::Done, _) => "✓",
+            (Glyphs::Unicode, State::Cancelled, _) => "✗",
+            (Glyphs::Unicode, State::Open, true) => "!",
+            (Glyphs::Unicode, State::Open, false) => "○",
+            (Glyphs::Ascii, State::Done, _) => "[x]",
+            (Glyphs::Ascii, State::Cancelled, _) => "[-]",
+            (Glyphs::Ascii, State::Open, true) => "[!]",
+            (Glyphs::Ascii, State::Open, false) => "[ ]",
         }
     }
 
@@ -779,6 +823,17 @@ fn lead(text: &str, limit: usize) -> String {
 /// The right-hand date column. Near dates read as words and far ones as
 /// numbers; the narrow forms are what docs/tui.md#width drops to.
 fn when(task: &Task, today: NaiveDate, size: Size) -> String {
+    // A finished task's due date is a fact about a deadline that no longer
+    // applies; the day it was actually finished is the one thing still worth a
+    // column. It only ever displaces the due date, so the column stays one date
+    // wide — and a task ticked before the stamp existed still shows its old one.
+    if let Some(on) = task.done_on.filter(|_| task.done()) {
+        return match (today - on).num_days() {
+            0 => "today".to_string(),
+            1..=6 => on.format("%a").to_string(),
+            _ => on.format("%b %-d").to_string(),
+        };
+    }
     let Some(due) = task.due else {
         return String::new();
     };
@@ -790,7 +845,7 @@ fn when(task: &Task, today: NaiveDate, size: Size) -> String {
         // ago" contradicts the tick — and the counts, which already leave
         // finished work out of `overdue`. It falls through to the plain date,
         // which is still true: that is when it was for.
-        (d, _) if d < 0 && !task.done => format!("{}d ago", -d),
+        (d, _) if d < 0 && task.open() => format!("{}d ago", -d),
         (0, _) => time.unwrap_or_else(|| "today".to_string()),
         (1..=6, Size::Wide) => match time {
             Some(t) => format!("{} {t}", due.date.format("%a")),
@@ -928,7 +983,7 @@ fn task_line(
     // finished task is neither. No new theme role: `overdue` and `today` are
     // already the two the title uses — docs/tui.md#main-screen.
     let pressing = task.is_overdue(render.today)
-        || (!task.done && task.due.is_some_and(|d| d.date == render.today));
+        || (task.open() && task.due.is_some_and(|d| d.date == render.today));
     let date_style = if pressing {
         Style::default().fg(colour)
     } else {
@@ -942,7 +997,7 @@ fn task_line(
         // carried by colour alone — docs/design.md#rules. `!med` and `!low` stay
         // where they were, or three loud rows teach nothing about which is which,
         // and a ticked task is not urgent however it was filed.
-        let urgent = task.priority == Some(Priority::High) && !task.done;
+        let urgent = task.priority == Some(Priority::High) && task.open();
         let style = if urgent {
             Style::default().fg(colour).bold()
         } else {
@@ -1044,24 +1099,56 @@ pub enum Notice {
     Warned(String),
 }
 
+/// The hint bar, filled to whatever the pane gives it.
+///
+/// `? keys` and `q quit` are pinned to the end: however little room there is,
+/// the way to the rest of the keymap and the way out both stay. Everything
+/// before them goes in until the next one would not fit, so the order is how
+/// often a key is reached for — and the bar stops being a list that has to be
+/// re-argued every time a key is added.
+fn hints(width: usize, glyphs: Glyphs) -> String {
+    const SEP: &str = "  ";
+    let tail = format!("{SEP}? keys{SEP}q quit");
+    let keys: [(&str, &str); 6] = [
+        ("j k", "move"),
+        ("spc", "done"),
+        ("a", "add"),
+        (glyphs.enter(), "edit"),
+        ("X", "cancel"),
+        ("p", "put off"),
+    ];
+
+    let mut out = String::new();
+    for (key, what) in keys {
+        let entry = format!("{SEP}{key} {what}");
+        // The leading space every message on this line carries.
+        if 1 + columns(&out) + columns(&entry) + columns(&tail) > width {
+            break;
+        }
+        out.push_str(&entry);
+    }
+    out.push_str(&tail);
+    format!(" {}", out.trim_start())
+}
+
 impl Notice {
-    fn line(&self, size: Size, height: u16, glyphs: Glyphs, colours: Theme) -> Line<'static> {
+    fn line(
+        &self,
+        size: Size,
+        width: usize,
+        height: u16,
+        glyphs: Glyphs,
+        colours: Theme,
+    ) -> Line<'static> {
         let (text, colour) = match self {
             // Only the keys that do something. A hint bar advertising a key that
             // is not implemented yet is a worse lie than no hint bar.
             Notice::Hints if height < 10 => (" ?".to_string(), colours.dim),
-            // Six keys, not the whole keymap: the bar has to fit the narrowest
-            // pane that still counts as wide, which is sixty columns. `d` and
-            // `e` gave up their slots to the capture keys when those arrived —
-            // adding a task is what the tool is for, and `?` lists the rest.
-            Notice::Hints if size == Size::Wide => (
-                format!(
-                    " j k move   spc done   a add   {} edit   ? keys   q quit",
-                    glyphs.enter()
-                ),
-                colours.dim,
-            ),
-            Notice::Hints => (" j k  spc  a  d  e  ?  q".to_string(), colours.dim),
+            Notice::Hints if size == Size::Wide => (hints(width, glyphs), colours.dim),
+            // Keys only, no words. `d` and `e` gave up their slots here: delete
+            // and `$EDITOR` are both reachable from `?`, and neither is what
+            // somebody glancing at a narrow pane is about to press.
+            Notice::Hints => (" j k  spc  a  X  p  ?  q".to_string(), colours.dim),
             Notice::Said(text) => (format!(" {text}"), colours.dim),
             Notice::Warned(text) => {
                 let mark = match glyphs {
@@ -1097,15 +1184,7 @@ fn paint(part: crate::capture::Part, plain: Style, render: Render<'_>) -> Style 
 
 fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'static>>, usize) {
     let dim = Style::default().fg(render.colours.dim);
-    let head = format!(
-        " {} {}",
-        if input.editing.is_some() {
-            "edit"
-        } else {
-            "add"
-        },
-        render.glyphs.field()
-    );
+    let head = format!(" {} {}", input.purpose.label(), render.glyphs.field());
     // The window is anchored on the caret, not on the end of the line: what is
     // before it fills the field from the right, and whatever room is left shows
     // what comes after.
@@ -1126,10 +1205,18 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
     // `@notaday` stays plain here exactly as it will in the file. This is the
     // preview's job done a second way — the preview says what it understood, and
     // this says where — docs/tui.md#adding.
+    // A length of time is one word and not task syntax, so `parts` has nothing
+    // to say about it: it is the accent once it resolves to a day and plain
+    // until then, which is the same promise the sentence field makes.
+    let moving = matches!(input.purpose, Purpose::Postpone(_));
+    let lands = moving
+        .then(|| crate::capture::later(&input.text, render.today))
+        .flatten();
+
     let mut spans = vec![Span::styled(head, dim)];
     let mut cut = from;
     for (word, part) in crate::capture::parts(&input.text, render.today) {
-        if part == crate::capture::Part::Text || word.end <= from || word.start >= to {
+        if moving || part == crate::capture::Part::Text || word.end <= from || word.start >= to {
             continue;
         }
         let (start, end) = (word.start.max(from), word.end.min(to));
@@ -1143,7 +1230,11 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
         cut = end;
     }
     if cut < to {
-        spans.push(Span::styled(input.text[cut..to].to_string(), plain));
+        let style = match (moving, lands) {
+            (true, Some(_)) => Style::default().fg(render.colours.accent),
+            _ => plain,
+        };
+        spans.push(Span::styled(input.text[cut..to].to_string(), style));
     }
     let field = Line::from(spans);
 
@@ -1154,14 +1245,29 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
     // about — and it made the date and the tag indistinguishable in the row
     // whose whole job is telling them apart. The title is not repeated: it is
     // already on the line above, in the same white.
-    let parsed = crate::capture::capture(&input.text, render.today);
     let (_, dot) = render.glyphs.punctuation();
     let mut shown = vec![Span::styled("      ".to_string(), dim)];
-    for (part, text) in crate::text::field_parts(&parsed, render.today) {
-        if shown.len() > 1 {
-            shown.push(Span::styled(format!("  {dot}  "), dim));
+    if moving {
+        // The one thing worth previewing here is the day it lands on, because
+        // `2w` is exactly the input whose answer nobody works out in their head.
+        match lands {
+            Some(date) => shown.push(Span::styled(
+                crate::text::relative(crate::model::Due::new(date), render.today),
+                Style::default().fg(render.colours.accent),
+            )),
+            None => shown.push(Span::styled(
+                "how long?  2   3d   1w   fri".to_string(),
+                dim,
+            )),
         }
-        shown.push(Span::styled(text, paint(part, plain, render)));
+    } else {
+        let parsed = crate::capture::capture(&input.text, render.today);
+        for (part, text) in crate::text::field_parts(&parsed, render.today) {
+            if shown.len() > 1 {
+                shown.push(Span::styled(format!("  {dot}  "), dim));
+            }
+            shown.push(Span::styled(text, paint(part, plain, render)));
+        }
     }
     let preview = Line::from(shown);
     // A rule between the two, because they are not the same thing: above it is
@@ -1285,7 +1391,13 @@ pub fn draw(
             format!(" {} save   esc cancel", render.glyphs.enter()),
             Style::default().fg(render.colours.dim),
         )),
-        None => notice.line(size, whole.height, render.glyphs, render.colours),
+        None => notice.line(
+            size,
+            whole.width as usize,
+            whole.height,
+            render.glyphs,
+            render.colours,
+        ),
     };
 
     frame.render_widget(
@@ -1374,6 +1486,10 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
     // Two of these carry a glyph, and the overlay is the one screen where a
     // character the terminal cannot draw does the most damage: it is the screen
     // somebody opens *because* they are lost — docs/tui.md#no-colour-no-nerd-font.
+    // `:` and `/` were here and are not any more. The rule above is that this
+    // lists keys that do something, and those two do not — pressing either
+    // answers in the status line, which is the moment it teaches anything. The
+    // row they cost is what keeps the box inside a fourteen-row pane.
     let keys: [(String, &str); 10] = [
         (format!("j k  {}", render.glyphs.arrows()), "move"),
         ("g G".to_string(), "top / bottom"),
@@ -1381,12 +1497,12 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
         ("spc".to_string(), "toggle done"),
         (format!("a o  {}", render.glyphs.enter()), "add / edit"),
         ("d  u".to_string(), "delete / undo"),
+        ("X  p".to_string(), "cancel / put off"),
         ("h l  z".to_string(), "fold this group"),
         // Two keys to a row, so that the box still fits a fourteen-row pane.
         // At twelve rows of keys the border takes `q  ctrl-c` off the bottom,
         // and a help screen that cuts off at quit is worse than none.
         ("e  r".to_string(), "$EDITOR / re-read"),
-        (":  /".to_string(), "answer, for now"),
         ("q  ctrl-c".to_string(), "quit"),
     ];
 
@@ -1501,7 +1617,7 @@ fn example(frame: &mut Frame, inner: Rect, render: Render<'_>) {
     let width = 48.min(inner.width.saturating_sub(4));
     let area = Rect::new(inner.x + 2, inner.y + 6, width, 5);
     let (lines, _) = input_lines(
-        &Input::new(EXAMPLE.to_string(), None),
+        &Input::new(EXAMPLE.to_string(), Purpose::Add),
         (width as usize).saturating_sub(2),
         render,
     );
@@ -1588,8 +1704,15 @@ fn progress(
 
 /// Red is only for overdue and green only for done — docs/design.md#rules — so
 /// this is the whole of the colour logic and there is nowhere else to add to it.
+///
+/// Green was spent on the progress bar alone and the row that earned it was
+/// grey, which made ticking a task the one action on this screen that said
+/// nothing back. A cancelled row keeps the grey: it is off the list, not
+/// finished, and the two must not read alike.
 fn task_colour(task: &Task, today: NaiveDate, colours: Theme) -> Color {
-    if task.done {
+    if task.done() {
+        colours.done
+    } else if task.state == State::Cancelled {
         colours.done_text
     } else if task.is_overdue(today) {
         colours.overdue
@@ -1702,7 +1825,7 @@ mod tests {
     /// matters: pressed out of habit, it must not take the pane down with it.
     #[test]
     fn the_deliberately_unbound_keys_do_nothing() {
-        for code in [KeyCode::Char('x'), KeyCode::Char('Q'), KeyCode::Char('w')] {
+        for code in [KeyCode::Char('x'), KeyCode::Char('w'), KeyCode::Char('P')] {
             assert_eq!(action(press(code)), Action::Ignore, "{code:?}");
         }
         // `esc` is the one that matters. It closes the overlay and does nothing
@@ -1820,13 +1943,13 @@ mod tests {
                 "│   │  spc            toggle done          │   │",
                 "│   │  a o  ⏎         add / edit           │   │",
                 "│   │  d  u           delete / undo        │   │",
+                "│   │  X  p           cancel / put off     │   │",
                 "│   │  h l  z         fold this group      │   │",
                 "│   │  e  r           $EDITOR / re-read    │   │",
-                "│   │  :  /           answer, for now      │   │",
                 "│   │  q  ctrl-c      quit                 │   │",
                 "│   └───────── esc or ? to close ──────────┘   │",
                 "└──────────────────────────────────────────────┘",
-                " j k  spc  a  d  e  ?  q                        ",
+                " j k  spc  a  X  p  ?  q                        ",
             ]
         );
     }
@@ -2083,7 +2206,7 @@ mod tests {
         // Ticked and tagged from outside, and pushed down the list by an insert.
         let mut ticked = capture("two #ops", today());
         ticked.section = Some("S".into());
-        ticked.set_done(true);
+        ticked.set_state(State::Done, today());
         let mut after = in_section(&[("inserted", "S"), ("one", "S")]);
         after.push(ticked);
         after.extend(in_section(&[("three", "S")]));
@@ -2094,7 +2217,7 @@ mod tests {
             Some("two"),
             "the cursor followed the raw line instead of the task"
         );
-        assert!(screen.task().unwrap().done);
+        assert!(screen.task().unwrap().done());
     }
 
     /// Two tasks can be the same task as far as identity goes. The cursor stays
@@ -2224,7 +2347,7 @@ mod tests {
                 "│                                                            │",
                 "│                                                            │",
                 "└────────────────────────────────────────────────────────────┘",
-                " j k move   spc done   a add   ⏎ edit   ? keys   q quit       ",
+                " j k move  spc done  a add  ⏎ edit  X cancel  ? keys  q quit  ",
             ]
         );
     }
@@ -2234,7 +2357,7 @@ mod tests {
     #[test]
     fn the_title_bar_shows_what_is_finished() {
         let mut done = capture("migrate the server", today());
-        done.set_done(true);
+        done.set_state(State::Done, today());
         let tasks = [capture("late @2026-08-09 #ops", today()), done];
 
         assert_eq!(
@@ -2264,7 +2387,7 @@ mod tests {
     #[test]
     fn the_bar_gives_way_before_the_counts_do() {
         let mut done = capture("finished", today());
-        done.set_done(true);
+        done.set_state(State::Done, today());
         let tasks = [capture("late @2026-08-09", today()), done];
 
         let narrow = rendered(46, 5, &tasks);
@@ -2327,7 +2450,7 @@ mod tests {
     #[test]
     fn the_bar_has_an_ascii_form() {
         let mut done = capture("finished", today());
-        done.set_done(true);
+        done.set_state(State::Done, today());
         let tasks = [capture("late @2026-08-09", today()), done];
         let groups = agenda(&tasks, today());
         let mut screen = Screen::new(rows(&groups));
@@ -2381,7 +2504,7 @@ mod tests {
         // Two fields, so the preview line has to put a separator between them.
         // (The overlay covers the cut title itself; `shorten` is tested with
         // both glyph sets on its own.)
-        let input = Input::new("buy milk @thu #home".to_string(), None);
+        let input = Input::new("buy milk @thu #home".to_string(), Purpose::Add);
 
         let mut terminal = Terminal::new(TestBackend::new(60, 16)).unwrap();
         terminal
@@ -2653,7 +2776,9 @@ mod tests {
         let colours = crate::theme::MOCHA;
         let style_of = |spec: &str, done: bool| {
             let mut task = capture(spec, today());
-            task.set_done(done);
+            if done {
+                task.set_state(State::Done, today());
+            }
             let rows = [Row::Task(task.clone())];
             let cols = Columns::of(&rows, 86, render(colours), Size::Wide);
             let line = task_line(&task, 86, cols, render(colours), Size::Wide);
@@ -2689,7 +2814,9 @@ mod tests {
         let colours = crate::theme::MOCHA;
         let style_of = |spec: &str, done: bool| {
             let mut task = capture(spec, today());
-            task.set_done(done);
+            if done {
+                task.set_state(State::Done, today());
+            }
             let rows = [Row::Task(task.clone())];
             let cols = Columns::of(&rows, 86, render(colours), Size::Wide);
             let line = task_line(&task, 86, cols, render(colours), Size::Wide);
@@ -2772,7 +2899,7 @@ mod tests {
     #[test]
     fn the_mark_width_matches_every_mark_in_its_set() {
         let mut done = capture("done", today());
-        done.set_done(true);
+        done.set_state(State::Done, today());
         let cases = [
             capture("open", today()),
             capture("late @2026-08-01", today()),
@@ -2971,19 +3098,30 @@ mod tests {
     }
 
     /// It is finished, so the lateness stopped being true — and the counts
-    /// already agree: a completed task is never in `overdue`. The date it was
-    /// for survives, because that much is still a fact.
+    /// already agree: a completed task is never in `overdue`. What the column
+    /// says instead is the day it was finished, which is the one date about a
+    /// done task that is still worth the width.
     #[test]
-    fn a_finished_task_is_not_late_however_far_past_its_date_it_is() {
+    fn a_finished_task_shows_when_it_was_done_not_how_late_it_was() {
         let mut done = capture("a @2026-08-08", today());
-        done.set_done(true);
-        assert_eq!(when(&done, today(), Size::Wide), "Aug 8");
-        assert_eq!(when(&done, today(), Size::Narrow), "Aug 8");
+        done.set_state(State::Done, today());
+        assert_eq!(when(&done, today(), Size::Wide), "today");
+        assert_eq!(when(&done, today(), Size::Narrow), "today");
 
-        // Only lateness goes: a finished task due today still says so.
-        let mut earlier = capture("a @2026-08-10 09:30", today());
-        earlier.set_done(true);
-        assert_eq!(when(&earlier, today(), Size::Wide), "09:30");
+        // Not just today's: the stamp is read back off the line like any field.
+        let older = crate::parse::parse("- [x] a @2026-08-08 ✓2026-07-30\n");
+        let older = older.tasks().next().expect("a task");
+        assert_eq!(when(older, today(), Size::Wide), "Jul 30");
+
+        // A task ticked before the stamp existed still has a date to show.
+        let unstamped = crate::parse::parse("- [x] a @2026-08-08\n");
+        let unstamped = unstamped.tasks().next().expect("a task");
+        assert_eq!(when(unstamped, today(), Size::Wide), "Aug 8");
+
+        // The stamp only displaces the due date on a task that is *done*.
+        let cancelled = crate::parse::parse("- [-] a @2026-08-08\n");
+        let cancelled = cancelled.tasks().next().expect("a task");
+        assert_eq!(when(cancelled, today(), Size::Wide), "Aug 8");
     }
 
     #[test]
@@ -3100,7 +3238,7 @@ mod tests {
     #[test]
     fn the_theme_decides_every_colour_on_the_screen() {
         let mut done = capture("finished", today());
-        done.set_done(true);
+        done.set_state(State::Done, today());
         let tasks = [
             capture("late @2026-08-01", today()),
             capture("now @2026-08-10", today()),
@@ -3110,10 +3248,10 @@ mod tests {
         for (_, colours) in crate::theme::BUILT_IN {
             assert_eq!(colour_of(40, 12, &tasks, "late", colours), colours.overdue);
             assert_eq!(colour_of(40, 12, &tasks, "now", colours), colours.today);
-            assert_eq!(
-                colour_of(40, 12, &tasks, "finished", colours),
-                colours.done_text
-            );
+            // Green, and only now: it was the one action on this screen that
+            // said nothing back — docs/design.md#rules reserved green for
+            // exactly this and had spent it on the progress bar alone.
+            assert_eq!(colour_of(40, 12, &tasks, "finished", colours), colours.done);
             assert_eq!(
                 colour_of(40, 12, &tasks, "OVERDUE", colours),
                 colours.accent
@@ -3163,11 +3301,11 @@ mod tests {
         let before = screen.selected();
 
         let mut done = screen.task().unwrap().clone();
-        done.set_done(true);
+        done.set_state(State::Done, today());
         screen.update_selected(done);
 
         assert_eq!(screen.selected(), before, "the cursor moved");
-        assert!(screen.task().unwrap().done);
+        assert!(screen.task().unwrap().done());
         assert_eq!(
             screen.task().unwrap().title,
             "first",
@@ -3176,7 +3314,7 @@ mod tests {
 
         let text = rendered_with(62, 8, &tasks, |s| {
             let mut d = s.task().unwrap().clone();
-            d.set_done(true);
+            d.set_state(State::Done, today());
             s.update_selected(d);
         });
         assert!(text[2].contains("✓ first"), "{text:?}");
@@ -3187,9 +3325,9 @@ mod tests {
     #[test]
     fn the_bottom_line() {
         let colours = crate::theme::MOCHA;
-        let shown = |notice: &Notice, size, height, glyphs| {
+        let shown = |notice: &Notice, size, width, height, glyphs| {
             notice
-                .line(size, height, glyphs, colours)
+                .line(size, width, height, glyphs, colours)
                 .spans
                 .iter()
                 .map(|s| s.content.to_string())
@@ -3197,28 +3335,55 @@ mod tests {
         };
 
         assert!(
-            shown(&Notice::Hints, Size::Wide, 20, Glyphs::Unicode).contains("spc done"),
+            shown(&Notice::Hints, Size::Wide, 60, 20, Glyphs::Unicode).contains("spc done"),
             "the hints have to name the keys"
         );
-        assert!(shown(&Notice::Hints, Size::Wide, 20, Glyphs::Unicode).contains("a add"));
+        assert!(shown(&Notice::Hints, Size::Wide, 60, 20, Glyphs::Unicode).contains("a add"));
         // Sixty columns is the narrowest pane that still counts as wide, and the
         // bar has to fit it — in both alphabets, `ret` being the longer of the
         // two. A hint bar that gets clipped is advertising half a key.
         for glyphs in [Glyphs::Unicode, Glyphs::Ascii] {
-            let bar = shown(&Notice::Hints, Size::Wide, 20, glyphs);
+            let bar = shown(&Notice::Hints, Size::Wide, 60, 20, glyphs);
             assert!(columns(&bar) <= 60, "{} columns: {bar}", columns(&bar));
         }
         assert_eq!(
-            shown(&Notice::Hints, Size::Wide, 9, Glyphs::Unicode),
+            shown(&Notice::Hints, Size::Wide, 60, 9, Glyphs::Unicode),
             " ?",
             "under ten rows the hint bar collapses"
         );
-        assert!(!shown(&Notice::Hints, Size::Narrow, 20, Glyphs::Unicode).contains("move"));
+        assert!(!shown(&Notice::Hints, Size::Narrow, 40, 20, Glyphs::Unicode).contains("move"));
+
+        // The bar fills what it is given, and never spills: it is one line, and
+        // a hint that wrapped would take a row off the list.
+        for width in 60..=200usize {
+            for glyphs in [Glyphs::Unicode, Glyphs::Ascii] {
+                let bar = shown(&Notice::Hints, Size::Wide, width, 20, glyphs);
+                assert!(columns(&bar) <= width, "{width}: {bar}");
+                // Whatever else goes, these two stay — the way to the rest of
+                // the keymap, and the way out.
+                assert!(bar.contains("? keys"), "{width}: {bar}");
+                assert!(bar.contains("q quit"), "{width}: {bar}");
+            }
+        }
+
+        // The three states and the date, once there is room for them. A user
+        // who never opens `?` has to be able to find them.
+        let wide = shown(&Notice::Hints, Size::Wide, 80, 20, Glyphs::Unicode);
+        for named in ["spc done", "X cancel", "p put off"] {
+            assert!(wide.contains(named), "{named} is not on the bar: {wide}");
+        }
+
+        // And they go in that order as the pane narrows, rather than the bar
+        // being clipped mid-word.
+        let sixty = shown(&Notice::Hints, Size::Wide, 60, 20, Glyphs::Unicode);
+        assert!(sixty.contains("spc done"), "{sixty}");
+        assert!(!sixty.contains("put off"), "{sixty}");
 
         assert_eq!(
             shown(
                 &Notice::Said("done: milk".into()),
                 Size::Wide,
+                60,
                 20,
                 Glyphs::Unicode
             ),
@@ -3228,6 +3393,7 @@ mod tests {
             shown(
                 &Notice::Warned("nope".into()),
                 Size::Wide,
+                60,
                 20,
                 Glyphs::Unicode
             ),
@@ -3237,6 +3403,7 @@ mod tests {
             shown(
                 &Notice::Warned("nope".into()),
                 Size::Wide,
+                60,
                 20,
                 Glyphs::Ascii
             ),
@@ -3312,10 +3479,10 @@ mod tests {
         let input = Input::editing(task);
         assert_eq!(input.text, "wash up @2026-08-12 #home");
         assert_eq!(
-            input.editing.as_deref(),
+            input.purpose.raw(),
             Some("  * [x] wash up @2026-08-12 #home")
         );
-        assert_eq!(Input::adding().editing, None);
+        assert_eq!(Input::adding().purpose, Purpose::Add);
         // At the end, so a retype carries on from where the line stops.
         assert_eq!(input.at, input.text.len());
     }
@@ -3324,7 +3491,7 @@ mod tests {
     /// words back must not be retyping four words — docs/tui.md#adding.
     #[test]
     fn the_caret_moves_through_the_line_and_edits_where_it_stands() {
-        let mut input = Input::new("wash şu".to_string(), None);
+        let mut input = Input::new("wash şu".to_string(), Purpose::Add);
 
         // Multi-byte on purpose: every move steps by a whole char, or the next
         // slice panics.
@@ -3358,7 +3525,10 @@ mod tests {
     #[test]
     fn the_field_colours_what_the_parser_understood_and_nothing_else() {
         let colours = crate::theme::MOCHA;
-        let input = Input::new("pay @thu 09:30 #home !high @notaday".to_string(), None);
+        let input = Input::new(
+            "pay @thu 09:30 #home !high @notaday".to_string(),
+            Purpose::Add,
+        );
         let (lines, _) = input_lines(&input, 60, render(colours));
         let spans: Vec<(&str, Style)> = lines[0]
             .spans
@@ -3399,7 +3569,7 @@ mod tests {
         let colours = crate::theme::MOCHA;
         let mut input = Input::new(
             "şşşş bir hayli uzun bir cümle @tomorrow #ev burada biter".to_string(),
-            None,
+            Purpose::Add,
         );
         // Every caret position the keys can actually produce — `at` is only ever
         // moved by whole characters.
@@ -3425,7 +3595,7 @@ mod tests {
     #[test]
     fn a_long_line_scrolls_to_wherever_the_caret_is() {
         let long = "a very long sentence that will not fit in a narrow pane at all";
-        let mut input = Input::new(long.to_string(), None);
+        let mut input = Input::new(long.to_string(), Purpose::Add);
         let field = |input: &Input| {
             let (lines, at) = input_lines(input, 30, render(crate::theme::MOCHA));
             (lines[0].to_string(), at)
@@ -3488,7 +3658,7 @@ mod tests {
     #[test]
     fn the_input_screen_exactly() {
         let tasks = tasks(&["pay the invoice @2026-08-10", "b", "c", "d"]);
-        let input = Input::new("call the accountant @thu !high".to_string(), None);
+        let input = Input::new("call the accountant @thu !high".to_string(), Purpose::Add);
 
         assert_eq!(
             with_input(70, 11, &tasks, &input, Glyphs::Unicode),
@@ -3515,7 +3685,10 @@ mod tests {
     #[test]
     fn the_preview_is_coloured_field_by_field() {
         let render = render(crate::theme::MOCHA);
-        let input = Input::new("call the accountant @thu #home !high".to_string(), None);
+        let input = Input::new(
+            "call the accountant @thu #home !high".to_string(),
+            Purpose::Add,
+        );
         let (lines, _) = input_lines(&input, 60, render);
 
         let shown: Vec<(String, Style)> = lines[2]
@@ -3557,7 +3730,7 @@ mod tests {
     /// plain text is a perfectly good task.
     #[test]
     fn a_sentence_with_no_syntax_in_it_previews_nothing() {
-        let input = Input::new("just write it down".to_string(), None);
+        let input = Input::new("just write it down".to_string(), Purpose::Add);
         let screen = with_input(70, 9, &tasks(&["a"]), &input, Glyphs::Unicode);
         let field = screen
             .iter()
@@ -3578,13 +3751,112 @@ mod tests {
         );
     }
 
+    /// `p` reuses the box but not its reading of what is in it: a length of
+    /// time is not a sentence, and the preview answers the question the box
+    /// just asked — which day does this land on.
+    #[test]
+    fn the_postpone_box_previews_the_day_it_lands_on() {
+        let task = capture("pay the invoice @2026-08-12", today());
+        let mut input = Input::postponing(&task);
+        let screen = |input: &Input| with_input(70, 9, &tasks(&["a"]), input, Glyphs::Unicode);
+
+        // Empty: the question, not an error, and not a task's worth of fields.
+        let rows = screen(&input);
+        let at = rows
+            .iter()
+            .position(|r| r.contains(" put off ▏"))
+            .unwrap_or_else(|| panic!("{rows:?}"));
+        assert!(
+            rows[at + 2].contains("how long?"),
+            "the empty box says nothing useful: {rows:?}"
+        );
+
+        // A bare number is days — the answer to "1 gün mü 2 gün mü".
+        for c in "2".chars() {
+            input.insert(c);
+        }
+        let rows = screen(&input);
+        assert!(
+            rows[at + 2].contains("Wednesday (2026-08-12)"),
+            "two days from Monday is Wednesday: {rows:?}"
+        );
+
+        // And what `@` takes, `p` takes.
+        input.back();
+        for c in "1w".chars() {
+            input.insert(c);
+        }
+        let rows = screen(&input);
+        assert!(
+            rows[at + 2].contains("2026-08-17"),
+            "a week from Monday: {rows:?}"
+        );
+
+        // Nonsense goes back to the question rather than previewing a date.
+        input.back();
+        input.back();
+        for c in "3x".chars() {
+            input.insert(c);
+        }
+        let rows = screen(&input);
+        assert!(
+            rows[at + 2].contains("how long?"),
+            "'3x' is not a length of time: {rows:?}"
+        );
+    }
+
+    /// The three states are three symbols, in both glyph sets, and the ASCII
+    /// ones stay the width the column arithmetic was told about.
+    #[test]
+    fn every_state_has_its_own_mark() {
+        let mut task = capture("a", today());
+        let marks = |task: &Task| {
+            (
+                Glyphs::Unicode.mark(task, today()),
+                Glyphs::Ascii.mark(task, today()),
+            )
+        };
+
+        assert_eq!(marks(&task), ("○", "[ ]"));
+        task.set_state(State::Done, today());
+        assert_eq!(marks(&task), ("✓", "[x]"));
+        task.set_state(State::Cancelled, today());
+        assert_eq!(marks(&task), ("✗", "[-]"));
+
+        // A cancelled task is not late, however long ago it was due — it is off
+        // the list, so there is nothing left to be late for.
+        let mut late = capture("a @2026-08-01", today());
+        assert_eq!(marks(&late), ("!", "[!]"));
+        late.set_state(State::Cancelled, today());
+        assert_eq!(marks(&late), ("✗", "[-]"));
+        assert!(!late.is_overdue(today()));
+    }
+
+    /// Green is the tick saying something back. Cancelled keeps the grey: it is
+    /// off the list, not finished, and the two must not read alike.
+    #[test]
+    fn a_cancelled_row_is_not_coloured_like_a_finished_one() {
+        let colours = crate::theme::MOCHA;
+        let mut task = capture("a @2026-08-01", today());
+
+        task.set_state(State::Done, today());
+        assert_eq!(task_colour(&task, today(), colours), colours.done);
+
+        task.set_state(State::Cancelled, today());
+        assert_eq!(task_colour(&task, today(), colours), colours.done_text);
+        assert_ne!(
+            colours.done, colours.done_text,
+            "the two states would be indistinguishable"
+        );
+    }
+
     /// A capture box that hides what you are typing is not a capture box, so the
     /// field scrolls with the end of the line rather than truncating it.
     #[test]
     fn a_line_longer_than_the_pane_keeps_its_end_on_screen() {
         let input = Input::new(
             "a very long sentence that will not fit in a narrow pane at all".to_string(),
-            Some("- [ ] x".to_string()),
+            Purpose::Edit("- [ ] x".to_string()),
         );
         let screen = with_input(30, 8, &tasks(&["x"]), &input, Glyphs::Unicode);
         let field = screen
@@ -3606,7 +3878,7 @@ mod tests {
     /// The whole screen goes ASCII together, the input line included.
     #[test]
     fn the_input_line_has_an_ascii_form_too() {
-        let input = Input::new("milk @tomorrow".to_string(), None);
+        let input = Input::new("milk @tomorrow".to_string(), Purpose::Add);
         let screen = with_input(62, 7, &tasks(&["a"]), &input, Glyphs::Ascii);
         let text = screen.join("\n");
 
@@ -3657,7 +3929,7 @@ mod tests {
             let groups = agenda(&tasks, today());
             let mut screen = Screen::new(rows(&groups));
             let counts = Counts::of(&tasks, today());
-            let input = Input::new(text.to_string(), None);
+            let input = Input::new(text.to_string(), Purpose::Add);
             let mut terminal = Terminal::new(TestBackend::new(40, height)).unwrap();
             terminal
                 .draw(|f| {

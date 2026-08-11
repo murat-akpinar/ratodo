@@ -6,7 +6,7 @@
 
 use chrono::{NaiveDate, NaiveTime};
 
-use crate::model::{Doc, Due, Ending, Item, Line, Priority, Task};
+use crate::model::{DONE_MARK, Doc, Due, Ending, Item, Line, Priority, State, Task};
 
 pub fn parse(input: &str) -> Doc {
     let mut lines = Vec::new();
@@ -90,9 +90,10 @@ fn parse_task(raw: &str) -> Option<Task> {
     if i + 2 >= b.len() || b[i] != b'[' || b[i + 2] != b']' {
         return None;
     }
-    let done = match b[i + 1] {
-        b' ' => false,
-        b'x' | b'X' => true,
+    let state = match b[i + 1] {
+        b' ' => State::Open,
+        b'x' | b'X' => State::Done,
+        b'-' => State::Cancelled,
         _ => return None,
     };
     let checkbox = i + 1;
@@ -103,7 +104,7 @@ fn parse_task(raw: &str) -> Option<Task> {
     }
 
     let mut task = Task::from_parts(raw.to_string(), checkbox);
-    task.done = done;
+    task.state = state;
     parse_meta(&raw[after..], &mut task);
     Some(task)
 }
@@ -125,6 +126,15 @@ fn parse_meta(rest: &str, task: &mut Task) {
             let time = words.get(i + 1).and_then(|w| parse_time(w));
             task.due = Some(Due { date, time });
             i += if time.is_some() { 2 } else { 1 };
+            continue;
+        }
+
+        if let Some(rest) = word.strip_prefix(DONE_MARK)
+            && task.done_on.is_none()
+            && let Some(date) = parse_iso_date(rest)
+        {
+            task.done_on = Some(date);
+            i += 1;
             continue;
         }
 
@@ -186,7 +196,7 @@ mod tests {
     #[test]
     fn plain_open_task() {
         let t = only_task("- [ ] pay the invoice");
-        assert!(!t.done);
+        assert!(!t.done());
         assert_eq!(t.title, "pay the invoice");
         assert!(t.due.is_none());
         assert!(t.tags.is_empty());
@@ -215,9 +225,51 @@ mod tests {
     fn permissive_bullets_and_capital_x() {
         for line in ["- [x] done", "* [x] done", "+ [x] done", "- [X] done"] {
             let t = only_task(line);
-            assert!(t.done, "{line} should parse as done");
+            assert!(t.done(), "{line} should parse as done");
             assert_eq!(t.title, "done");
         }
+    }
+
+    /// The third state, and the field that goes with the second.
+    #[test]
+    fn cancelled_tasks_and_completion_stamps() {
+        let t = only_task("- [-] decided against @2026-08-12 #ops");
+        assert_eq!(t.state, State::Cancelled);
+        assert!(!t.open(), "a cancelled task is not open");
+        assert!(!t.done(), "and it is not finished either");
+        assert_eq!(t.title, "decided against");
+        assert_eq!(t.due.unwrap().date, date(2026, 8, 12));
+
+        let t = only_task("- [x] shipped it @2026-08-08 ✓2026-08-10 #ops");
+        assert_eq!(t.done_on, Some(date(2026, 8, 10)));
+        assert_eq!(t.due.unwrap().date, date(2026, 8, 8));
+        assert_eq!(t.title, "shipped it", "the stamp is not part of the title");
+        assert_eq!(t.tags, vec!["ops"]);
+    }
+
+    /// The stamp is `✓` plus an ISO date and nothing else. A bare tick, or one
+    /// with something that is not a date after it, is somebody's own text —
+    /// `gnarly.md` has one — and stays in the title where they put it.
+    #[test]
+    fn a_tick_that_is_not_a_stamp_stays_in_the_title() {
+        for line in [
+            "- [x] a ✓ tick",
+            "- [x] a ✓maybe",
+            "- [x] a ✓2026-13-45",
+            "- [x] a ✓2026-08",
+        ] {
+            let t = only_task(line);
+            assert_eq!(t.done_on, None, "{line}");
+            assert!(t.title.contains('✓'), "{line} lost the user's tick");
+        }
+    }
+
+    /// The second stamp on a line is text, exactly like the second `@date`.
+    #[test]
+    fn only_the_first_stamp_counts() {
+        let t = only_task("- [x] a ✓2026-08-10 ✓2026-08-11");
+        assert_eq!(t.done_on, Some(date(2026, 8, 10)));
+        assert_eq!(t.title, "a ✓2026-08-11");
     }
 
     #[test]
@@ -246,7 +298,7 @@ mod tests {
     fn empty_checkbox_line_is_a_task() {
         let t = only_task("- [ ]");
         assert_eq!(t.title, "");
-        assert!(!t.done);
+        assert!(!t.done());
     }
 
     #[test]

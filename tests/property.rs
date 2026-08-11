@@ -4,8 +4,53 @@
 //! a few thousand deliberately awkward documents, built from a fixed seed so a
 //! failure is reproducible from the number printed in the message.
 
-use ratodo::model::Item;
+use ratodo::model::{Item, State};
 use ratodo::{parse::parse, write::render};
+
+/// Any fixed day: these tests are about bytes on a line, not about the calendar.
+fn a_day() -> chrono::NaiveDate {
+    chrono::NaiveDate::from_ymd_opt(2026, 8, 10).expect("a real date")
+}
+
+/// `\r\n`, `\n` or nothing. Only the last line of a file can have nothing, and
+/// which of the three it is has to survive a tick like everything else.
+fn ending(line: &str) -> &str {
+    if line.ends_with("\r\n") {
+        "\r\n"
+    } else if line.ends_with('\n') {
+        "\n"
+    } else {
+        ""
+    }
+}
+
+fn body(line: &str) -> &str {
+    &line[..line.len() - ending(line).len()]
+}
+
+/// The whole of what a tick is allowed to do to a line, spelled out rather than
+/// inferred: the byte between the brackets, and — when ticking — the stamp on
+/// the end, separated by exactly one space — always one, so that taking it
+/// back off puts the line back however it was spaced.
+///
+/// Everything else in `line` comes back untouched, which is the actual
+/// guarantee. A `✓` the user typed into their own title is part of "everything
+/// else"; `gnarly.md` has one.
+fn expected(line: &str, to: State) -> String {
+    let mut chars: Vec<char> = line.chars().collect();
+    let at = chars.iter().position(|&c| c == '[').expect("a checkbox") + 1;
+    chars[at] = match to {
+        State::Done => 'x',
+        State::Cancelled => '-',
+        State::Open => ' ',
+    };
+    let flipped: String = chars.into_iter().collect();
+
+    if to != State::Done {
+        return flipped;
+    }
+    format!("{flipped} ✓{}", a_day().format("%Y-%m-%d"))
+}
 
 const RUNS: u64 = 4000;
 
@@ -196,7 +241,12 @@ fn check(seed: u64, generated: &Generated) {
     for nth in 0..task_count {
         let mut mutated = parse(doc_text);
         let task = mutated.tasks_mut().nth(nth).expect("task exists");
-        task.set_done(!task.done);
+        let to = if task.done() {
+            State::Open
+        } else {
+            State::Done
+        };
+        task.set_state(to, a_day());
         let after = render(&mutated);
 
         let before_lines: Vec<&str> = doc_text.split_inclusive('\n').collect();
@@ -213,22 +263,13 @@ fn check(seed: u64, generated: &Generated) {
                 continue;
             }
             differing += 1;
+            // The checkbox byte and the stamp on the end, and nothing else in
+            // between — whatever the generator put on the line.
+            assert_eq!(ending(a), ending(b), "seed {seed}: the line ending moved");
             assert_eq!(
-                a.len(),
-                b.len(),
-                "seed {seed}: toggling task {nth} resized a line\n{a:?}\n{b:?}"
-            );
-            let changed: Vec<usize> = a
-                .char_indices()
-                .zip(b.chars())
-                .filter(|((_, x), y)| x != y)
-                .map(|((i, _), _)| i)
-                .collect();
-            assert_eq!(
-                changed.len(),
-                1,
-                "seed {seed}: toggling task {nth} changed {} characters\n{a:?}\n{b:?}",
-                changed.len()
+                body(b),
+                expected(body(a), to),
+                "seed {seed}: toggling task {nth} did more than tick and stamp it"
             );
         }
         assert_eq!(

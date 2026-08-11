@@ -5,7 +5,7 @@
 
 use chrono::{Datelike, Days, NaiveDate, NaiveTime, Weekday};
 
-use crate::model::{Due, Priority, Task};
+use crate::model::{Due, Priority, State, Task};
 
 /// What `capture` made of one word.
 ///
@@ -67,7 +67,7 @@ pub fn parts(text: &str, today: NaiveDate) -> Vec<(std::ops::Range<usize>, Part)
 
 /// `split_whitespace` with the offsets kept, which is the whole difference: the
 /// field has to know *where* a word is to colour it.
-fn words(text: &str) -> Vec<(usize, &str)> {
+pub(crate) fn words(text: &str) -> Vec<(usize, &str)> {
     let mut out = Vec::new();
     let mut start = None;
     for (i, c) in text.char_indices() {
@@ -109,7 +109,20 @@ pub fn capture(text: &str, today: NaiveDate) -> Task {
         }
     }
 
-    Task::new(false, title.join(" "), due, tags, priority)
+    Task::new(State::Open, title.join(" "), due, tags, priority)
+}
+
+/// What `p` takes: everything `@` takes, plus a bare number meaning days.
+///
+/// The bare number is only accepted here. `@2` in a sentence is somebody typing
+/// about the number two, but a box that has just asked *how long* has no other
+/// reading of it — and "1 day, 2 days" is how the question gets answered.
+pub fn later(text: &str, today: NaiveDate) -> Option<NaiveDate> {
+    let text = text.trim();
+    match text.parse::<u64>() {
+        Ok(days) => today.checked_add_days(Days::new(days)),
+        Err(_) => resolve_date(text, today),
+    }
 }
 
 /// `2026-08-12`, `today`, `tomorrow`, `mon`..`sun`, `3d`, `2w`.
@@ -209,6 +222,39 @@ mod tests {
             assert!(!raw.contains("@to"), "{raw}");
             assert!(raw.contains("@2026-"), "{raw}");
         }
+    }
+
+    /// What `p` accepts. The bare number is the whole reason this is not just
+    /// `resolve_date`: the box asked how long, so `2` has one reading.
+    #[test]
+    fn how_long_takes_a_bare_number_of_days_as_well() {
+        assert_eq!(later("2", today()), Some(ymd(2026, 8, 12)));
+        assert_eq!(
+            later("0", today()),
+            Some(today()),
+            "today, and not an error"
+        );
+        assert_eq!(later("  3  ", today()), Some(ymd(2026, 8, 13)));
+
+        // And everything `@` already took.
+        assert_eq!(later("3d", today()), Some(ymd(2026, 8, 13)));
+        assert_eq!(later("1w", today()), Some(ymd(2026, 8, 17)));
+        assert_eq!(later("fri", today()), Some(ymd(2026, 8, 14)));
+        assert_eq!(later("tomorrow", today()), Some(ymd(2026, 8, 11)));
+        assert_eq!(later("2026-09-01", today()), Some(ymd(2026, 9, 1)));
+
+        for nonsense in ["", "   ", "3x", "-1", "soon", "2026-13-45"] {
+            assert_eq!(later(nonsense, today()), None, "{nonsense:?}");
+        }
+    }
+
+    /// The bare number is `later`'s alone. `@2` in a sentence is somebody typing
+    /// about the number two, and giving it a date would rewrite their title.
+    #[test]
+    fn a_bare_number_is_not_a_date_in_a_sentence() {
+        let task = capture("chapter @2 of the book", today());
+        assert_eq!(task.due, None);
+        assert_eq!(task.title, "chapter @2 of the book");
     }
 
     #[test]

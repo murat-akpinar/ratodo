@@ -10,7 +10,7 @@ use chrono::{Local, Utc};
 use clap::{Parser, Subcommand};
 use crossterm::event::{self, Event};
 
-use ratodo::model::{Lookup, Priority};
+use ratodo::model::{Lookup, Priority, State};
 use ratodo::text;
 use ratodo::{agenda, capture, ics, theme, ui, write};
 
@@ -110,7 +110,9 @@ fn dispatch() -> Result<ExitCode> {
 
     match cli.command {
         Some(Command::Add { text }) => add(&paths, &text.join(" "))?,
-        Some(Command::Done { text }) => return done(&paths, &text.join(" ")),
+        Some(Command::Done { text }) => {
+            return done(&paths, &text.join(" "), Local::now().date_naive());
+        }
         Some(Command::List(args)) => list(&paths, &args)?,
         Some(Command::Sync) => sync(&paths, true)?,
         Some(Command::Theme { what }) => theme_command(what, cli.theme.as_deref())?,
@@ -332,7 +334,7 @@ fn sync(paths: &[PathBuf], loud: bool) -> Result<()> {
     std::fs::write(&out, ics::calendar(&tasks, Utc::now()))?;
 
     if loud {
-        let exported = tasks.iter().filter(|t| !t.done && t.due.is_some()).count();
+        let exported = tasks.iter().filter(|t| t.open() && t.due.is_some()).count();
         writeln!(
             std::io::stdout(),
             "wrote {} dated task{} to {}",
@@ -625,11 +627,33 @@ impl Live {
         Some((self.which(task.file.as_deref()), task.raw.clone()))
     }
 
-    /// Ticks the selected task, in its document and on the screen, and writes.
+    /// `spc` — done, or open again.
+    fn toggle(&mut self, today: chrono::NaiveDate) -> Result<ui::Notice> {
+        self.restate(today, |s| match s {
+            State::Done => State::Open,
+            _ => State::Done,
+        })
+    }
+
+    /// `X` — decided against, or wanted again. The same key both ways, like
+    /// `spc`: a state you can enter by accident needs a way straight back out.
+    fn cancel(&mut self, today: chrono::NaiveDate) -> Result<ui::Notice> {
+        self.restate(today, |s| match s {
+            State::Cancelled => State::Open,
+            _ => State::Cancelled,
+        })
+    }
+
+    /// Moves the selected task between the three states, in its document and on
+    /// the screen, and writes.
     ///
     /// The row is updated in place rather than regrouped: a task marked done
     /// stays where it is until the next reload. Nothing else on screen moves.
-    fn toggle(&mut self, today: chrono::NaiveDate) -> Result<ui::Notice> {
+    fn restate(
+        &mut self,
+        today: chrono::NaiveDate,
+        want: impl Fn(State) -> State,
+    ) -> Result<ui::Notice> {
         let Some((which, raw)) = self.selected() else {
             return Ok(ui::Notice::Said("nothing to tick here".to_string()));
         };
@@ -638,24 +662,27 @@ impl Live {
             return Ok(ui::Notice::Said("nothing to tick here".to_string()));
         };
 
-        let done = !task.done;
-        task.set_done(done);
+        let to = want(task.state);
+        task.set_state(to, today);
         let updated = task.clone();
         let title = text::plain(&updated.title);
 
         // Two strings, because they end up in different sentences: one is the
         // result line, the other is what `undo` reports putting back.
-        let undo_label = format!("{} {title}", if done { "ticking" } else { "unticking" });
-        let said = format!("{}: {title}", if done { "done" } else { "reopened" });
+        let (doing, done) = match to {
+            State::Done => ("ticking", "done"),
+            State::Open => ("reopening", "reopened"),
+            State::Cancelled => ("cancelling", "cancelled"),
+        };
 
-        if let Some(refused) = self.write_back(which, before, Some(undo_label))? {
+        if let Some(refused) = self.write_back(which, before, Some(format!("{doing} {title}")))? {
             return Ok(refused);
         }
 
         self.screen.update_selected(updated);
         let tasks = all_tasks(&self.files);
         self.counts = agenda::Counts::of(&tasks, today);
-        Ok(ui::Notice::Said(format!("{said}    u undo")))
+        Ok(ui::Notice::Said(format!("{done}: {title}    u undo")))
     }
 
     /// Deletes the selected task immediately, with no confirmation.
@@ -712,14 +739,28 @@ impl Live {
             return Ok(ui::Notice::Said("nothing typed".to_string()));
         }
 
+        // Refused before anything is opened or cloned: `p` is the one field
+        // whose contents can be simply wrong, and "3x" is not a length of time.
+        let moved_to = match &input.purpose {
+            ui::Purpose::Postpone(_) => match capture::later(typed, today) {
+                Some(date) => Some(date),
+                None => {
+                    return Ok(ui::Notice::Warned(
+                        "not a length of time - try 2, 3d, 1w, fri".to_string(),
+                    ));
+                }
+            },
+            _ => None,
+        };
+
         let mut fields = capture::capture(typed, today);
         let title = text::plain(&fields.title);
 
-        let which = match &input.editing {
+        let which = match input.purpose.raw() {
             Some(raw) => self
                 .files
                 .iter()
-                .position(|f| f.doc.tasks().any(|t| &t.raw == raw)),
+                .position(|f| f.doc.tasks().any(|t| t.raw == raw)),
             None => self
                 .files
                 .iter()
@@ -732,25 +773,36 @@ impl Live {
         };
         let before = self.files[which].doc.clone();
 
-        let what = match &input.editing {
+        let (what, title) = match input.purpose.raw() {
             Some(raw) => {
-                let Some(task) = self.files[which].doc.tasks_mut().find(|t| &t.raw == raw) else {
+                let Some(task) = self.files[which].doc.tasks_mut().find(|t| t.raw == raw) else {
                     return Ok(ui::Notice::Warned(
                         "that task is not there any more.  esc, then look again".to_string(),
                     ));
                 };
-                if task.body() == typed {
-                    return Ok(ui::Notice::Said("unchanged".to_string()));
+                match moved_to {
+                    Some(date) => {
+                        // The task's own title: `p` was given a length of time,
+                        // so the typed line has no title to report.
+                        let title = text::plain(&task.title);
+                        task.postpone(date);
+                        ("put off", title)
+                    }
+                    None => {
+                        if task.body() == typed {
+                            return Ok(ui::Notice::Said("unchanged".to_string()));
+                        }
+                        task.retype(fields);
+                        ("edited", title)
+                    }
                 }
-                task.retype(fields);
-                "edited"
             }
             None => {
                 // Stamped like the tasks around it, or the new one would group
                 // under a heading of its own until the next reload moved it.
                 fields.file = self.stamp(which);
                 self.files[which].doc.push_task(fields);
-                "added"
+                ("added", title)
             }
         };
 
@@ -898,6 +950,7 @@ fn run(
                         ui::Action::Top => live.screen.top(),
                         ui::Action::Bottom => live.screen.bottom(),
                         ui::Action::Toggle => notice = live.toggle(today)?,
+                        ui::Action::Cancel => notice = live.cancel(today)?,
                         ui::Action::Delete => notice = live.delete(today)?,
                         ui::Action::Undo => notice = live.undo(today)?,
                         // The overlay comes down with it: a box over the list
@@ -913,6 +966,15 @@ fn run(
                                 helping = false;
                             }
                             None => notice = ui::Notice::Said("nothing to edit here".to_string()),
+                        },
+                        ui::Action::Postpone => match live.screen.task() {
+                            Some(task) => {
+                                input = Some(ui::Input::postponing(task));
+                                helping = false;
+                            }
+                            None => {
+                                notice = ui::Notice::Said("nothing to put off here".to_string())
+                            }
                         },
                         ui::Action::Fold(want) => {
                             if let Some(complaint) = live.screen.fold(want) {
@@ -959,7 +1021,7 @@ fn run(
 /// Across every open list, because the whole point of several of them is that
 /// they are one list to the person using them. Two files holding the same title
 /// is the ambiguous case, not a race between them.
-fn done(paths: &[PathBuf], input: &str) -> Result<ExitCode> {
+fn done(paths: &[PathBuf], input: &str, today: chrono::NaiveDate) -> Result<ExitCode> {
     let mut open = open_all(paths)?;
 
     let mut hits: Vec<(usize, usize)> = Vec::new();
@@ -1004,7 +1066,7 @@ fn done(paths: &[PathBuf], input: &str) -> Result<ExitCode> {
         .doc
         .task_at_mut(at)
         .context("the matched line stopped being a task")?;
-    task.set_done(true);
+    task.set_state(State::Done, today);
     let summary = text::marked_done(task);
 
     write::save(&list.path, &list.doc, list.mtime, &backup_dir()?)?;
@@ -1263,7 +1325,10 @@ mod tests {
         let (path, mut live) = open("undo-toggle", before);
 
         live.toggle(a_day()).unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "- [x] first\n");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "- [x] first ✓2026-08-11\n"
+        );
 
         live.undo(a_day()).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
@@ -1272,7 +1337,11 @@ mod tests {
     }
 
     fn typed(text: &str, editing: Option<&str>) -> ui::Input {
-        ui::Input::new(text.to_string(), editing.map(str::to_string))
+        let purpose = match editing {
+            Some(raw) => ui::Purpose::Edit(raw.to_string()),
+            None => ui::Purpose::Add,
+        };
+        ui::Input::new(text.to_string(), purpose)
     }
 
     /// `a` then a sentence then `⏎`. It lands where `ratodo add` puts it — after
@@ -1486,7 +1555,7 @@ mod tests {
         // And the in-memory document went back, so the screen does not sit there
         // claiming a task is done that the file says is not.
         assert!(
-            live.files[0].doc.tasks().all(|t| !t.done),
+            live.files[0].doc.tasks().all(|t| !t.done()),
             "the model kept a change the file refused"
         );
 
@@ -1559,7 +1628,7 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(paths.iter().find(|p| p.ends_with("work.md")).unwrap())
                 .unwrap(),
-            "## Sprint\n- [x] deploy the thing @2026-08-09\n- [ ] write the notes\n"
+            "## Sprint\n- [x] deploy the thing @2026-08-09 ✓2026-08-11\n- [ ] write the notes\n"
         );
         assert_eq!(
             std::fs::read_to_string(paths.iter().find(|p| p.ends_with("home.md")).unwrap())
@@ -1672,17 +1741,17 @@ mod tests {
             .collect();
 
         // In both files: nothing is written and it says so with exit 2.
-        let code = done(&paths, "fix the tap").unwrap();
+        let code = done(&paths, "fix the tap", a_day()).unwrap();
         assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::from(2)));
         for (path, was) in paths.iter().zip(&before) {
             assert_eq!(&std::fs::read_to_string(path).unwrap(), was, "{path:?}");
         }
 
         // In one file only: ticked there, and the other list is untouched.
-        done(&paths, "ship the tag").unwrap();
+        done(&paths, "ship the tag", a_day()).unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.join("work.md")).unwrap(),
-            "- [ ] fix the tap\n- [x] ship the tag\n"
+            "- [ ] fix the tap\n- [x] ship the tag ✓2026-08-11\n"
         );
         assert_eq!(
             std::fs::read_to_string(dir.join("home.md")).unwrap(),

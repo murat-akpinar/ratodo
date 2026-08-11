@@ -3,8 +3,53 @@
 use std::fs;
 use std::path::PathBuf;
 
-use ratodo::model::Item;
+use ratodo::model::{Item, State};
 use ratodo::{parse::parse, write::render};
+
+/// Any fixed day: these tests are about bytes on a line, not about the calendar.
+fn a_day() -> chrono::NaiveDate {
+    chrono::NaiveDate::from_ymd_opt(2026, 8, 10).expect("a real date")
+}
+
+/// `\r\n`, `\n` or nothing. Only the last line of a file can have nothing, and
+/// which of the three it is has to survive a tick like everything else.
+fn ending(line: &str) -> &str {
+    if line.ends_with("\r\n") {
+        "\r\n"
+    } else if line.ends_with('\n') {
+        "\n"
+    } else {
+        ""
+    }
+}
+
+fn body(line: &str) -> &str {
+    &line[..line.len() - ending(line).len()]
+}
+
+/// The whole of what a tick is allowed to do to a line, spelled out rather than
+/// inferred: the byte between the brackets, and — when ticking — the stamp on
+/// the end, separated by exactly one space — always one, so that taking it
+/// back off puts the line back however it was spaced.
+///
+/// Everything else in `line` comes back untouched, which is the actual
+/// guarantee. A `✓` the user typed into their own title is part of "everything
+/// else"; `gnarly.md` has one.
+fn expected(line: &str, to: State) -> String {
+    let mut chars: Vec<char> = line.chars().collect();
+    let at = chars.iter().position(|&c| c == '[').expect("a checkbox") + 1;
+    chars[at] = match to {
+        State::Done => 'x',
+        State::Cancelled => '-',
+        State::Open => ' ',
+    };
+    let flipped: String = chars.into_iter().collect();
+
+    if to != State::Done {
+        return flipped;
+    }
+    format!("{flipped} ✓{}", a_day().format("%Y-%m-%d"))
+}
 
 const FIXTURES: &[&str] = &[
     "simple.md",
@@ -48,8 +93,12 @@ fn completing_one_task_leaves_every_other_line_byte_for_byte() {
         for nth in 0..task_count {
             let mut doc = parse(&original);
             let task = doc.tasks_mut().nth(nth).expect("task exists");
-            let was_done = task.done;
-            task.set_done(!was_done);
+            let to = if task.done() {
+                State::Open
+            } else {
+                State::Done
+            };
+            task.set_state(to, a_day());
 
             let after = render(&doc);
             let before_lines: Vec<&str> = original.split_inclusive('\n').collect();
@@ -65,13 +114,18 @@ fn completing_one_task_leaves_every_other_line_byte_for_byte() {
             for (a, b) in before_lines.iter().zip(&after_lines) {
                 if a != b {
                     changed += 1;
+                    // A tick may do exactly two things to the line: flip the
+                    // byte between the brackets, and put its stamp on the end.
+                    // Take the stamp back off and the rest has to be the line
+                    // that went in, one character apart — the user's spacing,
+                    // their field order and anything we did not understand are
+                    // none of our business on the way past.
+                    assert_eq!(ending(a), ending(b), "{name}: the line ending moved");
                     assert_eq!(
-                        a.len(),
-                        b.len(),
-                        "{name}: toggling task {nth} resized a line"
+                        body(b),
+                        expected(body(a), to),
+                        "{name}: toggling task {nth} did more than tick and stamp it"
                     );
-                    let diff = a.chars().zip(b.chars()).filter(|(x, y)| x != y).count();
-                    assert_eq!(diff, 1, "{name}: more than one character changed");
                 }
             }
             assert_eq!(

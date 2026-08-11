@@ -47,6 +47,32 @@ impl Priority {
     }
 }
 
+/// What is between the brackets. Three states, and the file spells each of them:
+/// `- [ ]`, `- [x]`, `- [-]`.
+///
+/// `- [-]` is the Obsidian / Logseq convention for *decided against*, which is
+/// the one thing a list cannot say when its only exit is deletion. It is out of
+/// the counts and never overdue — see docs/format.md.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum State {
+    #[default]
+    Open,
+    Done,
+    Cancelled,
+}
+
+impl State {
+    /// The byte between the brackets. ASCII in all three, which is what lets the
+    /// tick be a one-byte splice into `raw`.
+    pub fn as_byte(self) -> u8 {
+        match self {
+            State::Open => b' ',
+            State::Done => b'x',
+            State::Cancelled => b'-',
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Due {
     pub date: NaiveDate,
@@ -66,10 +92,20 @@ impl Due {
     }
 }
 
+/// The sigil that marks a completion date, chosen to match the `✓` on screen.
+///
+/// Non-ASCII in the file, unlike everything else the tool writes. That is a
+/// deliberate exception recorded in docs/decisions.md: the alternatives were a
+/// second meaning for `@` or a `done:` word that a title could collide with.
+pub const DONE_MARK: char = '✓';
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
     pub raw: String,
-    pub done: bool,
+    pub state: State,
+    /// When it was ticked — `✓2026-08-11`. `None` for anything finished before
+    /// the tool started writing it, and for everything not finished.
+    pub done_on: Option<NaiveDate>,
     pub title: String,
     pub due: Option<Due>,
     pub tags: Vec<String>,
@@ -88,7 +124,7 @@ pub struct Task {
 
 impl Task {
     pub fn new(
-        done: bool,
+        state: State,
         title: String,
         due: Option<Due>,
         tags: Vec<String>,
@@ -96,7 +132,8 @@ impl Task {
     ) -> Self {
         let mut task = Task {
             raw: String::new(),
-            done,
+            state,
+            done_on: None,
             title,
             due,
             tags,
@@ -113,7 +150,8 @@ impl Task {
     pub(crate) fn from_parts(raw: String, checkbox: usize) -> Self {
         Task {
             raw,
-            done: false,
+            state: State::Open,
+            done_on: None,
             title: String::new(),
             due: None,
             tags: Vec::new(),
@@ -125,17 +163,91 @@ impl Task {
         }
     }
 
+    pub fn done(&self) -> bool {
+        self.state == State::Done
+    }
+
+    /// Still wanted and still unfinished. The one that decides the counts, the
+    /// overdue test and what `ratodo done` will match — a cancelled task is out
+    /// of all three.
+    pub fn open(&self) -> bool {
+        self.state == State::Open
+    }
+
     // -- ALAN START: round-trip --
-    // Toggling replaces one ASCII byte inside `raw` instead of re-rendering the
-    // line, so the user's spacing and anything we did not understand survive.
-    pub fn set_done(&mut self, done: bool) {
-        if self.done == done {
+    // Every change here is surgery on `raw` rather than a re-render: the state
+    // is one ASCII byte, and a date is one whitespace-delimited field spliced
+    // into the text the user wrote. Their spacing, their field order and
+    // anything the parser did not understand all survive it.
+    pub fn set_state(&mut self, state: State, today: NaiveDate) {
+        if self.state == state {
             return;
         }
-        self.done = done;
+        self.state = state;
         let mut bytes = std::mem::take(&mut self.raw).into_bytes();
-        bytes[self.checkbox] = if done { b'x' } else { b' ' };
+        bytes[self.checkbox] = state.as_byte();
         self.raw = String::from_utf8(bytes).expect("the checkbox byte is ASCII");
+
+        // The stamp says when it was finished, so it belongs to `Done` alone and
+        // leaves again with it. Re-ticking a task restamps it with the new day.
+        self.done_on = (state == State::Done).then_some(today);
+        let stamp = self
+            .done_on
+            .map(|d| format!("{DONE_MARK}{}", d.format("%Y-%m-%d")));
+        self.splice(is_done_mark, stamp.as_deref());
+    }
+
+    /// Moves the due date and nothing else.
+    ///
+    /// The time is a separate field and is left where it is: pushing "Friday at
+    /// 09:30" out by a week is still half past nine. A task with no date at all
+    /// gets one, which is the only sense `p` can make of it.
+    pub fn postpone(&mut self, to: NaiveDate) {
+        let time = self.due.and_then(|d| d.time);
+        self.due = Some(Due { date: to, time });
+        let iso = format!("@{}", to.format("%Y-%m-%d"));
+        self.splice(is_due, Some(&iso));
+    }
+
+    /// One whitespace-delimited field of `raw` replaced, removed (`None`) or, if
+    /// it was not there, appended.
+    ///
+    /// Only ever past the checkbox, so the indent and the bullet are out of
+    /// reach by construction.
+    ///
+    /// `cargo mutants` reports `checkbox + 2` as a surviving mutant and it is an
+    /// **equivalent** one, which is worth writing down rather than chasing:
+    /// everything before the checkbox is fixed syntax — a bullet, spaces and
+    /// `[`, none of which any `is` can match — and the window start cancels out
+    /// of the absolute range on the next line. It is a guard against a future
+    /// predicate, not a live constraint, and no input can tell the two apart.
+    fn splice(&mut self, is: impl Fn(&str) -> bool, to: Option<&str>) {
+        let from = self.checkbox + 2;
+        let found = crate::capture::words(&self.raw[from..])
+            .into_iter()
+            .find(|&(_, word)| is(word))
+            .map(|(at, word)| from + at..from + at + word.len());
+
+        match (found, to) {
+            (Some(at), Some(to)) => self.raw.replace_range(at, to),
+            // One space, both ways, and deliberately not "however many are
+            // there": appending always adds exactly one, so removing exactly
+            // one is what puts the line back. A list written with trailing
+            // spaces gets a slightly wide gap for as long as the field is on
+            // it, and gets its own spacing back untouched the moment it goes.
+            (Some(at), None) => {
+                let start = match self.raw[from..at.start].ends_with(' ') {
+                    true => at.start - 1,
+                    false => at.start,
+                };
+                self.raw.replace_range(start.max(from)..at.end, "");
+            }
+            (None, Some(to)) => {
+                self.raw.push(' ');
+                self.raw.push_str(to);
+            }
+            (None, None) => {}
+        }
     }
 
     /// Everything after the checkbox: what the input field is pre-filled with,
@@ -193,14 +305,17 @@ impl Task {
         }
     }
 
-    /// A completed task is never overdue, however long ago it was due.
+    /// A task that is not open is never overdue — it is finished or it is off
+    /// the list, and neither is late however long ago it was due.
     pub fn is_overdue(&self, today: NaiveDate) -> bool {
-        !self.done && self.due.is_some_and(|d| d.date < today)
+        self.open() && self.due.is_some_and(|d| d.date < today)
     }
 
     fn render_fields(&self) -> String {
         let mut s = String::with_capacity(self.title.len() + 32);
-        s.push_str(if self.done { "- [x] " } else { "- [ ] " });
+        s.push_str("- [");
+        s.push(self.state.as_byte() as char);
+        s.push_str("] ");
         s.push_str(self.title.trim());
         if let Some(due) = self.due {
             s.push(' ');
@@ -214,8 +329,29 @@ impl Task {
             s.push(' ');
             s.push_str(p.as_str());
         }
+        if let Some(on) = self.done_on {
+            s.push(' ');
+            s.push(DONE_MARK);
+            s.push_str(&on.format("%Y-%m-%d").to_string());
+        }
         s
     }
+}
+
+/// `✓2026-08-11`, and only that exact shape.
+///
+/// The date is checked because a bare `✓` is something people put in their own
+/// titles, and `splice` would have taken it for ours and written over it. The
+/// `gnarly.md` fixture has one, which is how this was found rather than
+/// shipped.
+fn is_done_mark(word: &str) -> bool {
+    word.strip_prefix(DONE_MARK)
+        .is_some_and(|rest| NaiveDate::parse_from_str(rest, "%Y-%m-%d").is_ok())
+}
+
+fn is_due(word: &str) -> bool {
+    word.strip_prefix('@')
+        .is_some_and(|rest| NaiveDate::parse_from_str(rest, "%Y-%m-%d").is_ok())
 }
 
 #[cfg(test)]
@@ -235,7 +371,7 @@ mod task_tests {
     #[test]
     fn due_today_is_not_overdue() {
         let today = ymd(2026, 8, 10);
-        let mut task = Task::new(false, "a".into(), due_on(2026, 8, 10), vec![], None);
+        let mut task = Task::new(State::Open, "a".into(), due_on(2026, 8, 10), vec![], None);
         assert!(!task.is_overdue(today), "a task due today is not late yet");
 
         task.due = due_on(2026, 8, 9);
@@ -248,16 +384,79 @@ mod task_tests {
     #[test]
     fn a_completed_task_is_never_overdue() {
         let today = ymd(2026, 8, 10);
-        let mut task = Task::new(false, "a".into(), due_on(2020, 1, 1), vec![], None);
+        let mut task = Task::new(State::Open, "a".into(), due_on(2020, 1, 1), vec![], None);
         assert!(task.is_overdue(today));
-        task.set_done(true);
+        task.set_state(State::Done, today);
         assert!(!task.is_overdue(today));
     }
 
     #[test]
     fn an_undated_task_is_never_overdue() {
-        let task = Task::new(false, "a".into(), None, vec![], None);
+        let task = Task::new(State::Open, "a".into(), None, vec![], None);
         assert!(!task.is_overdue(ymd(2026, 8, 10)));
+    }
+
+    /// `splice` is the one thing standing between a state change and the user's
+    /// line, so its awkward cases get named: nothing to replace, something that
+    /// only looks like the field, and a line that already ends in space.
+    #[test]
+    fn a_field_is_spliced_into_the_line_and_never_over_it() {
+        let today = ymd(2026, 8, 10);
+        let line = |raw: &str| crate::parse::parse(raw).tasks().next().unwrap().clone();
+
+        // Appended, because there was none — after everything, including the
+        // tags and the priority the user put last.
+        let mut t = line("- [ ] a @2026-08-12 #ops !high");
+        t.set_state(State::Done, today);
+        assert_eq!(t.raw, "- [x] a @2026-08-12 #ops !high ✓2026-08-10");
+
+        // And taken back off with the space it was given.
+        t.set_state(State::Open, today);
+        assert_eq!(t.raw, "- [ ] a @2026-08-12 #ops !high");
+        assert_eq!(t.done_on, None);
+
+        // A line that already ended in space keeps every one of them.
+        let mut t = line("- [ ] trailing   ");
+        t.set_state(State::Done, today);
+        assert_eq!(t.raw, "- [x] trailing    ✓2026-08-10");
+        t.set_state(State::Open, today);
+        assert_eq!(t.raw, "- [ ] trailing   ", "the user's spaces were eaten");
+
+        // A `✓` of the user's own is not the field and is not written over.
+        let mut t = line("- [ ] a ✓ tick of my own");
+        t.set_state(State::Done, today);
+        assert_eq!(t.raw, "- [x] a ✓ tick of my own ✓2026-08-10");
+
+        // Cancelling never stamps, and clears a stamp it inherits.
+        let mut t = line("- [x] a ✓2026-08-01");
+        t.set_state(State::Cancelled, today);
+        assert_eq!(t.raw, "- [-] a");
+        assert_eq!(t.done_on, None);
+    }
+
+    /// `p` moves `@` and leaves the time, because pushing "Friday at 09:30" out
+    /// by a week is still half past nine.
+    #[test]
+    fn postponing_moves_the_date_and_keeps_the_time() {
+        let line = |raw: &str| crate::parse::parse(raw).tasks().next().unwrap().clone();
+        let to = ymd(2026, 8, 17);
+
+        let mut t = line("- [ ] a @2026-08-10 09:30 #ops");
+        t.postpone(to);
+        assert_eq!(t.raw, "- [ ] a @2026-08-17 09:30 #ops");
+        assert_eq!(t.due.unwrap().date, to);
+        assert_eq!(t.due.unwrap().time, "09:30".parse().ok());
+
+        // Nothing to replace: an undated task gets the date appended.
+        let mut t = line("- [ ] a #ops");
+        t.postpone(to);
+        assert_eq!(t.raw, "- [ ] a #ops @2026-08-17");
+        assert_eq!(t.due.unwrap().date, to);
+
+        // The indent and the bullet are before the checkbox and out of reach.
+        let mut t = line("\t * [x] a @2026-08-10");
+        t.postpone(to);
+        assert_eq!(t.raw, "\t * [x] a @2026-08-17");
     }
 
     /// What the input field shows: the line's own text, not our rendering of it.
@@ -282,7 +481,7 @@ mod task_tests {
         ));
 
         assert_eq!(task.line(), "  * [x] wash up tonight #home !high");
-        assert!(task.done, "the tick was not the user's to retype");
+        assert!(task.done(), "the tick was not the user's to retype");
         assert_eq!(task.title, "wash up tonight");
         assert_eq!(task.due, None, "the date was dropped, so it goes");
         assert_eq!(task.priority, Some(Priority::High));
@@ -324,7 +523,13 @@ mod lookup_tests {
             lines: titles
                 .iter()
                 .map(|&(title, done)| Line {
-                    item: Item::Task(Task::new(done, title.into(), None, vec![], None)),
+                    item: Item::Task(Task::new(
+                        if done { State::Done } else { State::Open },
+                        title.into(),
+                        None,
+                        vec![],
+                        None,
+                    )),
                     ending: Ending::Lf,
                 })
                 .collect(),
@@ -412,7 +617,7 @@ mod push_tests {
     use super::*;
 
     fn task(title: &str) -> Task {
-        Task::new(false, title.into(), None, vec![], None)
+        Task::new(State::Open, title.into(), None, vec![], None)
     }
 
     fn text(s: &str) -> Line {
@@ -683,14 +888,14 @@ impl Doc {
             .iter()
             .enumerate()
             .filter_map(|(i, l)| match &l.item {
-                Item::Task(t) if !t.done && hit(t) => Some((i, t)),
+                Item::Task(t) if t.open() && hit(t) => Some((i, t)),
                 _ => None,
             })
             .collect();
 
         match open.as_slice() {
             [(line, _)] => Lookup::One(*line),
-            [] => match self.tasks().find(|t| t.done && hit(t)) {
+            [] => match self.tasks().find(|t| !t.open() && hit(t)) {
                 // Otherwise "no task matches" is a lie the user cannot act on.
                 Some(t) => Lookup::AlreadyDone(t.title.clone()),
                 None => Lookup::None,

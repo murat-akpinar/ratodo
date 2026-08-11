@@ -48,7 +48,7 @@ pub struct Counts {
 
 impl Counts {
     pub fn of(tasks: &[Task], today: NaiveDate) -> Self {
-        let open = tasks.iter().filter(|t| !t.done);
+        let open = tasks.iter().filter(|t| t.open());
         Counts {
             open: open.clone().count(),
             today: open
@@ -56,7 +56,7 @@ impl Counts {
                 .filter(|t| t.due.is_some_and(|d| d.date == today))
                 .count(),
             overdue: tasks.iter().filter(|t| t.is_overdue(today)).count(),
-            done: tasks.iter().filter(|t| t.done).count(),
+            done: tasks.iter().filter(|t| t.done()).count(),
         }
     }
 
@@ -181,7 +181,7 @@ pub fn agenda<'a>(tasks: &'a [Task], today: NaiveDate) -> Vec<Group<'a>> {
             continue;
         }
         // Stable, so tasks that tie on date keep the order the file had them in.
-        tasks.sort_by_key(|t| (t.done, t.due.map(|d| (d.date, d.time))));
+        tasks.sort_by_key(|t| (!t.open(), t.due.map(|d| (d.date, d.time))));
         out.push(Group { kind, tasks });
     }
 
@@ -195,6 +195,7 @@ pub fn agenda<'a>(tasks: &'a [Task], today: NaiveDate) -> Vec<Group<'a>> {
 mod tests {
     use super::*;
     use crate::capture::capture;
+    use crate::model::State;
 
     fn today() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 8, 10).unwrap()
@@ -343,7 +344,7 @@ mod tests {
     #[test]
     fn within_a_dated_group_the_earliest_is_first_and_the_done_are_last() {
         let mut done = task("done @2026-08-01");
-        done.set_done(true);
+        done.set_state(State::Done, today());
         let tasks = [
             done,
             task("at nine @2026-08-08 09:00"),
@@ -389,7 +390,7 @@ mod tests {
     #[test]
     fn an_undated_group_is_never_reordered() {
         let mut done = in_section("finished", "Work");
-        done.set_done(true);
+        done.set_state(State::Done, today());
         let tasks = [done, in_section("open", "Work")];
         assert_eq!(shape(&tasks, today())[0].1, ["finished", "open"]);
     }
@@ -413,7 +414,7 @@ mod tests {
     #[test]
     fn the_counts_a_bar_asks_for() {
         let mut done = task("finished @2026-08-01");
-        done.set_done(true);
+        done.set_state(State::Done, today());
         let tasks = [
             task("late @2026-08-01"),
             task("now @2026-08-10"),
@@ -438,7 +439,7 @@ mod tests {
     #[test]
     fn completing_something_late_empties_the_counts() {
         let mut t = task("late @2026-08-01");
-        t.set_done(true);
+        t.set_state(State::Done, today());
         assert_eq!(
             Counts::of(&[t], today()),
             Counts {

@@ -4,7 +4,7 @@ use chrono::NaiveDate;
 
 use crate::agenda::Counts;
 use crate::capture::Part;
-use crate::model::{Due, Task};
+use crate::model::{Due, State, Task};
 
 /// A todo.md can arrive over `git pull`. Control characters in it would be
 /// acted on by the terminal rather than shown.
@@ -16,12 +16,11 @@ pub fn plain(s: &str) -> String {
 
 /// One task, as `ratodo list` prints it.
 pub fn list_line(task: &Task, today: NaiveDate) -> String {
-    let mark = if task.done {
-        "[x]"
-    } else if task.is_overdue(today) {
-        "[!]"
-    } else {
-        "[ ]"
+    let mark = match task.state {
+        State::Done => "[x]",
+        State::Cancelled => "[-]",
+        State::Open if task.is_overdue(today) => "[!]",
+        State::Open => "[ ]",
     };
 
     let mut line = format!("  {mark} {}", plain(&task.title));
@@ -46,7 +45,13 @@ pub fn list_line(task: &Task, today: NaiveDate) -> String {
 /// `plain` is doing real work here — a tab inside a title would otherwise invent
 /// a sixth field and shift everything after it.
 pub fn porcelain_line(task: &Task) -> String {
-    let state = if task.done { "done" } else { "open" };
+    // Field one is what a script branches on, so a third state has to be its own
+    // word rather than folded into `done` — docs/cli.md#list---porcelain.
+    let state = match task.state {
+        State::Open => "open",
+        State::Done => "done",
+        State::Cancelled => "cancelled",
+    };
     let date = task
         .due
         .map(|d| d.date.format("%Y-%m-%d").to_string())
@@ -240,7 +245,7 @@ mod tests {
         assert_eq!(list_line(&late, today()), "  [!] a  2026-08-08");
 
         let mut done = capture("a @2026-08-08", today());
-        done.set_done(true);
+        done.set_state(State::Done, today());
         assert_eq!(
             list_line(&done, today()),
             "  [x] a  2026-08-08",
@@ -339,7 +344,7 @@ mod tests {
             "overdue is a display state; a script reads the date itself"
         );
 
-        t.set_done(true);
+        t.set_state(State::Done, today());
         assert_eq!(
             porcelain_line(&t),
             "done\t2026-08-09\tclose the old PRs\tops\t"

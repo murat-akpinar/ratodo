@@ -20,7 +20,7 @@ pub fn calendar(tasks: &[Task], now: DateTime<Utc>) -> String {
     for task in tasks {
         // Completed tasks are not exported at all in v1, and an undated one has
         // nothing to put on a calendar.
-        let Some(due) = task.due.filter(|_| !task.done) else {
+        let Some(due) = task.due.filter(|_| task.open()) else {
             continue;
         };
 
@@ -150,6 +150,7 @@ fn line(text: &str, out: &mut String) {
 mod tests {
     use super::*;
     use crate::capture::capture;
+    use crate::model::State;
     use chrono::{NaiveDate, TimeZone};
 
     fn today() -> NaiveDate {
@@ -202,7 +203,7 @@ mod tests {
     #[test]
     fn only_open_dated_tasks_are_exported() {
         let mut done = task("finished @2026-08-12");
-        done.set_done(true);
+        done.set_state(State::Done, today());
         let tasks = [done, task("undated"), task("kept @2026-08-12")];
 
         let ics = calendar(&tasks, now());

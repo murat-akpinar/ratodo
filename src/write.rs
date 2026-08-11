@@ -162,7 +162,7 @@ fn temp_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Due, Task};
+    use crate::model::{Due, State, Task};
     use chrono::NaiveDate;
 
     #[test]
@@ -181,35 +181,101 @@ mod tests {
         }
     }
 
+    /// Ticking changes the checkbox byte and appends the stamp. Everything
+    /// between the two — the user's four-space gaps and the order they put
+    /// their own fields in — is not ours to tidy on the way past.
     #[test]
-    fn toggling_changes_exactly_one_byte() {
+    fn ticking_changes_one_byte_and_appends_the_stamp() {
         let before = "- [ ]    spaced   out   title   @2026-08-10   #tag\n";
         let mut doc = parse::parse(before);
-        doc.tasks_mut().next().unwrap().set_done(true);
-        let after = render(&doc);
+        doc.tasks_mut()
+            .next()
+            .unwrap()
+            .set_state(State::Done, a_day());
 
-        assert_eq!(after, before.replacen("[ ]", "[x]", 1));
         assert_eq!(
-            before.len(),
-            after.len(),
-            "toggling must not change the line length"
+            render(&doc),
+            "- [x]    spaced   out   title   @2026-08-10   #tag ✓2026-08-10\n"
         );
     }
 
+    /// The stamp is the tick's, so unticking takes it away again — including the
+    /// space it was given. A line that goes out and comes back has to be the
+    /// line that went out.
     #[test]
     fn toggling_back_and_forth_returns_the_original() {
-        let before = "  * [X] weirdly written but mine\n";
-        let mut doc = parse::parse(before);
-        doc.tasks_mut().next().unwrap().set_done(false);
-        doc.tasks_mut().next().unwrap().set_done(true);
-        assert_eq!(render(&doc), "  * [x] weirdly written but mine\n");
+        for before in [
+            "  * [ ] weirdly written but mine\n",
+            "- [ ] with   odd   spacing   @2026-08-12 16:00 #a #b !low\n",
+            "- [-] and one that was cancelled\n",
+        ] {
+            let mut doc = parse::parse(before);
+            let was = doc.tasks().next().unwrap().state;
+            doc.tasks_mut()
+                .next()
+                .unwrap()
+                .set_state(State::Done, a_day());
+            doc.tasks_mut().next().unwrap().set_state(was, a_day());
+            assert_eq!(render(&doc), before);
+        }
+    }
+
+    /// The one direction that does not come back unchanged, and on purpose: a
+    /// task finished before the stamp existed — or by hand in `vim` — gets one
+    /// the next time it is ticked. Pinned so it cannot happen by accident.
+    #[test]
+    fn re_ticking_an_unstamped_task_stamps_it() {
+        let mut doc = parse::parse("  * [X] finished before the stamp existed\n");
+        doc.tasks_mut()
+            .next()
+            .unwrap()
+            .set_state(State::Open, a_day());
+        doc.tasks_mut()
+            .next()
+            .unwrap()
+            .set_state(State::Done, a_day());
+        assert_eq!(
+            render(&doc),
+            "  * [x] finished before the stamp existed ✓2026-08-10\n"
+        );
+    }
+
+    /// Putting a date off moves the date and leaves the time, the tags and the
+    /// spacing exactly where they were.
+    #[test]
+    fn postponing_moves_the_date_and_nothing_else() {
+        let mut doc = parse::parse("- [ ] a   task @2026-08-10 16:00 #tag !high\n");
+        doc.tasks_mut()
+            .next()
+            .unwrap()
+            .postpone(NaiveDate::from_ymd_opt(2026, 8, 17).unwrap());
+        assert_eq!(
+            render(&doc),
+            "- [ ] a   task @2026-08-17 16:00 #tag !high\n"
+        );
+    }
+
+    /// An undated task is the case with nothing to replace, and `p` on one is a
+    /// reasonable thing to do. The date is appended rather than refused.
+    #[test]
+    fn postponing_an_undated_task_gives_it_a_date() {
+        let mut doc = parse::parse("- [ ] no date here #tag\n");
+        doc.tasks_mut()
+            .next()
+            .unwrap()
+            .postpone(NaiveDate::from_ymd_opt(2026, 8, 17).unwrap());
+        assert_eq!(render(&doc), "- [ ] no date here #tag @2026-08-17\n");
+    }
+
+    fn a_day() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 8, 10).unwrap()
     }
 
     #[test]
     fn appending_to_a_file_without_a_final_newline() {
         let mut doc = parse::parse("- [ ] first");
         doc.push_task(Task::new(
-            false,
+            State::Open,
             "second".into(),
             Some(Due::new(NaiveDate::from_ymd_opt(2026, 8, 11).unwrap())),
             vec!["home".into()],
@@ -224,7 +290,7 @@ mod tests {
     #[test]
     fn appending_to_an_empty_document() {
         let mut doc = Doc::default();
-        doc.push_task(Task::new(false, "first".into(), None, vec![], None));
+        doc.push_task(Task::new(State::Open, "first".into(), None, vec![], None));
         assert_eq!(render(&doc), "- [ ] first\n");
     }
 
@@ -263,7 +329,7 @@ mod tests {
         let dir = TempDir::new("create");
         let path = dir.file("nested/todo.md");
         let mut doc = Doc::default();
-        doc.push_task(Task::new(false, "first".into(), None, vec![], None));
+        doc.push_task(Task::new(State::Open, "first".into(), None, vec![], None));
 
         save(&path, &doc, None, &dir.file("bak")).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "- [ ] first\n");
@@ -279,7 +345,7 @@ mod tests {
 
         let loaded = load(&path).unwrap();
         let mut doc = loaded.doc;
-        doc.push_task(Task::new(false, "second".into(), None, vec![], None));
+        doc.push_task(Task::new(State::Open, "second".into(), None, vec![], None));
         save(&path, &doc, loaded.mtime, &bak).unwrap();
 
         assert_eq!(
@@ -302,7 +368,7 @@ mod tests {
 
         let loaded = load(&path).unwrap();
         let mut doc = loaded.doc;
-        doc.push_task(Task::new(false, "second".into(), None, vec![], None));
+        doc.push_task(Task::new(State::Open, "second".into(), None, vec![], None));
         save(&path, &doc, loaded.mtime, &dir.file("bak")).unwrap();
 
         let beside: Vec<_> = fs::read_dir(&dir.0)
@@ -328,7 +394,7 @@ mod tests {
             fs::write(path, body).unwrap();
             let loaded = load(path).unwrap();
             let mut doc = loaded.doc;
-            doc.push_task(Task::new(false, "second".into(), None, vec![], None));
+            doc.push_task(Task::new(State::Open, "second".into(), None, vec![], None));
             save(path, &doc, loaded.mtime, &bak).unwrap();
         }
 
@@ -376,7 +442,7 @@ mod tests {
 
         let loaded = load(&link).unwrap();
         let mut doc = loaded.doc;
-        doc.push_task(Task::new(false, "second".into(), None, vec![], None));
+        doc.push_task(Task::new(State::Open, "second".into(), None, vec![], None));
         save(&link, &doc, loaded.mtime, &dir.file("bak")).unwrap();
 
         assert!(
@@ -405,7 +471,7 @@ mod tests {
 
         let loaded = load(&path).unwrap();
         let mut doc = loaded.doc;
-        doc.push_task(Task::new(false, "second".into(), None, vec![], None));
+        doc.push_task(Task::new(State::Open, "second".into(), None, vec![], None));
         save(&path, &doc, loaded.mtime, &dir.file("bak")).unwrap();
 
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
