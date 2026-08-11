@@ -26,6 +26,8 @@ The screens in docs/tui.md, drawn: `○ ✓ !` marks, a `▌` selection, group h
 `spc` marks the selected task done and writes it. The row is rewritten **in place** rather than the list regrouped, so the task you just touched does not fly to the end of its group while you are looking at it — the first of the side-pane rules in docs/tui.md. A test through a real terminal confirms the whole path: one keystroke, one byte changed, in a file full of tables and prose ratodo does not understand.
 - *(ui)* The empty screen and the key help ([e358b3a](https://github.com/murat-akpinar/ratodo/commit/e358b3ac4051f6eeabfffe3183bdb24986ca1ef0))
 Two screens from docs/tui.md. The empty one teaches instead of apologising: the worked example lands the `@` and `#` syntax faster than any table, and it names the file path, because the promise of this product is that the file is yours and you should be told where it is on day one. A long `--file` path is shortened rather than left to run into the frame.
+- *(cli)* Hand-written completions for bash, zsh and fish ([ad80c0c](https://github.com/murat-akpinar/ratodo/commit/ad80c0c7e5c00ffc53965a96e47d62493e0f597d))
+`completions/ratodo.{bash,zsh,fish}`, and no `clap_complete` — that would be an eighth dependency for a subcommand list that is short and fixed.
 
 ### 🐛 Bug Fixes
 
