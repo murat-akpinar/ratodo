@@ -158,6 +158,12 @@ costs one key, and the mistake costs one more.
 `.bak` file is the backstop underneath it. See
 [architecture.md](architecture.md#concurrent-editing).
 
+It is **one level, and it keeps the whole document** rather than inverting the
+change that was made. An undo built from an inverse operation is an undo that
+can be subtly wrong about what it is putting back, and a few kilobytes is not a
+reason to accept that. A write that gets refused does not spend it either: a
+refusal changes nothing, and that has to include the undo slot.
+
 ## Write conflict
 
 The one case where the tool must interrupt, because the alternative is losing

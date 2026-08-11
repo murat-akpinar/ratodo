@@ -400,6 +400,79 @@ mod push_tests {
     }
 
     #[test]
+    fn removing_a_task_takes_one_line_and_leaves_the_rest_alone() {
+        let mut doc = Doc {
+            lines: vec![
+                text("## Work"),
+                Line {
+                    item: Item::Task(task("first")),
+                    ending: Ending::Lf,
+                },
+                Line {
+                    item: Item::Task(task("second")),
+                    ending: Ending::Lf,
+                },
+                text("> a note"),
+            ],
+        };
+
+        let gone = doc.remove_task(1).expect("a task was there");
+        assert_eq!(gone.title, "first");
+        assert_eq!(rendered(&doc), ["## Work", "- [ ] second", "> a note"]);
+    }
+
+    #[test]
+    fn removing_something_that_is_not_a_task_removes_nothing() {
+        let mut doc = Doc {
+            lines: vec![text("> a note")],
+        };
+        assert!(doc.remove_task(0).is_none());
+        assert!(doc.remove_task(9).is_none());
+        assert_eq!(rendered(&doc), ["> a note"]);
+    }
+
+    /// The file's last line is the only one that can lack an ending. Deleting it
+    /// must hand that absence on, or a file with no trailing newline grows one.
+    #[test]
+    fn removing_the_last_line_does_not_add_a_trailing_newline() {
+        let mut doc = Doc {
+            lines: vec![
+                Line {
+                    item: Item::Task(task("keep")),
+                    ending: Ending::Lf,
+                },
+                Line {
+                    item: Item::Task(task("drop")),
+                    ending: Ending::None,
+                },
+            ],
+        };
+
+        doc.remove_task(1);
+        assert_eq!(doc.lines.last().unwrap().ending, Ending::None);
+    }
+
+    #[test]
+    fn removing_from_the_middle_leaves_the_final_ending_where_it_was() {
+        let mut doc = Doc {
+            lines: vec![
+                Line {
+                    item: Item::Task(task("drop")),
+                    ending: Ending::Lf,
+                },
+                Line {
+                    item: Item::Text("last".into()),
+                    ending: Ending::None,
+                },
+            ],
+        };
+
+        doc.remove_task(0);
+        assert_eq!(doc.lines.last().unwrap().ending, Ending::None);
+        assert_eq!(rendered(&doc), ["last"]);
+    }
+
+    #[test]
     fn nothing_that_was_already_there_moves_relative_to_anything_else() {
         let before = vec![text("## A"), text("> quote"), text("| table |")];
         let mut doc = Doc {
@@ -513,6 +586,35 @@ impl Doc {
                 None => Lookup::None,
             },
             several => Lookup::Several(several.iter().map(|(_, t)| t.title.clone()).collect()),
+        }
+    }
+
+    /// Takes one line out and returns the task that was on it.
+    ///
+    /// Deleting is the one place the tool removes something the user wrote, so
+    /// it removes exactly one line and touches nothing else. The file's last
+    /// line is the only one that can lack an ending, so when it is the one
+    /// going, the ending it did not have is handed to whatever is now last —
+    /// otherwise a file with no trailing newline quietly grows one.
+    pub fn remove_task(&mut self, line: usize) -> Option<Task> {
+        let removed = match self.lines.get(line) {
+            Some(Line {
+                item: Item::Task(_),
+                ..
+            }) => self.lines.remove(line),
+            _ => return None,
+        };
+
+        if line == self.lines.len()
+            && removed.ending == Ending::None
+            && let Some(last) = self.lines.last_mut()
+        {
+            last.ending = Ending::None;
+        }
+
+        match removed.item {
+            Item::Task(t) => Some(t),
+            Item::Text(_) => None,
         }
     }
 

@@ -341,6 +341,12 @@ struct Live {
     /// re-reading our own write would undo the in-place update that keeps a
     /// ticked task from jumping.
     written: Option<String>,
+    /// The document as it was before the last change, and what to call it.
+    ///
+    /// One level, which is what docs/tui.md promises: "undoes the last change in
+    /// this session". A whole `Doc` per change is a few kilobytes and buys an
+    /// undo that cannot be subtly wrong about what it is putting back.
+    undo: Option<(ratodo::model::Doc, String)>,
     screen: ui::Screen,
     counts: agenda::Counts,
 }
@@ -355,6 +361,7 @@ impl Live {
             doc: loaded.doc,
             mtime: loaded.mtime,
             written: None,
+            undo: None,
         })
     }
 
@@ -430,53 +437,146 @@ impl Live {
         })
     }
 
+    /// Rebuilds the rows and the counts from the document already in memory.
+    /// `reload` is this plus a read; a change made here does not need the read.
+    fn rebuild(&mut self, today: chrono::NaiveDate) {
+        let tasks: Vec<_> = self.doc.tasks().cloned().collect();
+        self.counts = agenda::Counts::of(&tasks, today);
+        self.screen
+            .replace(ui::rows(&agenda::agenda(&tasks, today)));
+    }
+
+    /// Writes what is in memory, and on a refusal puts the document back.
+    ///
+    /// `Some(notice)` means the write was refused and the caller should show it
+    /// and change nothing else. `None` means it went through. Every change goes
+    /// through here so that "warn, do not merge" is written once — three copies
+    /// of it would be three chances to get the recovery subtly wrong.
+    ///
+    /// `undo` is what to call this change if it is later taken back; `None`
+    /// clears the slot, which is what an undo itself does.
+    fn write_back(
+        &mut self,
+        path: &Path,
+        before: ratodo::model::Doc,
+        undo: Option<String>,
+    ) -> Result<Option<ui::Notice>> {
+        match write::save(path, &self.doc, self.mtime, &backup_dir()?) {
+            Ok(()) => {
+                self.written = Some(write::render(&self.doc));
+                self.mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+                self.undo = undo.map(|what| (before, what));
+                quietly_sync(path);
+                Ok(None)
+            }
+            // The file still says otherwise, and a screen that disagrees with
+            // disk is how the *next* write loses data.
+            Err(e) if e.downcast_ref::<write::Conflict>().is_some() => {
+                self.doc = before;
+                Ok(Some(ui::Notice::Warned(
+                    "changed on disk — nothing was written.  r reload".to_string(),
+                )))
+            }
+            Err(e) => {
+                self.doc = before;
+                Err(e)
+            }
+        }
+    }
+
+    /// The raw line of the selected task, which is how a row on screen is found
+    /// again in the document.
+    fn selected_raw(&self) -> Option<String> {
+        self.screen.task().map(|t| t.raw.clone())
+    }
+
     /// Ticks the selected task, in the document and on the screen, and writes.
     ///
     /// The row is updated in place rather than regrouped: a task marked done
     /// stays where it is until the next reload. Nothing else on screen moves.
     fn toggle(&mut self, path: &Path, today: chrono::NaiveDate) -> Result<ui::Notice> {
-        let Some(raw) = self.screen.task().map(|t| t.raw.clone()) else {
-            return Ok(ui::Notice::Hints);
+        let Some(raw) = self.selected_raw() else {
+            return Ok(ui::Notice::Said("nothing to tick here".to_string()));
         };
+        let before = self.doc.clone();
         let Some(task) = self.doc.tasks_mut().find(|t| t.raw == raw) else {
-            return Ok(ui::Notice::Hints);
+            return Ok(ui::Notice::Said("nothing to tick here".to_string()));
         };
 
         let done = !task.done;
         task.set_done(done);
         let updated = task.clone();
+        let title = text::plain(&updated.title);
 
-        match write::save(path, &self.doc, self.mtime, &backup_dir()?) {
-            Ok(()) => {
-                self.written = Some(write::render(&self.doc));
-                self.mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-                self.screen.update_selected(updated.clone());
+        // Two strings, because they end up in different sentences: one is the
+        // result line, the other is what `undo` reports putting back.
+        let undo_label = format!("{} {title}", if done { "ticking" } else { "unticking" });
+        let said = format!("{}: {title}", if done { "done" } else { "reopened" });
 
-                let tasks: Vec<_> = self.doc.tasks().cloned().collect();
-                self.counts = agenda::Counts::of(&tasks, today);
-                quietly_sync(path);
-
-                Ok(ui::Notice::Said(format!(
-                    "{}: {}",
-                    if done { "done" } else { "reopened" },
-                    text::plain(&updated.title)
-                )))
-            }
-            Err(e) => {
-                // Put the document back: the file still says otherwise, and a
-                // screen that disagrees with disk is how the next write loses data.
-                if let Some(task) = self.doc.tasks_mut().find(|t| t.raw == updated.raw) {
-                    task.set_done(!done);
-                }
-                if e.downcast_ref::<write::Conflict>().is_some() {
-                    Ok(ui::Notice::Warned(
-                        "changed on disk — nothing was written.  r reload".to_string(),
-                    ))
-                } else {
-                    Err(e)
-                }
-            }
+        if let Some(refused) = self.write_back(path, before, Some(undo_label))? {
+            return Ok(refused);
         }
+
+        self.screen.update_selected(updated);
+        let tasks: Vec<_> = self.doc.tasks().cloned().collect();
+        self.counts = agenda::Counts::of(&tasks, today);
+        Ok(ui::Notice::Said(format!("{said}    u undo")))
+    }
+
+    /// Deletes the selected task immediately, with no confirmation.
+    ///
+    /// A prompt taxes every delete to protect against the rare wrong one; `u`
+    /// inverts that, so deleting costs one key and the mistake costs one more.
+    /// See docs/tui.md#deleting--no-confirmation-dialog.
+    fn delete(&mut self, path: &Path, today: chrono::NaiveDate) -> Result<ui::Notice> {
+        let Some(raw) = self.selected_raw() else {
+            return Ok(ui::Notice::Said("nothing to delete here".to_string()));
+        };
+        let Some(at) = self
+            .doc
+            .lines
+            .iter()
+            .position(|l| matches!(&l.item, ratodo::model::Item::Task(t) if t.raw == raw))
+        else {
+            return Ok(ui::Notice::Said("nothing to delete here".to_string()));
+        };
+
+        let before = self.doc.clone();
+        let Some(gone) = self.doc.remove_task(at) else {
+            return Ok(ui::Notice::Said("nothing to delete here".to_string()));
+        };
+        let title = text::plain(&gone.title);
+
+        if let Some(refused) =
+            self.write_back(path, before, Some(format!("deleting \"{title}\"")))?
+        {
+            return Ok(refused);
+        }
+
+        self.rebuild(today);
+        Ok(ui::Notice::Said(format!("deleted \"{title}\"    u undo")))
+    }
+
+    /// Puts the document back the way it was before the last change.
+    ///
+    /// One level, and the whole document rather than an inverse operation: an
+    /// undo that reconstructs what a change did is an undo that can be subtly
+    /// wrong about it, and this one cannot.
+    fn undo(&mut self, path: &Path, today: chrono::NaiveDate) -> Result<ui::Notice> {
+        // Cloned rather than taken: if the write is refused the slot has to
+        // still be there, or a refusal that changed nothing has cost the user
+        // their undo.
+        let Some((restored, what)) = self.undo.clone() else {
+            return Ok(ui::Notice::Said("nothing to undo".to_string()));
+        };
+
+        let current = std::mem::replace(&mut self.doc, restored);
+        if let Some(refused) = self.write_back(path, current, None)? {
+            return Ok(refused);
+        }
+
+        self.rebuild(today);
+        Ok(ui::Notice::Said(format!("undone: {what}")))
     }
 }
 
@@ -533,14 +633,11 @@ fn run(
                     ui::Action::Top => live.screen.top(),
                     ui::Action::Bottom => live.screen.bottom(),
                     ui::Action::Toggle => notice = live.toggle(path, today)?,
+                    ui::Action::Delete => notice = live.delete(path, today)?,
+                    ui::Action::Undo => notice = live.undo(path, today)?,
                     ui::Action::Fold(want) => {
-                        if !live.screen.fold(want) {
-                            // Nothing happened, and silence would read as a
-                            // broken key rather than "there is nothing here".
-                            notice = ui::Notice::Said(match want {
-                                ui::Fold::Open => "nothing folded here".to_string(),
-                                _ => "no group to fold here".to_string(),
-                            });
+                        if let Some(complaint) = live.screen.fold(want) {
+                            notice = ui::Notice::Said(complaint.to_string());
                         }
                     }
                     ui::Action::Edit => {
@@ -767,6 +864,149 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A scratch list on disk, and a `Live` open on it.
+    fn open(tag: &str, text: &str) -> (PathBuf, Live) {
+        let dir = std::env::temp_dir().join(format!("ratodo-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("todo.md");
+        std::fs::write(&path, text).unwrap();
+
+        let live = Live::read(&path, a_day()).unwrap();
+        (path, live)
+    }
+
+    fn a_day() -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(2026, 8, 11).unwrap()
+    }
+
+    /// Deleting takes one line out and leaves everything else exactly as it was,
+    /// including the things ratodo does not understand.
+    #[test]
+    fn delete_removes_the_selected_line_and_nothing_else() {
+        let before = "# My list\n\n## Work\n- [ ] first\n- [ ] second\n\n> a note\n";
+        let (path, mut live) = open("delete", before);
+
+        let notice = live.delete(&path, a_day()).unwrap();
+        assert!(
+            matches!(&notice, ui::Notice::Said(s) if s.contains("deleted \"first\"") && s.contains("u undo")),
+            "{notice:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "# My list\n\n## Work\n- [ ] second\n\n> a note\n"
+        );
+        // And the screen agrees. Writing the file without rebuilding the rows
+        // leaves a task on screen that is not in the document any more, and the
+        // next thing done to it writes against a line that has gone.
+        assert_eq!(
+            live.screen.task().map(|t| t.title.clone()),
+            Some("second".into())
+        );
+        assert_eq!(live.counts.open, 1);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// Only a refused write becomes a warning. Everything else is a real
+    /// failure, and swallowing it as "changed on disk" would send the user to
+    /// press `r` at a problem that reloading cannot fix.
+    #[test]
+    fn a_write_that_fails_for_any_other_reason_is_not_reported_as_a_conflict() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (path, mut live) = open("readonly", "- [ ] first\n");
+        let dir = path.parent().unwrap().to_path_buf();
+
+        // The temp file the atomic write needs cannot be created in here.
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let outcome = live.toggle(&path, a_day());
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let error = outcome.expect_err("a permission failure came back as a notice");
+        assert!(
+            error.downcast_ref::<write::Conflict>().is_none(),
+            "a permission failure was dressed up as a conflict: {error:#}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The trade docs/tui.md makes: no confirmation prompt, because `u` is
+    /// cheaper than taxing every delete to catch the rare wrong one.
+    #[test]
+    fn undo_puts_a_deleted_task_back_where_it_was() {
+        let before = "## Work\n- [ ] first\n- [ ] second\n";
+        let (path, mut live) = open("undo", before);
+
+        live.delete(&path, a_day()).unwrap();
+        let notice = live.undo(&path, a_day()).unwrap();
+
+        assert!(
+            matches!(&notice, ui::Notice::Said(s) if s.contains("undone")),
+            "{notice:?}"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+
+        // One level, and it is spent.
+        assert!(
+            matches!(live.undo(&path, a_day()).unwrap(), ui::Notice::Said(s) if s.contains("nothing to undo"))
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn undo_takes_back_a_toggle_too() {
+        let before = "- [ ] first\n";
+        let (path, mut live) = open("undo-toggle", before);
+
+        live.toggle(&path, a_day()).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "- [x] first\n");
+
+        live.undo(&path, a_day()).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// A refusal changes nothing — which has to include the undo slot. Losing it
+    /// to a write that did not happen would be the worst of both.
+    #[test]
+    fn a_refused_undo_keeps_the_undo() {
+        let (path, mut live) = open("undo-conflict", "- [ ] first\n- [ ] second\n");
+        live.delete(&path, a_day()).unwrap();
+
+        // Somebody else gets there first.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&path, "- [ ] theirs\n").unwrap();
+
+        let refused = live.undo(&path, a_day()).unwrap();
+        assert!(matches!(&refused, ui::Notice::Warned(w) if w.contains("changed on disk")));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "- [ ] theirs\n");
+        assert!(
+            live.undo.is_some(),
+            "the undo was spent on a write that never happened"
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn there_is_nothing_to_delete_or_undo_in_an_empty_list() {
+        let (path, mut live) = open("empty-actions", "> just a note\n");
+
+        assert!(
+            matches!(live.delete(&path, a_day()).unwrap(), ui::Notice::Said(s) if s.contains("nothing to delete"))
+        );
+        assert!(
+            matches!(live.undo(&path, a_day()).unwrap(), ui::Notice::Said(s) if s.contains("nothing to undo"))
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "> just a note\n");
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     /// The one case where the tool must interrupt, because the alternative is

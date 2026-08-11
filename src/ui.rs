@@ -24,6 +24,10 @@ pub enum Action {
     Toggle,
     /// `h` `l` `z` — collapse or open the group under the cursor.
     Fold(Fold),
+    /// `d` — immediately, with `u` to take it back.
+    Delete,
+    /// `u` — put the last change back.
+    Undo,
     /// Hand the terminal to `$EDITOR`. The escape hatch for everything the
     /// tool cannot do — docs/product.md#product-decisions.
     Edit,
@@ -64,6 +68,8 @@ pub fn action(key: KeyEvent) -> Action {
         KeyCode::Char('G') => Action::Bottom,
         KeyCode::Char('d') if ctrl => Action::Move(10),
         KeyCode::Char('u') if ctrl => Action::Move(-10),
+        KeyCode::Char('d') => Action::Delete,
+        KeyCode::Char('u') => Action::Undo,
         KeyCode::Char(' ') => Action::Toggle,
         KeyCode::Char('h') | KeyCode::Left => Action::Fold(Fold::Close),
         KeyCode::Char('l') | KeyCode::Right => Action::Fold(Fold::Open),
@@ -245,11 +251,15 @@ impl Screen {
     }
 
     /// `h` collapses, `l` opens, `z` does whichever is the opposite of now —
-    /// the muscle memory `lf`, `ranger` and `yazi` arrive with. Returns whether
-    /// anything happened, so the caller can say when nothing did.
-    pub fn fold(&mut self, want: Fold) -> bool {
+    /// the muscle memory `lf`, `ranger` and `yazi` arrive with.
+    ///
+    /// `None` means it happened. `Some(complaint)` means it did not and here is
+    /// what to put on the bottom line: silence would read as a key that does not
+    /// work. The wording lives here rather than in the event loop so that it can
+    /// be tested without a terminal.
+    pub fn fold(&mut self, want: Fold) -> Option<&'static str> {
         let Some(title) = self.group_at_cursor() else {
-            return false;
+            return Some("no group to fold here");
         };
         let folded = self.folded.contains(&title);
         let should = match want {
@@ -258,7 +268,11 @@ impl Screen {
             Fold::Toggle => !folded,
         };
         if should == folded {
-            return false;
+            return Some(if folded {
+                "already folded"
+            } else {
+                "nothing folded here"
+            });
         }
 
         if should {
@@ -280,7 +294,7 @@ impl Screen {
             // task of the group that was just revealed.
             self.refresh();
         }
-        true
+        None
     }
 
     pub fn selected(&self) -> Option<usize> {
@@ -616,10 +630,10 @@ impl Notice {
             // is not implemented yet is a worse lie than no hint bar.
             Notice::Hints if height < 10 => (" ?".to_string(), colours.dim),
             Notice::Hints if size == Size::Wide => (
-                " j k move   spc done   e $EDITOR   r reload   ? keys   q quit".to_string(),
+                " j k move   spc done   d del   e $EDITOR   ? keys   q quit".to_string(),
                 colours.dim,
             ),
-            Notice::Hints => (" j k  spc  e  r  ?  q".to_string(), colours.dim),
+            Notice::Hints => (" j k  spc  d  e  ?  q".to_string(), colours.dim),
             Notice::Said(text) => (format!(" {text}"), colours.dim),
             Notice::Warned(text) => {
                 let mark = match glyphs {
@@ -745,11 +759,12 @@ pub fn draw(
 /// Only the keys that do something. A help screen listing keys that are not
 /// built yet teaches the wrong thing twice.
 fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
-    const KEYS: [(&str, &str); 10] = [
+    const KEYS: [(&str, &str); 11] = [
         ("j k  ↓ ↑", "move"),
         ("g G", "top / bottom"),
         ("ctrl-d ctrl-u", "half page"),
         ("spc", "toggle done"),
+        ("d  u", "delete / undo"),
         ("h l  z", "fold this group"),
         ("e", "open $EDITOR"),
         ("r", "re-read the file"),
@@ -759,7 +774,11 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
     ];
 
     let width = 40.min(area.width);
-    let height = (KEYS.len() as u16 + 4).min(area.height);
+    // Two for the border, and not a row more: at eleven keys a spare blank line
+    // is the difference between the box fitting a 14-row pane and `q  ctrl-c`
+    // being the line that falls off it. A help screen that cuts off at quit is
+    // worse than no help screen.
+    let height = (KEYS.len() as u16 + 2).min(area.height);
     // Centred, and clamped: on a pane smaller than the box the box wins the
     // space it has rather than drawing outside it.
     let box_area = Rect::new(
@@ -769,7 +788,7 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
         height,
     );
 
-    let mut lines = vec![Line::raw("")];
+    let mut lines = Vec::with_capacity(KEYS.len());
     for (keys, what) in KEYS {
         lines.push(Line::from(vec![
             Span::styled(
@@ -1054,11 +1073,11 @@ mod tests {
             rows,
             [
                 "┌ ra┌ keys ────────────────────────────────┐───┐",
-                "│  O│                                      │── │",
-                "│▌ !│  j k  ↓ ↑       move                 │ago│",
-                "│   │  g G            top / bottom         │   │",
+                "│  O│  j k  ↓ ↑       move                 │── │",
+                "│▌ !│  g G            top / bottom         │ago│",
                 "│   │  ctrl-d ctrl-u  half page            │   │",
                 "│   │  spc            toggle done          │   │",
+                "│   │  d  u           delete / undo        │   │",
                 "│   │  h l  z         fold this group      │   │",
                 "│   │  e              open $EDITOR         │   │",
                 "│   │  r              re-read the file     │   │",
@@ -1066,7 +1085,7 @@ mod tests {
                 "│   │  ? esc          this, and away again │   │",
                 "│   │  q  ctrl-c      quit                 │   │",
                 "└───└──────────────────────────────────────┘───┘",
-                " j k  spc  e  r  ?  q                           ",
+                " j k  spc  d  e  ?  q                           ",
             ]
         );
     }
@@ -1079,7 +1098,7 @@ mod tests {
         let tasks = tasks(&["a @2026-08-01"]);
         let groups = agenda(&tasks, today());
 
-        for (height, top) in [(16u16, 0usize), (18, 1), (22, 3)] {
+        for (height, top) in [(15u16, 0usize), (17, 1), (21, 3)] {
             let mut screen = Screen::new(rows(&groups));
             let mut terminal = Terminal::new(TestBackend::new(48, height)).unwrap();
             terminal
@@ -1135,7 +1154,7 @@ mod tests {
             .map(|c| c.symbol())
             .collect();
 
-        for unbuilt in ["delete", "undo", "add", "edit"] {
+        for unbuilt in ["add", "edit", "$VISUAL"] {
             assert!(
                 !text.contains(unbuilt),
                 "{unbuilt} is advertised but absent"
@@ -1171,10 +1190,11 @@ mod tests {
             action(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL)),
             Action::Move(-10)
         );
-        // Without the modifier they belong to delete and undo, which are not
-        // built yet and must not be half-bound to something else meanwhile.
-        assert_eq!(action(press(KeyCode::Char('d'))), Action::Ignore);
-        assert_eq!(action(press(KeyCode::Char('u'))), Action::Ignore);
+        // Without the modifier they are delete and undo. The pair is easy to
+        // cross: `ctrl-d` scrolling and `d` deleting share a letter on purpose,
+        // because that is what vim does.
+        assert_eq!(action(press(KeyCode::Char('d'))), Action::Delete);
+        assert_eq!(action(press(KeyCode::Char('u'))), Action::Undo);
     }
 
     /// Windows sends a release for every press. Acting on both moves the cursor
@@ -1405,7 +1425,7 @@ mod tests {
                 "│                                                            │",
                 "│                                                            │",
                 "└────────────────────────────────────────────────────────────┘",
-                " j k move   spc done   e $EDITOR   r reload   ? keys   q quit ",
+                " j k move   spc done   d del   e $EDITOR   ? keys   q quit    ",
             ]
         );
     }
@@ -1887,7 +1907,7 @@ mod tests {
         let groups = agenda(&tasks, today());
         let mut screen = Screen::new(rows(&groups));
 
-        assert!(screen.fold(Fold::Close), "nothing was folded");
+        assert_eq!(screen.fold(Fold::Close), None, "nothing was folded");
         assert_eq!(
             titles(&screen.rows),
             ["# Work", "", "# Home", "plumber"],
@@ -1904,7 +1924,7 @@ mod tests {
             "a collapsed group that does not say how much it hides is a dead end"
         );
 
-        assert!(screen.fold(Fold::Open));
+        assert_eq!(screen.fold(Fold::Open), None);
         assert_eq!(
             titles(&screen.rows),
             ["# Work", "deploy", "invoice", "", "# Home", "plumber"]
@@ -1979,10 +1999,14 @@ mod tests {
         let groups = agenda(&tasks, today());
         let mut screen = Screen::new(rows(&groups));
 
-        assert!(screen.fold(Fold::Close));
-        assert!(!screen.fold(Fold::Close));
-        assert!(screen.fold(Fold::Open));
-        assert!(!screen.fold(Fold::Open));
+        assert_eq!(screen.fold(Fold::Close), None);
+        assert_eq!(screen.fold(Fold::Close), Some("already folded"));
+        assert_eq!(screen.fold(Fold::Open), None);
+        assert_eq!(
+            screen.fold(Fold::Open),
+            Some("nothing folded here"),
+            "`l` on an open group has to say so, not sit there"
+        );
     }
 
     /// The cursor was inside the group that just closed. Sending it to the top
@@ -2012,7 +2036,7 @@ mod tests {
 
         // And from there `l` opens it again and steps back inside, which is the
         // only route back: there is nothing else on screen to put a cursor on.
-        assert!(screen.fold(Fold::Open));
+        assert_eq!(screen.fold(Fold::Open), None);
         assert_eq!(screen.task().map(|t| t.title.as_str()), Some("deploy"));
     }
 
@@ -2024,7 +2048,7 @@ mod tests {
         let groups = agenda(&tasks, today());
         let mut screen = Screen::new(rows(&groups));
 
-        assert!(!screen.fold(Fold::Close));
+        assert_eq!(screen.fold(Fold::Close), Some("no group to fold here"));
         assert_eq!(titles(&screen.rows), ["a", "b"]);
     }
 
