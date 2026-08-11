@@ -54,6 +54,8 @@ The bottom line was chosen so the screen would not change under the reader, and 
 The structure of the shorthand was only visible in the preview under the field, a word at a time after the fact. It is on the words themselves now: @thu and the time it took go accent, #home goes tag, !high goes bold, and a @notaday stays plain text because that is what the file will hold.
 - *(ui)* Teach the empty screen with the box it will be typed into ([f7341a9](https://github.com/murat-akpinar/ratodo/commit/f7341a98178d75b0679f73c3026250fc73af64b6))
 The example was a line of text. It is now the same input box `a` opens, drawn by the same code, so the live parse under it already reads the shorthand back as a date. Below ten rows it goes back to a line — the example is the last thing a short pane loses.
+- *(ui)* Rule off the input field from what it will become ([ff9aa07](https://github.com/murat-akpinar/ratodo/commit/ff9aa075a667fcd25d2bd6475f144aedca7a334b))
+The field and the live parse sat in one box with nothing between them, so the caret looked like it could be moved down into the preview. The box takes a fifth row for the rule; a pane too short for one drops the rule, not the preview. The two cells where it meets the frame are set to `├` and `┤`, since a rule butting into `│` reads as a frame that broke.
 
 ### 🐛 Bug Fixes
 
