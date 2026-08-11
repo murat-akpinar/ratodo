@@ -3,6 +3,7 @@
 use chrono::NaiveDate;
 
 use crate::agenda::Counts;
+use crate::capture::Part;
 use crate::model::{Due, Task};
 
 /// A todo.md can arrive over `git pull`. Control characters in it would be
@@ -99,17 +100,28 @@ pub fn status_json(counts: Counts) -> String {
 /// the TUI has to fall back to ASCII when the locale is not UTF-8, and stdout
 /// does not — docs/tui.md#no-colour-no-nerd-font.
 pub fn fields(task: &Task, today: NaiveDate, dot: &str) -> String {
+    let joined: Vec<String> = field_parts(task, today)
+        .into_iter()
+        .map(|(_, text)| text)
+        .collect();
+    joined.join(&format!("  {dot}  "))
+}
+
+/// The same fields, still paired with what each one is, for the caller that can
+/// colour them. The TUI's preview reads this and stdout reads `fields`, so the
+/// two cannot drift into saying different things about the same task.
+pub fn field_parts(task: &Task, today: NaiveDate) -> Vec<(Part, String)> {
     let mut parts = Vec::new();
     if let Some(due) = task.due {
-        parts.push(format!("due {}", relative(due, today)));
+        parts.push((Part::Date, format!("due {}", relative(due, today))));
     }
     for tag in &task.tags {
-        parts.push(format!("#{}", plain(tag)));
+        parts.push((Part::Tag, format!("#{}", plain(tag))));
     }
     if let Some(p) = task.priority {
-        parts.push(p.as_str().to_string());
+        parts.push((Part::Priority, p.as_str().to_string()));
     }
-    parts.join(&format!("  {dot}  "))
+    parts
 }
 
 /// The one line `ratodo add` prints before getting out of the way.

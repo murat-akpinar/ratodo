@@ -1085,6 +1085,16 @@ impl Notice {
 ///
 /// Returns the column the cursor belongs in as well, because it is the same
 /// arithmetic.
+/// What colour a parsed word gets, on the typed line and in the preview under it
+/// alike. Priority is weight rather than a twelfth theme role — docs/tui.md.
+fn paint(part: crate::capture::Part, plain: Style, render: Render<'_>) -> Style {
+    match part {
+        crate::capture::Part::Tag => Style::default().fg(render.colours.tag),
+        crate::capture::Part::Priority => plain.bold(),
+        _ => Style::default().fg(render.colours.accent),
+    }
+}
+
 fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'static>>, usize) {
     let dim = Style::default().fg(render.colours.dim);
     let head = format!(
@@ -1128,11 +1138,7 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
         }
         spans.push(Span::styled(
             input.text[start..end].to_string(),
-            match part {
-                crate::capture::Part::Tag => Style::default().fg(render.colours.tag),
-                crate::capture::Part::Priority => plain.bold(),
-                _ => Style::default().fg(render.colours.accent),
-            },
+            paint(part, plain, render),
         ));
         cut = end;
     }
@@ -1141,12 +1147,23 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
     }
     let field = Line::from(spans);
 
+    // Field by field, in the same colours the typed line above it uses: the date
+    // is the accent, a tag is `tag`, `!high` is bold, and the separators are
+    // dim. One colour over the whole line said the parser had understood all of
+    // it equally, which is the one thing the preview exists to be specific
+    // about — and it made the date and the tag indistinguishable in the row
+    // whose whole job is telling them apart. The title is not repeated: it is
+    // already on the line above, in the same white.
     let parsed = crate::capture::capture(&input.text, render.today);
     let (_, dot) = render.glyphs.punctuation();
-    let preview = Line::from(Span::styled(
-        format!("      {}", crate::text::fields(&parsed, render.today, dot)),
-        Style::default().fg(render.colours.accent),
-    ));
+    let mut shown = vec![Span::styled("      ".to_string(), dim)];
+    for (part, text) in crate::text::field_parts(&parsed, render.today) {
+        if shown.len() > 1 {
+            shown.push(Span::styled(format!("  {dot}  "), dim));
+        }
+        shown.push(Span::styled(text, paint(part, plain, render)));
+    }
+    let preview = Line::from(shown);
     // A rule between the two, because they are not the same thing: above it is
     // what you are typing and below it is what the file will get. Without it the
     // caret looks like it could be moved down into the preview, and people try.
@@ -3488,6 +3505,51 @@ mod tests {
                 "└────────────────────────────────────────────────────────────────────┘",
                 " ⏎ save   esc cancel                                                  ",
             ]
+        );
+    }
+
+    /// The preview says *what* the parser understood, so it has to say which
+    /// part is which. It used to be one accent-coloured string, which told the
+    /// reader the parser had understood all of it equally — the date and the tag
+    /// were the same colour in the one row whose job is telling them apart.
+    #[test]
+    fn the_preview_is_coloured_field_by_field() {
+        let render = render(crate::theme::MOCHA);
+        let input = Input::new("call the accountant @thu #home !high".to_string(), None);
+        let (lines, _) = input_lines(&input, 60, render);
+
+        let shown: Vec<(String, Style)> = lines[2]
+            .spans
+            .iter()
+            .map(|s| (s.content.to_string(), s.style))
+            .collect();
+
+        let styled = |want: &str| {
+            shown
+                .iter()
+                .find(|(text, _)| text.contains(want))
+                .unwrap_or_else(|| panic!("{want} is not in the preview: {shown:?}"))
+                .1
+        };
+
+        assert_eq!(styled("due Thursday").fg, Some(render.colours.accent));
+        assert_eq!(styled("#home").fg, Some(render.colours.tag));
+        assert!(
+            styled("!high")
+                .add_modifier
+                .contains(ratatui::style::Modifier::BOLD),
+            "the priority lost its weight: {shown:?}"
+        );
+        // The separators are the quiet part, and the row is not one colour.
+        assert_eq!(styled("·").fg, Some(render.colours.dim));
+        assert!(
+            shown
+                .iter()
+                .map(|(_, style)| style.fg)
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                >= 3,
+            "the preview came out in one colour again: {shown:?}"
         );
     }
 
