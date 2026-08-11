@@ -1,10 +1,36 @@
 # todo
 
-The v1 task list, in build order. Decisions behind any of these live in
-[docs/](docs/README.md); loose ends live in [notes.md](notes.md).
+The build list. Decisions behind any of these live in [docs/](docs/README.md);
+loose ends live in [notes.md](notes.md).
 
-The order is deliberate: **once step 2 is done there is already a working CLI
-todo** (ugly, but real). If step 4 stalls, the project does not die.
+**v1 shipped as `v0.1.0` and the next batch as `v0.2.0`, both on 2026-08-11.**
+Steps 0–8 below are the record of how that was built and are kept for the
+reasoning in them, not because there is anything left to do in them. The work
+that is actually open is the short list directly under this line.
+
+## What is left
+
+Three items, none of which is code in the product. Nothing here blocks anything
+else, so the order is by reach rather than by dependency.
+
+- [ ] **`cargo publish`** — `--dry-run` passes (44 files, 157 KiB), and the only
+      thing in the way is a verified email address on crates.io. One command
+      after that. This is the item that decides whether anyone outside this
+      machine can install the thing with a tool they already have
+- [ ] **Thunderbird** — the third and last calendar data point. Its Tasks view is
+      a different code path from the month grid and is where a VTODO would land.
+      `todoman` displays the file correctly and `khal` ignores it; Thunderbird is
+      the one that decides whether the table in
+      [docs/calendar.md](docs/calendar.md) is finished or still guessing. It is
+      also what tells us how big an audience `--as-events` would actually buy,
+      and that flag is already on the [v2 roadmap](docs/roadmap.md)
+- [ ] **`flake.nix` and an AUR `PKGBUILD`** — `rustPlatform.buildRustPackage` and
+      a `PKGBUILD` against the tag. NixOS users will not `cargo install` into a
+      profile, and Arch is the platform this was written on. Both pin a released
+      version, which is why they come after the tag rather than before it
+
+Open questions that block none of the above are in
+[docs/decisions.md](docs/decisions.md#open-questions).
 
 ## 0 — Setup
 
@@ -125,8 +151,8 @@ does not get to block the screen that audience actually opens. See
       integration tests set all four XDG directories through one helper, and a
       test pins that a write lands where the caller pointed it. Found because a
       calendar being read went empty, not by the suite
-- [ ] Thunderbird, whose Tasks view is a different code path from the month grid
-      and is where these would land
+- Thunderbird is the one client still unchecked — see
+  [What is left](#what-is-left)
 
 ## 5 — Theme
 
@@ -251,7 +277,10 @@ side pane turns into a dashboard nobody leaves open.
       escapes went with it: the `…` on a cut title and the `·` in the input
       preview. `LC_ALL=C` now puts nothing non-ASCII on the screen
 
-## After v0.1.0
+## 9 — After v0.1.0, and what became v0.2.0
+
+Tagged 2026-08-11. The three below are the release; the packaging and publishing
+that were on this list have moved up to [What is left](#what-is-left).
 
 - [x] **Several lists in one agenda** — every `*.md` in the config directory is
       read, the undated headings say which file they came from, a change goes
@@ -278,8 +307,6 @@ side pane turns into a dashboard nobody leaves open.
       keeping the time and everything the parser did not understand —
       **done**: the same input box with a different question, and a preview that
       answers it with the day it lands on
-- [ ] `cargo publish` — blocked on a verified email address on crates.io
-- [ ] `flake.nix` (`rustPlatform.buildRustPackage`) and an AUR `PKGBUILD`
 
 ## Open questions blocking nothing
 
