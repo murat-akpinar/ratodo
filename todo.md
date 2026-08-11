@@ -28,9 +28,9 @@ is about a key that was asked for and does not exist.
       2026-08-11, and it is two pieces that arrived in one sentence. They ship in
       that order, because the first is useful without the second and the second
       is not useful without something to put in a fourth column.
-      - [ ] **`$work` routes the capture.** `a` writes to `todo.md` and nothing
+      - [x] **`$work` routes the capture.** `a` wrote to `todo.md` and nothing
             else — [cli.md](docs/cli.md#several-lists) rule 4 — so capturing into
-            `work.md` means leaving the TUI for
+            `work.md` meant leaving the TUI for
             `ratodo --file ~/.config/ratodo/work.md add '...'`. `$` puts it in
             the box: a fourth sigil beside `@` `#` `!`, read by the one
             tokenizer `capture::parts` already is, previewed as `→ work.md` the
@@ -38,8 +38,18 @@ is about a key that was asked for and does not exist.
             purpose — "`a` must not mean a different file depending on what the
             cursor happens to be over" — and `$` does not break that: the target
             is a **word the user typed**, not the cursor position. That
-            distinction is the whole reversal and it goes in
-            [docs/decisions.md](docs/decisions.md) before the code does
+            distinction is the whole reversal and it went in
+            [docs/decisions.md](docs/decisions.md#a-capture-always-goes-to-todomd--work-picks-the-list-2026-08-11)
+            before the code did —
+            **done**, and it works on `ratodo add` as well as in the box. The
+            word never reaches the file, `$work` and `$work.md` are one list,
+            the first `$` wins, `$50` is money, and a `$` on `⏎` is refused
+            rather than swallowed, because `capture` drops the word and silence
+            would eat the title. Two of the open questions below went with it.
+            One thing the suite would not have caught and running it did: the
+            preview nagged `no list w.md` through every keystroke of `$work`, so
+            it now waits until the word can no longer become one of the lists —
+            the same rule the date warning already had
       - [ ] **The box becomes four fields with `tab` between them** — work |
             date | tag | list. This **reverses** the decision of 2026-08-11 in
             [docs/decisions.md](docs/decisions.md#settled), which rejected
@@ -61,19 +71,22 @@ is about a key that was asked for and does not exist.
         - **There are five fields, not four.** `!high` is the one the ask did
           not name. Either it is a fifth column — on a box that has to fit a
           34-column pane — or it stays typed into the work field, which makes
-          "everything has a column" untrue on the first day
+          "everything has a column" untrue on the first day. **This is the one
+          that has to be answered first**; the rest of the box's shape follows
+          from it
         - **`p` keeps one field.** It asks one question and pre-fills nothing;
           four columns for "how long?" is a widget answering a question nobody
           asked
-        - **What `$nosuchfile` does.** Refuse before the write, the way an
-          unparseable `p` is refused? Or create the list? A capture that
-          silently invents a file in the config directory is a surprise; one
-          that refuses is a dead end at the moment of capture
-        - **What the box does with one list.** `$` has no meaning until there
-          is a second file, and [cli.md](docs/cli.md#several-lists) already
-          holds that shape: the file name is attached to a task only when there
-          is more than one. A fourth column that is always empty is a column
-          teaching nothing
+        - ✅ **What `$nosuchfile` does** — *refuse before the write*, as the
+          first piece shipped it. It does not create the list and it does not
+          fall back to `todo.md` either, since a fallback puts the task
+          somewhere nobody asked for. A new list is `touch work.md`
+        - ✅ **What the box does with one list** — `$` parses the same and
+          refuses anything but that one list. A syntax that means one thing on
+          a one-file setup and another on a two-file setup is worse than one
+          that is merely unnecessary. *(The **column** question this was
+          really about stands: a fourth column that is always empty teaches
+          nothing, and that is an argument about the box, not about `$`)*
         - **Whether the four columns fit the documented widths.** The box lives
           inside the list, and [tui.md](docs/tui.md) commits to ≥60 / 34–59 /
           <34. Four fields and three separators inside 34 columns is roughly

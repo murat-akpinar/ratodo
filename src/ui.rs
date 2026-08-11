@@ -654,6 +654,14 @@ impl Glyphs {
         }
     }
 
+    /// The arrow the preview points a `$work` capture with.
+    fn arrow(self) -> &'static str {
+        match self {
+            Glyphs::Unicode => "→",
+            Glyphs::Ascii => "->",
+        }
+    }
+
     /// The arrow keys, as the help overlay names them. Two words in ASCII: a
     /// key help that shows a key the terminal cannot draw is the one screen
     /// where the fallback matters most.
@@ -772,6 +780,9 @@ pub struct Render<'a> {
     /// Shown on the empty screen. The promise of this product is that the file
     /// is yours, so you get told where it is on day one.
     pub path: &'a str,
+    /// The open lists, by file name. What a `$work` in the input box is checked
+    /// against — docs/tui.md#which-list--work.
+    pub lists: &'a [String],
 }
 
 /// Display columns — not bytes, and not characters. `ş` is one column and `🚀`
@@ -1208,6 +1219,34 @@ fn paint(part: crate::capture::Part, plain: Style, render: Render<'_>) -> Style 
     }
 }
 
+/// What the preview says about a `$work`: where it is going, or that it is
+/// going nowhere.
+///
+/// `None` while the word could still become one of the open lists. The preview
+/// redraws on every keystroke, and "no list w.md" on the way to `$work` is the
+/// same nagging the date warning waits to avoid — wrong four times and right
+/// once is how people learn to stop reading a line. `⏎` still refuses a half
+/// typed one; being quiet is not the same as agreeing.
+fn addressed(name: &str, render: Render<'_>) -> Option<Span<'static>> {
+    if let Some(file) = render
+        .lists
+        .iter()
+        .find(|file| crate::capture::names_list(name, file))
+    {
+        return Some(Span::styled(
+            format!("{} {file}", render.glyphs.arrow()),
+            Style::default().fg(render.colours.accent),
+        ));
+    }
+    let becoming = render.lists.iter().any(|file| file.starts_with(name));
+    (!becoming).then(|| {
+        Span::styled(
+            format!("no list {name}.md"),
+            Style::default().fg(render.colours.overdue),
+        )
+    })
+}
+
 fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'static>>, usize) {
     let dim = Style::default().fg(render.colours.dim);
     let head = format!(" {} {}", input.purpose.label(), render.glyphs.field());
@@ -1298,6 +1337,19 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
                 format!("{word} is not a date"),
                 Style::default().fg(render.colours.overdue),
             ));
+        }
+        // Where it is going, when the line says. First, because it is the one
+        // field that is about the file rather than about the task — and because
+        // the other opinion the preview has sits here too. An edit is not
+        // addressed, so it does not answer one.
+        if let Some(name) = crate::capture::list_of(&input.text)
+            && !matches!(input.purpose, Purpose::Edit(_))
+            && let Some(span) = addressed(name, render)
+        {
+            if shown.len() > 1 {
+                shown.push(Span::styled(format!("  {dot}  "), dim));
+            }
+            shown.push(span);
         }
         let parsed = crate::capture::capture(&input.text, render.today);
         for (part, text) in crate::text::field_parts(&parsed, render.today) {
@@ -1784,6 +1836,7 @@ mod tests {
             glyphs: Glyphs::Unicode,
             today: today(),
             path: "~/.config/ratodo/todo.md",
+            lists: &[],
         }
     }
 
@@ -3904,6 +3957,96 @@ mod tests {
                 .map(|s| s.content.to_string())
                 .collect::<String>();
             assert!(!shown.contains("is not a date"), "{text:?} → {shown:?}");
+        }
+    }
+
+    /// The preview answers a `$` before `⏎` does: where the capture is going
+    /// when the list is open, and that it is going nowhere when it is not. The
+    /// fields still follow either answer.
+    #[test]
+    fn the_preview_says_which_list_a_capture_is_addressed_to() {
+        let lists = ["todo.md".to_string(), "work.md".to_string()];
+        let render = Render {
+            lists: &lists,
+            ..render(crate::theme::MOCHA)
+        };
+        let shown = |text: &str| {
+            let input = Input::new(text.to_string(), Purpose::Add);
+            let (lines, _) = input_lines(&input, 60, render);
+            lines[2]
+                .spans
+                .iter()
+                .map(|s| (s.content.to_string(), s.style))
+                .collect::<Vec<_>>()
+        };
+
+        let open = shown("call the accountant $work @thu");
+        let named = open
+            .iter()
+            .find(|(text, _)| text.contains("work.md"))
+            .unwrap_or_else(|| panic!("the preview did not say where it goes: {open:?}"));
+        assert_eq!(named.0, "→ work.md", "{open:?}");
+        assert_eq!(named.1.fg, Some(render.colours.accent), "{open:?}");
+        assert!(
+            open.iter().any(|(text, _)| text.contains("Thursday")),
+            "the address swallowed the fields: {open:?}"
+        );
+
+        // The arrow falls back with every other glyph: `LC_ALL=C` puts nothing
+        // on this screen the terminal cannot draw.
+        let ascii = Render {
+            glyphs: Glyphs::Ascii,
+            ..render
+        };
+        let input = Input::new("call the accountant $work".to_string(), Purpose::Add);
+        let (lines, _) = input_lines(&input, 60, ascii);
+        let line: String = lines[2]
+            .spans
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect();
+        assert!(line.contains("-> work.md"), "{line:?}");
+        assert!(line.is_ascii(), "{line:?}");
+
+        // A list nobody has: the second opinion, in the colour of the first.
+        let missing = shown("call the accountant $wrok @thu");
+        let warned = missing
+            .iter()
+            .find(|(text, _)| text.contains("wrok.md"))
+            .unwrap_or_else(|| panic!("the preview stayed quiet about it: {missing:?}"));
+        assert_eq!(warned.0, "no list wrok.md", "{missing:?}");
+        assert_eq!(warned.1.fg, Some(render.colours.overdue), "{missing:?}");
+        assert!(
+            missing.iter().any(|(text, _)| text.contains("Thursday")),
+            "one bad word took the row over: {missing:?}"
+        );
+
+        // Every prefix on the way to `$work` stays quiet, the way every prefix
+        // on the way to a date does. Four wrong warnings and one right one is
+        // how a line stops being read.
+        for half in ["$w", "$wo", "$wor", "$work", "$work.", "$work.m"] {
+            let typed = format!("call the accountant {half}");
+            let line: String = shown(&typed).into_iter().map(|(text, _)| text).collect();
+            assert!(!line.contains("no list"), "{half} → {line:?}");
+        }
+
+        // Nothing addressed, nothing said — and an edit is never addressed, so
+        // it does not answer a question it will refuse anyway.
+        for (text, purpose) in [
+            ("call the accountant @thu", Purpose::Add),
+            (
+                "call the accountant $work",
+                Purpose::Edit("- [ ] call the accountant".to_string()),
+            ),
+        ] {
+            let input = Input::new(text.to_string(), purpose);
+            let (lines, _) = input_lines(&input, 60, render);
+            let line = lines[2]
+                .spans
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>();
+            assert!(!line.contains(".md"), "{text:?} → {line:?}");
         }
     }
 

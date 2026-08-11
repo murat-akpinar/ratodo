@@ -140,9 +140,16 @@ $ ratodo --file ~/.config/ratodo/work.md    # only this one
 
 Dated groups mix — overdue is overdue, whichever file it came from — and undated
 headings say where they are from (`## Sprint (work.md)`). A change is written
-back to the file it came out of and nowhere else; a capture goes to `todo.md`,
-or `ratodo --file ~/.config/ratodo/work.md add '...'` to put it elsewhere. Full
-rules:
+back to the file it came out of and nowhere else; a capture goes to `todo.md`
+unless the line says otherwise with `$`:
+
+```console
+$ ratodo add 'call the accountant @thu $work'   # -> work.md
+```
+
+`$work` works in the TUI's input box too, where the preview says `→ work.md`
+before you press `⏎`. The word addresses the capture and never lands in the
+file. Full rules:
 [`docs/cli.md`](docs/cli.md#several-lists).
 
 Sync is your git. There is no account, no server, no telemetry, and nothing

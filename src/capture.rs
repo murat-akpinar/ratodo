@@ -20,6 +20,9 @@ pub enum Part {
     Time,
     Tag,
     Priority,
+    /// `$work` — which list the capture goes to. The address on the envelope,
+    /// so it is the one part that never reaches the file. docs/cli.md#several-lists.
+    List,
 }
 
 /// Every word of `text` as a byte range, paired with what it means.
@@ -30,6 +33,7 @@ pub fn parts(text: &str, today: NaiveDate) -> Vec<(std::ops::Range<usize>, Part)
     let words = words(text);
     let mut out = Vec::with_capacity(words.len());
     let mut dated = false;
+    let mut addressed = false;
     let mut i = 0;
 
     while i < words.len() {
@@ -57,6 +61,10 @@ pub fn parts(text: &str, today: NaiveDate) -> Vec<(std::ops::Range<usize>, Part)
         let part = match word {
             w if w.strip_prefix('#').is_some_and(|tag| !tag.is_empty()) => Part::Tag,
             w if parse_priority(w).is_some() => Part::Priority,
+            w if !addressed && list_name(w).is_some() => {
+                addressed = true;
+                Part::List
+            }
             _ => Part::Text,
         };
         out.push((range, part));
@@ -106,10 +114,45 @@ pub fn capture(text: &str, today: NaiveDate) -> Task {
             }
             Part::Tag => tags.push(word[1..].to_string()),
             Part::Priority => priority = parse_priority(word),
+            // Which file this is going to is not something the file says about
+            // itself. Dropped here rather than carried, so nothing downstream
+            // can write it out by accident — docs/cli.md#several-lists.
+            Part::List => {}
         }
     }
 
     Task::new(State::Open, title.join(" "), due, tags, priority)
+}
+
+/// Which list the capture is addressed to: the `$work` in it, without the `$`.
+///
+/// The first one, the way the first `@` is the date — a sentence with two
+/// destinations has none, and picking the last would mean the answer changes
+/// while you are still typing the line.
+pub fn list_of(text: &str) -> Option<&str> {
+    words(text)
+        .into_iter()
+        .find_map(|(_, word)| list_name(word))
+}
+
+/// A `$word` that is addressing a list, without the `$`.
+///
+/// A letter first, so `$50 for the plumber` is money in a title rather than a
+/// list nobody has — the same reading a shell gives it. Whether the list exists
+/// is not a question about the word, and is answered where the write happens.
+fn list_name(word: &str) -> Option<&str> {
+    let rest = word.strip_prefix('$')?;
+    rest.starts_with(char::is_alphabetic).then_some(rest)
+}
+
+/// Whether `$name` addresses the list held in the file called `file`.
+///
+/// `$work` and `$work.md` are the same list: the sigil is aimed at a list, and
+/// somebody who thinks of it by its file name is not wrong. One predicate for
+/// the preview and the write both, because they disagreeing is a preview that
+/// lies.
+pub fn names_list(name: &str, file: &str) -> bool {
+    file == name || file.strip_suffix(".md") == Some(name)
 }
 
 /// The first `@word` that was meant as a date and is not one.
@@ -448,6 +491,70 @@ mod tests {
         assert_eq!(back.due, t.due);
         assert_eq!(back.tags, t.tags);
         assert_eq!(back.priority, t.priority);
+    }
+
+    /// The fourth sigil. It addresses the capture and never reaches the file,
+    /// so the title it leaves behind is the title without it.
+    #[test]
+    fn a_list_is_addressed_and_not_written() {
+        let t = capture("call the accountant $work @thu !high", today());
+        assert_eq!(t.title, "call the accountant");
+        assert_eq!(t.raw, "- [ ] call the accountant @2026-08-13 !high");
+        assert_eq!(
+            list_of("call the accountant $work @thu !high"),
+            Some("work")
+        );
+    }
+
+    /// What is not an address. `$50` is money in a title — a letter has to come
+    /// first — and a second `$` is a word, the way a second `@` is.
+    #[test]
+    fn what_the_sigil_does_not_take() {
+        for text in ["$50 for the plumber", "the $ sign", "a$b", "$", "$-1"] {
+            assert_eq!(list_of(text), None, "{text}");
+            assert_eq!(capture(text, today()).title, text, "{text}");
+        }
+
+        assert_eq!(list_of("move it $work $home"), Some("work"));
+        assert_eq!(
+            capture("move it $work $home", today()).title,
+            "move it $home",
+            "the second one is a word"
+        );
+    }
+
+    /// `list_of` reads the text with `words` and the field colours it with
+    /// `parts`. Two readings of the same sentence are two chances to disagree,
+    /// so this pins them together: the word one addresses is the word the other
+    /// paints.
+    #[test]
+    fn the_address_and_the_colouring_agree() {
+        for text in [
+            "a $work b",
+            "$work",
+            "$50 and $work",
+            "the $ sign $home",
+            "a #work $work @thu",
+            "nothing at all",
+            "move it $work $home",
+        ] {
+            let painted = parts(text, today())
+                .into_iter()
+                .find(|(_, part)| *part == Part::List)
+                .map(|(range, _)| text[range].trim_start_matches('$').to_string());
+            assert_eq!(painted.as_deref(), list_of(text), "{text}");
+        }
+    }
+
+    /// A list is addressable by its name with or without the extension, and by
+    /// nothing else — `$work` must not pick up `homework.md`.
+    #[test]
+    fn which_file_an_address_names() {
+        assert!(names_list("work", "work.md"));
+        assert!(names_list("work.md", "work.md"));
+        for file in ["homework.md", "work.markdown", "Work.md", "todo.md"] {
+            assert!(!names_list("work", file), "{file}");
+        }
     }
 
     /// The word the preview is allowed to have an opinion about: an `@` that was

@@ -189,6 +189,34 @@ fn capture_target(paths: &[PathBuf]) -> &Path {
         .unwrap_or(&paths[0])
 }
 
+/// Which open list a `$work` is addressing, if any of them is.
+///
+/// `None` is refused by both callers rather than being turned into a new file:
+/// a capture that invents a list in the config directory is a surprise, and a
+/// new list is `touch` — docs/decisions.md#a-capture-always-goes-to-todomd--work-picks-the-list-2026-08-11.
+fn addressed_list<'a>(name: &str, paths: &'a [PathBuf]) -> Option<&'a Path> {
+    paths.iter().map(PathBuf::as_path).find(|path| {
+        path.file_name()
+            .is_some_and(|file| capture::names_list(name, &file.to_string_lossy()))
+    })
+}
+
+/// The file this capture is for: the one it named, or the default target.
+fn capture_into<'a>(text: &str, paths: &'a [PathBuf]) -> Result<&'a Path, String> {
+    match capture::list_of(text) {
+        Some(name) => addressed_list(name, paths).ok_or_else(|| format!("no list {name}.md")),
+        None => Ok(capture_target(paths)),
+    }
+}
+
+/// The open lists by file name, for the preview to resolve a `$` against.
+fn list_names(paths: &[PathBuf]) -> Vec<String> {
+    paths
+        .iter()
+        .filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned()))
+        .collect()
+}
+
 /// One open list: the file, what is in it, and enough to tell our own writes
 /// apart from somebody else's.
 struct Open {
@@ -375,10 +403,11 @@ fn sync(paths: &[PathBuf], to: &Path, loud: bool) -> Result<()> {
 
 fn add(paths: &[PathBuf], derived: &Derived, input: &str) -> Result<()> {
     let today = Local::now().date_naive();
+    let path = capture_into(input, paths)
+        .map_err(|why| anyhow::anyhow!("{why} — the lists are {}", list_names(paths).join(", ")))?;
     let task = capture::capture(input, today);
     let summary = text::added(&task, today);
 
-    let path = capture_target(paths);
     let loaded = write::load(path)?;
     let mut doc = loaded.doc;
     doc.push_task(task);
@@ -447,11 +476,15 @@ fn tui(paths: &[PathBuf], derived: Derived, theme_flag: Option<&str>) -> Result<
     // The capture target, because it is the file the empty screen is teaching
     // you to put your first task in.
     let shown_path = capture_target(paths).display().to_string();
+    // What a `$` in the input box has to resolve against, so the preview can
+    // answer it before `⏎` does.
+    let lists = list_names(paths);
     let render = ui::Render {
         colours: active_theme(theme_flag),
         glyphs: ui::Glyphs::for_locale(locale().as_deref()),
         today: Local::now().date_naive(),
         path: &shown_path,
+        lists: &lists,
     };
     let mut live = Live::read(paths, render.today, derived)?;
 
@@ -782,6 +815,18 @@ impl Live {
             _ => None,
         };
 
+        // `$` addresses a capture. An edit writes back to the file its task came
+        // from, and moving a line between two lists is two writes against two
+        // mtimes — not this key. Refused out loud rather than swallowed, because
+        // `capture` drops the word and silence would eat the user's text.
+        if let ui::Purpose::Edit(_) = input.purpose
+            && let Some(name) = capture::list_of(typed)
+        {
+            return Ok(ui::Notice::Warned(format!(
+                "${name} moves nothing - $ picks the list for a new task"
+            )));
+        }
+
         let mut fields = capture::capture(typed, today);
         let title = text::plain(&fields.title);
 
@@ -790,10 +835,13 @@ impl Live {
                 .files
                 .iter()
                 .position(|f| f.doc.tasks().any(|t| t.raw == raw)),
-            None => self
-                .files
-                .iter()
-                .position(|f| f.path == capture_target(paths)),
+            None => {
+                let target = match capture_into(typed, paths) {
+                    Ok(path) => path,
+                    Err(why) => return Ok(ui::Notice::Warned(format!("{why} to capture into"))),
+                };
+                self.files.iter().position(|f| f.path == target)
+            }
         };
         let Some(which) = which else {
             return Ok(ui::Notice::Warned(
@@ -1889,6 +1937,103 @@ mod tests {
             .find(|t| t.title == "buy milk")
             .expect("the captured task is not on screen");
         assert_eq!(added.file.as_deref(), Some("todo.md"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `$work` sends this one capture to `work.md` — the default target is not
+    /// touched, and the word is not written to either file.
+    #[test]
+    fn a_dollar_sends_the_capture_to_the_list_it_names() {
+        let (dir, paths, mut live) = open_several(
+            "capture-dollar",
+            &[("todo.md", "- [ ] mine\n"), ("work.md", "- [ ] theirs\n")],
+        );
+
+        live.save_typed(&paths, a_day(), &typed("buy milk $work", None))
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("work.md")).unwrap(),
+            "- [ ] theirs\n- [ ] buy milk\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("todo.md")).unwrap(),
+            "- [ ] mine\n"
+        );
+        let added = all_tasks(&live.files)
+            .into_iter()
+            .find(|t| t.title == "buy milk")
+            .expect("the captured task is not on screen");
+        assert_eq!(added.file.as_deref(), Some("work.md"));
+
+        // And with the extension typed out, which is the same list.
+        live.save_typed(&paths, a_day(), &typed("buy bread $work.md", None))
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("work.md")).unwrap(),
+            "- [ ] theirs\n- [ ] buy milk\n- [ ] buy bread\n"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A `$` naming no list is refused before anything is written. It does not
+    /// create the file, and it does not quietly fall back to `todo.md` either —
+    /// falling back would put the task somewhere the user did not ask for.
+    #[test]
+    fn a_dollar_naming_no_list_writes_nothing() {
+        let (dir, paths, mut live) = open_several(
+            "capture-nolist",
+            &[("todo.md", "- [ ] mine\n"), ("work.md", "- [ ] theirs\n")],
+        );
+
+        let notice = live
+            .save_typed(&paths, a_day(), &typed("buy milk $wrok", None))
+            .unwrap();
+        assert!(
+            matches!(&notice, ui::Notice::Warned(text) if text.contains("wrok.md")),
+            "{notice:?}"
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("todo.md")).unwrap(),
+            "- [ ] mine\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("work.md")).unwrap(),
+            "- [ ] theirs\n"
+        );
+        assert!(!dir.join("wrok.md").exists(), "a capture invented a list");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `$` addresses a capture. On an edit it is refused rather than swallowed:
+    /// `capture` drops the word, so a silent save would eat the user's text.
+    #[test]
+    fn a_dollar_in_an_edit_is_refused() {
+        let (dir, paths, mut live) = open_several(
+            "edit-dollar",
+            &[("todo.md", "- [ ] mine\n"), ("work.md", "- [ ] theirs\n")],
+        );
+
+        let notice = live
+            .save_typed(&paths, a_day(), &typed("mine $work", Some("- [ ] mine")))
+            .unwrap();
+        assert!(
+            matches!(&notice, ui::Notice::Warned(text) if text.contains("$work")),
+            "{notice:?}"
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("todo.md")).unwrap(),
+            "- [ ] mine\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("work.md")).unwrap(),
+            "- [ ] theirs\n"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

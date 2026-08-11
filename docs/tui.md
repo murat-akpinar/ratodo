@@ -282,6 +282,52 @@ While the input is open the keyboard belongs to it. `a`, `d` and `q` are letters
 in there, which is how "you can never be in a mode you did not open" is made
 true by construction rather than by discipline.
 
+### Which list — `$work`
+
+With several lists open, `a` still means `todo.md` — but a `$work` in the
+sentence sends that one capture to `work.md`, and the preview says so before
+`⏎` does anything:
+
+```
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │ add ▏call the accountant @thu $work                   │ │
+│  ├───────────────────────────────────────────────────────┤ │
+│  │      → work.md  ·  due Thursday (2026-08-13)          │ │
+│  └───────────────────────────────────────────────────────┘ │
+```
+
+The word never reaches the file — it is the address on the envelope, not part of
+the task — so the line saved is `- [ ] call the accountant @2026-08-13`. It is
+the fourth sigil and it comes out of the same `capture::parts` as the other
+three.
+
+A `$` naming no open list is the preview's **second** opinion, in the same colour
+as the first, and `⏎` refuses rather than creating the file:
+
+```
+│  │      no list wrok.md  ·  due Thursday (2026-08-13)     │ │
+```
+
+It waits, for the same reason the date warning waits. `$w`, `$wo` and `$wor` are
+all on their way to `$work`, and a line that says *no list w.md* four times
+before saying the right thing once is a line people learn to skip. It speaks
+when what has been typed is no longer the start of any open list. Staying quiet
+is not agreeing: `⏎` on a half-typed `$w` is refused all the same, because the
+refusal costs a keystroke and a wrong file costs a task.
+
+Unlike `@notaday`, a well-formed `$wrok` keeps the accent on the typed line while
+the preview says it goes nowhere. The colour is a promise about the *word* — the
+tokenizer did take this one as a list — and whether that list exists is a
+question about the directory, which is what the line below answers. Rejecting it
+in the tokenizer instead would mean handing `capture::parts` the contents of a
+directory, and it is the one function in the program with no world in it.
+
+`$` addresses a **capture**. A `$` on `⏎` is refused with a sentence saying so:
+what an edit writes is the file its task came from, and moving a line between
+two lists is two writes against two mtimes. The rest — why the default is fixed
+at all, why `$50` is money, and why the first `$` wins — is in
+[decisions.md](decisions.md#a-capture-always-goes-to-todomd--work-picks-the-list-2026-08-11).
+
 ### Putting a date off — `p`
 
 `p` opens the same box, and it is the same box for a reason: the caret, the

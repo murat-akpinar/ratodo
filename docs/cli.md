@@ -61,9 +61,23 @@ Four rules, and they are the whole feature:
 3. **A change goes back to the file it came from**, with that file's own mtime
    check and its own backup. A write never touches a list you were not editing.
 4. **A capture goes to `todo.md`** — or to the first list alphabetically when
-   there is no `todo.md`. It is a fixed answer on purpose: `a` must not mean a
-   different file depending on what the cursor happens to be over. Somewhere
-   else is `ratodo --file ~/.config/ratodo/work.md add '...'`.
+   there is no `todo.md` — **unless the sentence says otherwise with `$`.**
+   `a`, then `call the accountant $work`, and it lands in `work.md`. The default
+   is fixed on purpose, and `$` does not loosen it: `a` must not mean a different
+   file depending on what the cursor happens to be over, and the target here is
+   a word you typed rather than a scroll position. `$work` and `$work.md` are the
+   same list, the first `$` in the line is the one that counts, and a `$` naming
+   no list is **refused before the write** — a capture does not invent a file.
+   Making one is `touch ~/.config/ratodo/work.md`.
+
+   ```console
+   $ ratodo add 'call the accountant @thu $work'   # -> work.md
+   ```
+
+   It routes a **capture**. Editing a task with `⏎` writes back to the file that
+   task came from, and a `$` in there is refused rather than acted on: moving a
+   line between two lists is two writes against two mtimes, and it is not this
+   key. See [decisions.md](decisions.md#a-capture-always-goes-to-todomd--work-picks-the-list-2026-08-11).
 
 `done '<text>'` reads every list, so a title in the second file is found. A
 title in *two* files is ambiguous — it prints both and writes nothing, which is

@@ -163,6 +163,9 @@ Three lists: what is settled, what was rejected, and what is still open.
   was. A capture goes to `todo.md` rather than to whatever the cursor is over:
   `a` meaning a different file depending on the scroll position is the kind of
   surprise that loses a task. See [cli.md](cli.md#several-lists).
+  *`$work` in the sentence picks another list, since the same day and for the
+  same reason — the target is a word you typed, not a scroll position. See
+  [Reversed](#a-capture-always-goes-to-todomd--work-picks-the-list-2026-08-11).*
 - ✅ **A reader that closes the pipe is not an error** *(2026-08-11)*.
   `ratodo list | head` made `println!` panic. Every stdout write goes through
   `writeln!`, and `BrokenPipe` alone exits 0. See
@@ -242,6 +245,41 @@ no. Reopening one requires new information.
 | Automatic git commits | Tempting, but touching the user's git is dangerous even opt-in. Maybe an explicit `--commit` flag much later |
 
 ## Reversed
+
+### A capture always goes to `todo.md` → `$work` picks the list (2026-08-11)
+
+**Was:** rule 4 of [cli.md](cli.md#several-lists). A capture goes to `todo.md`,
+full stop; capturing into another list meant leaving the TUI for
+`ratodo --file ~/.config/ratodo/work.md add '...'`.
+
+**Now:** a `$work` anywhere in the input sends that one capture to `work.md`. It
+is a fourth sigil beside `@` `#` `!`, read by the same `capture::parts`, and the
+preview under the field answers it with `→ work.md` the way it answers `@thu`
+with a date. Without a `$`, the target is `todo.md` exactly as before.
+
+**Why the old reason survives intact.** It was never "one fixed file" for its
+own sake — it was *`a` must not mean a different file depending on what the
+cursor happens to be over*. A capture whose destination moves with the scroll
+position is how a task gets lost. `$work` is not that: the target is a **word
+the user typed**, in front of them, previewed before `⏎`. Same key, same
+sentence, same file, every time.
+
+**What it decides on the way past:**
+
+- **A `$` that names no list is refused before the write.** Not created. A
+  capture that quietly invents a file in the config directory is a surprise, and
+  a new list is `touch work.md` — the feature already has no manifest and no
+  setting, so it needs no back door either.
+- **`$` is capture only.** On `⏎`, moving an existing task between files is two
+  writes against two mtimes, and it is not this key. A `$` in an edit is refused
+  and says so, rather than being swallowed — `capture` drops the word from the
+  title, so silence would eat the user's text.
+- **`$50` is money.** The word after `$` has to start with a letter, which is
+  the reading a shell gives it too.
+- **The first `$` wins**, the way the first `@` does.
+- **With one list it still parses**, and refuses unless it names that list. `$`
+  has nothing to do there, and a syntax that means one thing on a one-file setup
+  and another on a two-file setup is worse than one that is simply unnecessary.
 
 ### `d` deletes and `X` cancels → `d` cancels and `X` deletes (2026-08-11)
 
