@@ -4,6 +4,11 @@
 
 - Stop a release for a human look before cargo publish ([063c924](https://github.com/murat-akpinar/ratodo/commit/063c9242b130cbbf210c711d5092328bfcb87e84))
 
+### 🎨 Styling
+
+- *(ui)* Light the box labels by weight, and put them in upper case ([6fa065b](https://github.com/murat-akpinar/ratodo/commit/6fa065bfb619f331cef26ecb9a47a955ce88a250))
+`ADD`, `EDIT` and `PUT OFF` are `foreground` and bold now - full brightness against the dim caret beside them - and `COPY` keeps the accent, because `COPY` is the only one with news. Lit, without a seventh meaning on the screen: a thirteenth theme role was the alternative, and the limit was never the palette but the other five built-ins and the reader.
+
 ### ⚙️ Miscellaneous Tasks
 
 - Point the PKGBUILD at v0.7.0 ([1801138](https://github.com/murat-akpinar/ratodo/commit/1801138859cbe09a6a533d433d5e78edd5a30956))
