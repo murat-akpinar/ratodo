@@ -4,7 +4,8 @@ Working rules for AI agents in this repository. Read [docs/README.md](docs/READM
 before touching anything — the decisions live there, not here.
 
 **Project:** ratodo — a todo TUI in Rust + ratatui. Single Markdown file, no
-cloud, no account. Currently in the design phase; there is no `src/` yet.
+cloud, no account. v0.1.0 is tagged; the code is the eight flat modules in
+`src/` described in [docs/architecture.md](docs/architecture.md#module-layout).
 
 ---
 

@@ -4,23 +4,17 @@
 
 **A todo TUI, built with ratatui — one Markdown file, no cloud, no account.**
 
-[![status](https://img.shields.io/badge/status-v1%20in%20progress-orange)](todo.md)
+[![release](https://img.shields.io/badge/release-v0.1.0-green)](https://github.com/murat-akpinar/ratodo/releases)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
-[![rust](https://img.shields.io/badge/rust-1.97%2B-orange)](https://www.rust-lang.org)
+[![rust](https://img.shields.io/badge/rust-1.88%2B-orange)](https://www.rust-lang.org)
 
 </div>
 
-> ⚠️ **Status: v1 in progress — unreleased.** Everything below is built and
-> tested: the command line, and the TUI with capture, editing, undo and folding.
-> What is left is a tag and packaging, so there is no crates.io release and no
-> AUR package yet — build it yourself. Progress in [`todo.md`](todo.md),
-> reasoning in [`docs/`](docs/README.md).
->
-> ```console
-> $ cargo build --release
-> $ ./target/release/ratodo --file ./todo-test.md add 'try ratodo @tomorrow #test'
-> $ ./target/release/ratodo --file ./todo-test.md
-> ```
+> **v0.1.0.** The command line and the TUI are built and tested — capture,
+> editing, undo, folding, themes and the `.ics` export. It is not on crates.io
+> or the AUR yet, so [build it](#install) from the tag. Reasoning behind every
+> decision is in [`docs/`](docs/README.md), what comes next in
+> [`todo.md`](todo.md).
 
 ## What it is
 
@@ -36,23 +30,21 @@ added: pay the invoice  ·  due tomorrow (2026-08-11)  ·  #home
 Then, when you want the overview, `ratodo` opens the agenda:
 
 ```
-┌─ ratodo ─ 5 open · 1 overdue ───────────── ▰▰▰▱▱▱▱▱ 3/8 ─┐
+┌ ratodo — 5 open · 1 overdue ───────────────── ▰▱▱▱▱▱▱▱ 1/6 ┐
+│  OVERDUE ───────────────────────────────────────────────── │
+│▌ ! rotate the backup keys                      2d ago  #ops│
 │                                                            │
-│ OVERDUE ─────────────────────────────────────────────────  │
-│   ! rotate the backup keys                   2d ago  #ops  │
+│  TODAY ─────────────────────────────────────────────────── │
+│  ○ pay the invoice                             today  #home│
+│  ○ review the deploy PR                        16:00  #work│
 │                                                            │
-│ TODAY ───────────────────────────────────────────────────  │
-│ ▌ ○ pay the invoice                                 #home  │
-│   ○ review the deploy PR                     16:00  #work  │
+│  THIS WEEK ─────────────────────────────────────────────── │
+│  ○ book a dentist appointment            Thu 09:30  #health│
+│  ✓ migrate the server                                   Wed│
 │                                                            │
-│ THIS WEEK ───────────────────────────────────────────────  │
-│   ○ book a dentist appointment         Thu 09:30  #health  │
-│   ✓ migrate the server                                     │
-│                                                            │
-│ LATER (3) ──────────────────────────────────────────── l   │
-│                                                            │
+│  LATER ─────────────────────────────────────────────────── │
+│  ○ write the release notes                           Aug 20│
 └────────────────────────────────────────────────────────────┘
-
  j k move   spc done   a add   ⏎ edit   ? keys   q quit
 ```
 
@@ -62,11 +54,20 @@ group, `e` for `$EDITOR` — one key per action, and `?` for the rest.
 
 Adding and editing are the only thing that opens a second mode, and `esc` or
 `ctrl-c` always closes it — in there `ctrl-c` costs you the sentence, never the
-session. While you type, the line under the field shows what it will become, so
-`@thu` becomes a real date in front of you.
+session. It opens as a box over the middle of the list, where your eye already
+is, and under a rule it shows what the line will become as you type:
 
-Nothing pops over the list, deleting is undoable with `u` instead of asking you
-to confirm, and it degrades to a 34-column pane in a tiling layout. Every screen:
+```
+┌────────────────────────────────────────────────────┐
+│ add ▏call the accountant @thu !high                │
+├────────────────────────────────────────────────────┤
+│      due Thursday (2026-08-13)  ·  !high           │
+└────────────────────────────────────────────────────┘
+```
+
+Only two things ever cover the list and you open both of them — that box and the
+`?` help. Deleting is undoable with `u` instead of asking you to confirm, and the
+screen degrades to a 34-column pane in a tiling layout. Every screen:
 [`docs/tui.md`](docs/tui.md).
 
 ## Why
@@ -268,15 +269,20 @@ cp completions/ratodo.fish ~/.config/fish/completions/ratodo.fish
 
 ## Install
 
-Not published yet. To build it now:
+Rust 1.88 or newer, and no other build dependency:
 
 ```console
 $ git clone https://github.com/murat-akpinar/ratodo && cd ratodo
-$ cargo build --release
-$ ./target/release/ratodo --help
+$ git checkout v0.1.0
+$ cargo install --path .        # → ~/.cargo/bin/ratodo
 ```
 
-Once v1 lands: `cargo install ratodo`.
+Or take the binary from the [release
+page](https://github.com/murat-akpinar/ratodo/releases) — x86_64 Linux, built
+against the system glibc.
+
+crates.io, a `flake.nix` and an AUR `PKGBUILD` are next; the tag had to exist
+first.
 
 ## Documentation
 

@@ -377,6 +377,17 @@ views and `ratodo archive` are all still v2.
       developer with one list per repository need `ratodo` to walk up the tree
       looking for a `TODO.md`? *Leaning: the env var buys most of it — `direnv`
       already solves per-directory. Ship that, then find out.*
+- [ ] **Should several files be readable in one agenda?** Somebody who keeps
+      `work.md`, `personal.md` and `2026.md` apart on disk may still want one
+      screen (raised 2026-08-11). Reading is the easy half — `agenda` already
+      takes a `&[Task]` from anywhere. The cost is everything downstream of it:
+      a `Task` would have to carry which `Doc` it came from so a write goes back
+      to the right file with the right mtime check and the right `.bak`;
+      `Task::identity` is section plus title, so two files with a `- [ ] fix the
+      tap` become the same task to `done`, to the cursor and to the `.ics` UID;
+      and a capture needs a rule for which file it lands in. *Leaning: v2, and
+      only if it survives the identity question — the fix is probably that
+      identity gains the file, which changes every UID once.*
 - [ ] Where does a captured task go in a file that ends with a table, a rule or a
       paragraph? Appending at EOF puts it outside every `##` section.
       *Leaning: insert after the last recognised task, fall back to EOF.*

@@ -1,6 +1,6 @@
 # ratodo — documentation
 
-> Status: **design phase, no code yet** · Last updated: 2026-08-10
+> Status: **v0.1.0 — built, tested and tagged** · Last updated: 2026-08-11
 
 This directory is the project's decision record. Every document here answers a
 different question, and each one states not only *what* was decided but *why*

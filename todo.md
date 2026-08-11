@@ -14,7 +14,7 @@ todo** (ugly, but real). If step 4 stalls, the project does not die.
 - [x] Design record written up in `docs/`
 - [x] `cargo init --name ratodo`
 - [x] `Cargo.toml`: GPL-3.0, MSRV 1.88 — deps added per step, not all seven up front
-- [ ] Verify truecolor: `printf "\x1b[38;2;203;166;247mmauve\x1b[0m\n"`
+- [x] Verify truecolor: `printf "\x1b[38;2;203;166;247mmauve\x1b[0m\n"`
 - [ ] Install khal or Thunderbird — to see the `.ics` displayed, not just parsed
 
 ## 1 — Fixtures (no terminal needed)
@@ -120,9 +120,9 @@ does not get to block the screen that audience actually opens. See
 - [x] `ratodo theme list` and `ratodo theme dump`
 - [x] The theme reaches the screen — the selected row keeps its own colour, so
       an overdue task is still red under the cursor
-- [ ] Verify `background = none` by eye in a transparent terminal. Asserted in a
-      test (every built-in ships `Color::Reset`) and confirmed in a pty by the
-      absence of a background escape, but nobody has looked at it yet
+- [x] Verify `background = none` by eye in a transparent terminal. Asserted in a
+      test (every built-in ships `Color::Reset`), confirmed in a pty by the
+      absence of a background escape, and looked at on 2026-08-11
 
 ## 6 — Assemble and apply the design
 
@@ -174,7 +174,7 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
 - [x] `cargo publish --dry-run` — 44 files, 157 KiB compressed. `exclude` keeps
       the machinery of working on the project out of it (`CLAUDE.md`, `.vscode`,
       `cliff.toml`, `scripts/`, `notes.md`, `todo.md`); `docs/` stays
-- [ ] Tag `v0.1.0`, generate the changelog with git-cliff
+- [x] Tag `v0.1.0`, generate the changelog with git-cliff
 - [ ] `flake.nix` (`rustPlatform.buildRustPackage`) and an AUR `PKGBUILD` — a tag
       has to exist first, so this is genuinely last
 
