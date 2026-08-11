@@ -52,6 +52,8 @@ Two reviews were run against the design, one from each profile this tool claims 
 
 - Close the holes mutation testing found ([2809f2a](https://github.com/murat-akpinar/ratodo/commit/2809f2ac2e8e76a52be20e8885a5ba4e5bd87a3f))
 The suite was green and partly decorative. `cargo mutants` breaks the source one edit at a time and checks that something goes red; on the first run 34 of 180 mutants survived, meaning 34 ways to break ratodo that no test objected to. It is now 0.
+- *(ui)* Drive the help key through a terminal ([0818b40](https://github.com/murat-akpinar/ratodo/commit/0818b40b6ce0f6887884ac7ddb96ce1a600ba3e2))
+The last missed mutant in the sweep: `helping = !helping` turned into `helping = helping` and nothing objected. The overlay itself was tested from both ends — the drawing one level down, the keymap one level up — and the wire between them was not.
 
 ### ⚙️ Miscellaneous Tasks
 
