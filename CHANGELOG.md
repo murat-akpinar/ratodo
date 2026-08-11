@@ -52,6 +52,8 @@ Four defects that two audience design reviews turned up in code that was already
 - *(cli)* Stop panicking when the reader closes the pipe ([6b8219c](https://github.com/murat-akpinar/ratodo/commit/6b8219c5d7f6429502d6cbea865e4ba8299906a6))
 `ratodo list | head -3` closed the pipe half way through and `println!` turned the next write into a panic — a backtrace and exit 101 for a command that did nothing wrong, and `| head` is the first thing this audience types. Found by running the binary, not by a test.
 - *(docs)* Match GitHub's anchor slugs, which hyphenate every space ([4a092ea](https://github.com/murat-akpinar/ratodo/commit/4a092eab7a82987273ace0f8d486f6864fb3d47d))
+- *(ui)* Let the caret move through the line being typed ([c9f7aba](https://github.com/murat-akpinar/ratodo/commit/c9f7aba3797ac44dc2b897f1440a025c78539474))
+The input field only ever appended: backspace took the last character and there was no way to reach any other one, so a typo four words back meant retyping four words. The caret now moves with the arrows, home and end, inserts and deletes where it stands, and the field scrolls with the caret rather than with the end of the line.
 
 ### 🚜 Refactor
 
