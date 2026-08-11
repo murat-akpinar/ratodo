@@ -10,6 +10,8 @@
 A task that is nearly one already on the list had no way in but `a` and the whole line again. `y` opens the input box pre-filled with the task under the cursor, as a new one: edit it, `⏎` saves a second task, `esc` writes nothing.
 - *(cli)* Route a capture with $list ([203f98b](https://github.com/murat-akpinar/ratodo/commit/203f98b600a0eb20e2dd3f7db0fc5c66579782a3))
 `a` wrote to todo.md and nothing else, so capturing into work.md meant leaving the TUI. `$work` in the sentence sends that one capture to work.md — a fourth sigil beside @ # !, read by the same capture::parts, and previewed as `→ work.md` the way `@thu` is previewed as a date.
+- *(ui)* Name the sigils in an empty input box ([1cc0db1](https://github.com/murat-akpinar/ratodo/commit/1cc0db16a08deb87911d029d09791e59d070fea8))
+An empty `a` box drew a blank preview row while the empty `p` box has always said `how long? 2 3d 1w fri`. It now reads `@thu #home !high $list` in the dim, by example rather than by name — the syntax and the hint in one word each, which is what the preview already does for anything typed. It goes the moment there is something to report, and `$list` appears only when there is more than one list to address.
 
 ### 🐛 Bug Fixes
 
