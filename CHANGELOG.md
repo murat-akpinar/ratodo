@@ -40,6 +40,8 @@ The keys `lf`, `ranger` and `yazi` users arrive with: `h` collapses the group un
 The cursor followed the raw line, so anything that rewrote it let go: a `ratodo done` in the next pane, a tag arriving over `git pull`, a date moved. The line is not the task.
 - *(ui)* Show what is finished on the title rule ([501905f](https://github.com/murat-akpinar/ratodo/commit/501905f853f138f9ed72e1140eaec428376d39b6))
 Eight cells and a `3/8` on the right of the top border. The screen had nothing to say about work that was done: `5 open · 1 overdue` counts what is left and stops there, which makes a todo list that never acknowledges the todo part.
+- *(ui)* Lay the right-hand fields out in columns past eighty ([1bd16ff](https://github.com/murat-akpinar/ratodo/commit/1bd16ff10e09cd3309e07d888b09a30e9244e72c))
+The right-aligned block only reads down its edge when every row ends in the same field, and they do not: `3d ago  !high  #ops` and `1d ago #home` are aligned as a blob, so the dates land somewhere different on every row. Past eighty columns the date, the priority and the tags become real columns, the title column is the widest title in the list, and the group rule stops where that column ends instead of running to an edge fifty columns away.
 
 ### 🐛 Bug Fixes
 
@@ -49,6 +51,7 @@ A review of the write path turned up two defects that would have bitten exactly 
 Four defects that two audience design reviews turned up in code that was already pushed. Each one is small; each one would have been noticed by exactly the person this tool is for.
 - *(cli)* Stop panicking when the reader closes the pipe ([6b8219c](https://github.com/murat-akpinar/ratodo/commit/6b8219c5d7f6429502d6cbea865e4ba8299906a6))
 `ratodo list | head -3` closed the pipe half way through and `println!` turned the next write into a panic — a backtrace and exit 101 for a command that did nothing wrong, and `| head` is the first thing this audience types. Found by running the binary, not by a test.
+- *(docs)* Match GitHub's anchor slugs, which hyphenate every space ([4a092ea](https://github.com/murat-akpinar/ratodo/commit/4a092eab7a82987273ace0f8d486f6864fb3d47d))
 
 ### 🚜 Refactor
 
