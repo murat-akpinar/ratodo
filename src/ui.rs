@@ -1393,7 +1393,9 @@ fn task_line(
         // beside the tags was the screen saying it back in a whisper. It borrows
         // the row's colour from nobody: `!high` on a late row used to be the same
         // red as the date, which is the one row where the two need telling apart.
-        let style = priority_style(task.priority.filter(|_| task.open()), dim, render);
+        // A ticked row keeps it too — the priority is a fact about the task and
+        // not a claim about what is left to do, which the `✓` already answers.
+        let style = priority_style(task.priority, dim, render);
         push(prio.unwrap_or_default(), cols.prio, style);
         // What is left of the row after the columns. A tag that does not fit is
         // dropped whole rather than cut: `#hea…` is not a filter, it is a
@@ -1592,8 +1594,9 @@ impl Notice {
 /// keys — one colour answering two questions answers neither
 /// (docs/design.md#what-each-colour-means).
 ///
-/// `None` is anything that is not urgent any more: a ticked or cancelled task is
-/// not `!high` however it was filed.
+/// `None` and `!low` are the quiet ones. Every row keeps its priority, ticked or
+/// not: it is a fact about the task rather than a claim about what is left to
+/// do, and the `✓` beside it already answers that.
 fn priority_style(priority: Option<Priority>, dim: Style, render: Render<'_>) -> Style {
     let loud = Style::default().fg(render.colours.priority);
     match priority {
@@ -3470,16 +3473,18 @@ mod tests {
         assert_eq!(late.fg, Some(colours.priority));
         assert_ne!(colours.priority, colours.accent);
 
-        // Finished work is not urgent, however it was filed — the same reason a
-        // ticked task stops saying how late it is.
-        for done in ["a @2026-08-14 !high", "a @2026-08-14 !med"] {
-            let ticked = style_of(done, true);
-            assert_eq!(ticked.fg, Some(colours.dim), "{done}");
-            assert!(
-                !ticked.add_modifier.contains(ratatui::style::Modifier::BOLD),
-                "{done}"
-            );
-        }
+        // A ticked row keeps it, and keeps its weight. The priority is a fact
+        // about the task, not a claim about what is left to do — the `✓` is what
+        // answers that, and a finished `!med` going grey beside an open `!high`
+        // read as the colour having failed rather than as the task being done.
+        let ticked = style_of("a @2026-08-14 !high", true);
+        assert_eq!(ticked.fg, Some(colours.priority));
+        assert!(ticked.add_modifier.contains(ratatui::style::Modifier::BOLD));
+        assert_eq!(
+            style_of("a @2026-08-14 !med", true).fg,
+            Some(colours.priority)
+        );
+        assert_eq!(style_of("a @2026-08-14 !low", true).fg, Some(colours.dim));
     }
 
     /// A row is built to a width and ratatui clips whatever overruns it, so an

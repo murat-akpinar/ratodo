@@ -53,7 +53,7 @@ of these rows.
 | `today` | **due today** | a row due today and its date |
 | `done` | **finished** | a ticked row, the `✓`, the progress bar |
 | `tag` | **a tag** | `#home`, on the row and in the box |
-| `priority` | **a priority** | `!high` bold, `!med` plain — `!low` is dim, because it asked to be |
+| `priority` | **a priority** | `!high` bold, `!med` plain, on every row ticked or not — `!low` is dim, because it asked to be |
 
 Two things follow from the table that are easy to get wrong:
 
@@ -73,10 +73,13 @@ Two things follow from the table that are easy to get wrong:
   list and `ADD`, `EDIT`, `COPY`, `PUT OFF` in the box. A user's heading keeps
   its `##` and its own casing; ours does not need one, because the case already
   says whose word it is.
-- **A field never borrows the row's colour.** `!high` on a late row used to be
-  drawn in `overdue`, which made the date and the priority the same red on the
-  one row where they most need telling apart. Every field keeps its own job's
-  colour whatever the row is doing.
+- **A field never borrows the row's colour, and never gives it up either.**
+  `!high` on a late row used to be drawn in `overdue`, which made the date and
+  the priority the same red on the one row where they most need telling apart;
+  and on a ticked row it used to go grey, which read as the colour having failed
+  rather than as the task being done. A priority is a fact about the task, and
+  the `✓` beside it is what says the work is over. Every field keeps its own
+  job's colour whatever the row is doing.
 
 ## Rules
 

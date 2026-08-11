@@ -180,8 +180,11 @@ Details that are decisions, not drawing:
   ([design.md](design.md#what-each-colour-means)). It borrows the row's colour
   from nobody either: on a late row the red date and the priority beside it stay
   two different things, which is the one row where they most need telling apart.
-  The weight is what survives `NO_COLOR=1`, where a colour says nothing at all. A
-  ticked or cancelled task is dim however it was filed.
+  The weight is what survives `NO_COLOR=1`, where a colour says nothing at all.
+  **A ticked or cancelled row keeps it**, because the priority is a fact about
+  the task and not a claim about what is left to do — the `✓` and the `✗` are
+  what answer that, and a finished `!med` going grey beside an open `!high` read
+  as the colour having failed.
 - Counts in the title bar are the same numbers a waybar module will show in v4
   ([roadmap.md](roadmap.md)). Same wording, one source.
 - **What is finished sits on the right of the title rule**, as eight cells and a

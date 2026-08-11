@@ -368,7 +368,13 @@ the palette with no job, and a priority is the only thing left that needs one.
 - **The weight.** `!high` is still the bold one, so `NO_COLOR=1` reads exactly
   as it did and nothing here is carried by colour alone.
 - **`!low` stays dim.** Three loud rows teach nothing about which is which.
-- **A ticked or cancelled task is dim**, however it was filed.
+
+*(Amended the same day: a **ticked or cancelled row keeps its priority colour**.
+It was dim at first, on the old rule that finished work is not urgent — but that
+rule is about the **date**, which stops applying the moment a task is ticked. A
+priority does not: it is a fact about the task, the `✓` and the `✗` already say
+the work is over, and a finished `!med` going grey beside an open `!high` read as
+the colour having failed rather than as the task being done.)*
 
 **And one thing it fixes.** `!high` used to be drawn in the *row's* colour, so on
 a late row the date and the priority were the same red — the one row where the
