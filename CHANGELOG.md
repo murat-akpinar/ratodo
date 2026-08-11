@@ -8,6 +8,8 @@
 ### 📚 Documentation
 
 - Put what is left at the top of todo.md ([bb63dcb](https://github.com/murat-akpinar/ratodo/commit/bb63dcb23567cdef37025ca82ff00ab96055ab78))
+- Record the swapped keys and the date-entry complaint ([853092b](https://github.com/murat-akpinar/ratodo/commit/853092b87394b2f002a280c054d12777d6e4ce82))
+todo.md and notes.md still had `d` deleting. The build record keeps what shipped, with the swap noted where it happened rather than rewritten out.
 ## [0.2.0] - 2026-08-11
 
 ### 🚀 Features
