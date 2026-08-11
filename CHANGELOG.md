@@ -8,6 +8,8 @@
 `@2026-13-45` resolves to nothing, so the word falls back to being part of the title. The fallback stays — a word we did not understand belongs to the user — but it was silent, and the preview went quiet in exactly the moment it should speak.
 - *(ui)* Copy the selected task with y ([4e0e6fd](https://github.com/murat-akpinar/ratodo/commit/4e0e6fd709e617eb06193c9fb0a25a85f17d707a))
 A task that is nearly one already on the list had no way in but `a` and the whole line again. `y` opens the input box pre-filled with the task under the cursor, as a new one: edit it, `⏎` saves a second task, `esc` writes nothing.
+- *(cli)* Route a capture with $list ([203f98b](https://github.com/murat-akpinar/ratodo/commit/203f98b600a0eb20e2dd3f7db0fc5c66579782a3))
+`a` wrote to todo.md and nothing else, so capturing into work.md meant leaving the TUI. `$work` in the sentence sends that one capture to work.md — a fourth sigil beside @ # !, read by the same capture::parts, and previewed as `→ work.md` the way `@thu` is previewed as a date.
 
 ### 🐛 Bug Fixes
 
