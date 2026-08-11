@@ -48,6 +48,8 @@ OVERDUE is ours and Work came out of the file, and as the same bold word plus th
 The one field somebody typed to mean urgent sat in the same grey as the date and the tags. It is bold now, in the row's own colour — weight rather than a twelfth theme role, so it still reads under NO_COLOR and does not collide with overdue on the rows that have both. !med and !low stay quiet, and a ticked task is not urgent however it was filed.
 - *(ui)* Colour the date only when it presses ([e520b4a](https://github.com/murat-akpinar/ratodo/commit/e520b4aff0c3c682ca864dcd7b68f426a8e4eb59))
 The date column is where the lateness is, and it was the one field saying so in grey while the title beside it went red. It takes overdue for a late task and today for one due today — the two roles the title already uses, so nothing new to theme — and stays dim for everything else. A finished task's date is dim whatever it says: it is neither late nor due.
+- *(ui)* [**breaking**] Open the input as a box over the list ([3e04464](https://github.com/murat-akpinar/ratodo/commit/3e04464ccac7ff6bd753dc4bef77fcaa9b58f67e))
+The bottom line was chosen so the screen would not change under the reader, and it was right about the wrong thing. This tool lives in a pane in the corner of a tiling layout, which puts that line at the bottom edge of the screen: every capture meant looking down there, away from the row being worked on. The head movement is the interruption.
 
 ### 🐛 Bug Fixes
 
