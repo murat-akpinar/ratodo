@@ -131,6 +131,12 @@ pub struct Input {
     /// The date field, while `tab` has it open. `None` is the whole of the box
     /// as it was: one line of text — docs/decisions.md#settled.
     pub field: Option<DateField>,
+    /// The date `a` put in the box, for as long as it is still in the line and
+    /// nobody has argued with it. `capture` gives the line to the **first** `@`,
+    /// and the first one here is the one nobody typed — so a typed `@thu` takes
+    /// this one's place rather than losing to it and leaving `@thu` sitting in
+    /// the title. docs/tui.md#adding.
+    opened_with: Option<String>,
 }
 
 /// `DD MM YYYY` with one part under the cursor.
@@ -363,11 +369,19 @@ impl Input {
             text,
             purpose,
             field: None,
+            opened_with: None,
         }
     }
 
-    pub fn adding() -> Self {
-        Input::new(String::new(), Purpose::Add)
+    /// Pre-filled with today, because that is the date a new task has more often
+    /// than every other date put together, and the box is where it is cheapest
+    /// to change — docs/tui.md#adding.
+    pub fn adding(today: NaiveDate) -> Self {
+        let opening = format!("@{today} ");
+        Input {
+            opened_with: Some(opening.clone()),
+            ..Input::new(opening, Purpose::Add)
+        }
     }
 
     /// Pre-filled with the task's text as it stands in the file, so an edit
@@ -406,8 +420,29 @@ impl Input {
             }
             return;
         }
+        if c == '@' {
+            self.drop_the_opening_date();
+        }
         self.text.insert(self.at, c);
         self.at += c.len_utf8();
+    }
+
+    /// Takes the date `a` opened with back out, because the user is typing one.
+    /// Once, and only while the line still holds it untouched: after that it is
+    /// their date and not ours.
+    fn drop_the_opening_date(&mut self) {
+        let Some(opening) = self.opened_with.take() else {
+            return;
+        };
+        let Some(from) = self.text.find(&opening) else {
+            return;
+        };
+        let to = from + opening.len();
+        self.text.replace_range(from..to, "");
+        self.at = match self.at {
+            at if at >= to => at - opening.len(),
+            at => at.min(from),
+        };
     }
 
     /// Backspace: the character *before* the caret.
@@ -4029,9 +4064,65 @@ mod tests {
             input.purpose.raw(),
             Some("  * [x] wash up @2026-08-12 #home")
         );
-        assert_eq!(Input::adding().purpose, Purpose::Add);
+        assert_eq!(Input::adding(today()).purpose, Purpose::Add);
         // At the end, so a retype carries on from where the line stops.
         assert_eq!(input.at, input.text.len());
+    }
+
+    /// `a` opens on today, because that is the date a new task has more often
+    /// than every other date put together and the box is where it is cheapest to
+    /// change. The trailing space is what makes it a prefix rather than an edit:
+    /// the title is typed straight on, and the caret is already there.
+    #[test]
+    fn adding_opens_with_todays_date_in_the_box() {
+        let input = Input::adding(today());
+        assert_eq!(input.text, "@2026-08-10 ");
+        assert_eq!(input.at, input.text.len());
+
+        // And it is a real date to everything downstream, not decoration: the
+        // preview reads it, and `capture` takes it out of the title.
+        let (lines, _) = input_lines(&input, 40, render(crate::theme::MOCHA));
+        let preview = lines[2]
+            .spans
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect::<String>();
+        assert!(preview.contains("2026-08-10"), "{preview:?}");
+    }
+
+    /// The date the box opened with loses to the date the user types. `capture`
+    /// gives the line to the first `@`, so without this the shorthand every
+    /// screenshot in the docs types would be the one that lost — and would sit
+    /// in the title afterwards, which is the silent half of the bug.
+    #[test]
+    fn a_typed_date_takes_the_opening_ones_place() {
+        let mut input = Input::adding(today());
+        for c in "milk @thu #home".chars() {
+            input.insert(c);
+        }
+        assert_eq!(input.text, "milk @thu #home");
+        assert_eq!(input.at, input.text.len());
+        assert_eq!(
+            crate::capture::capture(&input.text, today()).title,
+            "milk",
+            "the opening date was left in the title"
+        );
+
+        // Once. A second `@` is the user's own business — an address in a title
+        // is not a date and takes nothing with it.
+        let mut twice = Input::adding(today());
+        for c in "mail @thu bob@work".chars() {
+            twice.insert(c);
+        }
+        assert_eq!(twice.text, "mail @thu bob@work");
+
+        // And it is the *typed* `@` that does it, not the mere presence of a
+        // date: a title typed on its own keeps what the box opened with.
+        let mut plain = Input::adding(today());
+        for c in "milk".chars() {
+            plain.insert(c);
+        }
+        assert_eq!(plain.text, "@2026-08-10 milk");
     }
 
     /// `y` fills the box the same way `⏎` does and then means something else by
@@ -4634,7 +4725,10 @@ mod tests {
             ..render(crate::theme::MOCHA)
         };
         let line = |render: Render<'_>| {
-            let (lines, _) = input_lines(&Input::adding(), 28, render);
+            // Cleared rather than `adding`, which opens with today's date in it:
+            // the hint is what an *empty* box says, and emptying it is one `^u`.
+            let box_ = Input::new(String::new(), Purpose::Add);
+            let (lines, _) = input_lines(&box_, 28, render);
             lines[2]
                 .spans
                 .iter()
@@ -4913,7 +5007,7 @@ mod tests {
     fn the_input_covers_the_middle_and_moves_nothing() {
         let tasks = tasks(&["a @2026-08-10", "b", "c", "d"]);
         let quiet = rendered(40, 10, &tasks);
-        let busy = with_input(40, 10, &tasks, &Input::adding(), Glyphs::Unicode);
+        let busy = with_input(40, 10, &tasks, &Input::adding(today()), Glyphs::Unicode);
 
         // The box covers five rows of the middle. Everything outside it is the
         // screen the reader was already looking at — the list does not scroll,
@@ -4980,7 +5074,7 @@ mod tests {
     fn a_pane_too_short_for_the_preview_still_shows_the_field() {
         let tasks = tasks(&["a @2026-08-10"]);
         for height in [1u16, 2, 3, 4, 5] {
-            let screen = with_input(40, height, &tasks, &Input::adding(), Glyphs::Unicode);
+            let screen = with_input(40, height, &tasks, &Input::adding(today()), Glyphs::Unicode);
             assert_eq!(screen.len(), height as usize);
             // However short the pane gets, the two keys that end the input are
             // in the same place: the box is what gives way, not the way out.
@@ -4994,11 +5088,11 @@ mod tests {
 
         // Four rows: one for the bottom line leaves three, which is a border,
         // the field, and a border. The preview is the row that goes.
-        let short = with_input(40, 4, &tasks, &Input::adding(), Glyphs::Unicode);
+        let short = with_input(40, 4, &tasks, &Input::adding(today()), Glyphs::Unicode);
         assert!(short[1].contains(" add ▏"), "{short:?}");
         // Three rows leave two, and two rows are both border: nothing is drawn
         // rather than a box with nowhere to type in it.
-        let shorter = with_input(40, 3, &tasks, &Input::adding(), Glyphs::Unicode);
+        let shorter = with_input(40, 3, &tasks, &Input::adding(today()), Glyphs::Unicode);
         assert!(!shorter.iter().any(|r| r.contains("add")), "{shorter:?}");
     }
 

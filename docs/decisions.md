@@ -336,6 +336,34 @@ no. Reopening one requires new information.
 
 ## Reversed
 
+### The input box opens empty → it opens on today (2026-08-12)
+
+**Was:** `a` gave you an empty line, and the date was one more thing to type.
+`tab` opened the date field on today, which is the same answer two keystrokes
+further away and behind a key most people never press.
+
+**Now:** the box opens with `@2026-08-12 ` in it and the caret after it. Today is
+the date a new task has more often than every other date put together, and this
+is the one field the tool can guess right most of the time. Guessing it in the
+*box* rather than at the write is what keeps it honest: it is on the screen,
+under the preview, and one backspace from gone.
+
+**What it decides on the way past:**
+
+- **A typed `@thu` takes its place.** `capture` gives the line to the first `@`,
+  and the first one here is the one nobody typed — so without this the shorthand
+  in every screenshot in [tui.md](tui.md#adding) would lose, *and* be left
+  sitting in the title. It goes on the `@` keystroke, once, and only while the
+  line still holds it untouched. `bob@work` in a title takes nothing with it.
+- **A line of fields and no words is refused.** `@2026-08-12` on its own is a
+  date, not a task, and `a`+`⏎` is now two keys away from writing a titleless
+  line. It was reachable by typing `@thu` before this, and wrote one.
+- **The empty-box hint stays**, for a box you have emptied. It is what `@thu`
+  means that it teaches, and someone deleting the date is exactly who is
+  looking for it.
+- **`p` still opens empty.** Pre-filling a length of time with a guess makes the
+  common case *delete* something before typing — the opposite of this.
+
 ### A capture always goes to `todo.md` → `$work` picks the list (2026-08-11)
 
 **Was:** rule 4 of [cli.md](cli.md#several-lists). A capture goes to `todo.md`,

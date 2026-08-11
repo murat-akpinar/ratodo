@@ -832,6 +832,14 @@ impl Live {
         let mut fields = capture::capture(typed, today);
         let title = text::plain(&fields.title);
 
+        // A line that is all sigils and no words is a date, not a task — and
+        // since `a` now opens with one in it, saving it straight back is a
+        // keystroke away rather than a typo. `p` is exempt: what it was given is
+        // a length of time and the title it keeps is the task's own.
+        if moved_to.is_none() && title.trim().is_empty() {
+            return Ok(ui::Notice::Said("nothing typed".to_string()));
+        }
+
         let which = match input.purpose.raw() {
             Some(raw) => self
                 .files
@@ -1045,7 +1053,7 @@ fn run(
                         // while a line is being typed covers the thing the line
                         // is about.
                         ui::Action::Add => {
-                            input = Some(ui::Input::adding());
+                            input = Some(ui::Input::adding(today));
                             helping = false;
                         }
                         ui::Action::Change => match live.screen.task() {
@@ -1939,6 +1947,38 @@ mod tests {
         assert_eq!(task.identity(), format!("Work\u{1}review"));
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// A line of sigils and no words is a date, not a task. `a` opens with
+    /// `@today` already in it, so saving one straight back is a keystroke rather
+    /// than a typo — and a titleless line in the file is what it used to write.
+    #[test]
+    fn a_capture_with_nothing_but_fields_in_it_is_refused() {
+        let before = "- [ ] mine\n";
+        let (path, mut live) = open("titleless", before);
+
+        for text in ["@2026-08-10", "@thu #home !high", "  "] {
+            let notice = live
+                .save_typed(std::slice::from_ref(&path), a_day(), &typed(text, None))
+                .unwrap();
+            assert!(
+                matches!(&notice, ui::Notice::Said(s) if s == "nothing typed"),
+                "{text:?} gave {notice:?}"
+            );
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), before, "{text:?}");
+        }
+
+        // The date is not the problem — a title beside it is all it wanted.
+        live.save_typed(
+            std::slice::from_ref(&path),
+            a_day(),
+            &typed("@2026-08-10 buy milk", None),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "- [ ] mine\n- [ ] buy milk @2026-08-10\n"
+        );
     }
 
     /// `a` means the same file wherever the cursor is. The task the cursor was

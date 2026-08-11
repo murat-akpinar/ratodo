@@ -208,6 +208,26 @@ nothing is given up, and the box lands where the eye already is:
  ⏎ save   esc cancel
 ```
 
+**The box opens with today's date already in it**, and the caret after it:
+
+```
+│  │ add ▏@2026-08-12 ▏                                    │ │
+│  ├───────────────────────────────────────────────────────┤ │
+│  │      due today (2026-08-12)                           │ │
+```
+
+Today is the date a new task has more often than every other date put together,
+and the box is the cheapest place in the tool to change one — `tab` and the
+arrows, or four keystrokes over the digits. Type the title straight on; the
+fields come out in canonical order when it is written, so a date at the front of
+the box is a date at the back of the line.
+
+**A date you type takes that one's place.** `capture` gives the line to the
+first `@`, and the first one here is the one nobody typed — so the shorthand
+every example above uses still wins, and the opening date does not end up
+stranded in the title. It goes on the `@` keystroke and it goes once: a second
+`@` is a word in a title, and `bob@work` takes nothing with it.
+
 **The box, and not the bottom line, because of where the bottom line is.** In a
 pane in the corner of a tiling layout that line sits at the bottom edge of the
 screen, and glancing down there to type is the head movement this tool exists to
@@ -230,7 +250,8 @@ it proves the shorthand actually did what you meant.
 If nothing parses, the preview line stays empty rather than showing an error —
 plain text is a perfectly good task.
 
-**An empty box says what can go in it**, by example rather than by name:
+**A box you have emptied says what can go in it**, by example rather than by
+name — backspace over the date it opened with, and the hint is there:
 
 ```
 │  ┌───────────────────────────────────────────────────────┐ │
