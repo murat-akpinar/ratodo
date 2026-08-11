@@ -1,5 +1,10 @@
 ## [unreleased]
 
+### 🚀 Features
+
+- *(ui)* [**breaking**] Swap the delete and cancel keys ([e1e5b41](https://github.com/murat-akpinar/ratodo/commit/e1e5b41b9b829b63dffeef2ab58a160c94d129c3))
+`d` cancels and `X` deletes, the other way round from v0.2.0. The shift was on the wrong key: cancelling is reversible — `d` again takes it back and the row stays in the file as `- [-]` — while deleting takes a line out of the user's file behind one level of undo that a `q` spends. The key that costs the most is the one that should cost a shift, and `d` sitting a row from `j` and `k` made the cheap key the destructive one.
+
 ### 📚 Documentation
 
 - Put what is left at the top of todo.md ([bb63dcb](https://github.com/murat-akpinar/ratodo/commit/bb63dcb23567cdef37025ca82ff00ab96055ab78))
