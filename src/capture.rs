@@ -7,43 +7,106 @@ use chrono::{Datelike, Days, NaiveDate, NaiveTime, Weekday};
 
 use crate::model::{Due, Priority, Task};
 
+/// What `capture` made of one word.
+///
+/// The input field colours by this rather than by the leading character, so a
+/// `@notaday` stays plain on screen exactly as it will in the file — a colour
+/// that promises more than the parser delivers teaches the wrong syntax.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Part {
+    Text,
+    Date,
+    /// The `HH:MM` after a date, which the date has already taken.
+    Time,
+    Tag,
+    Priority,
+}
+
+/// Every word of `text` as a byte range, paired with what it means.
+///
+/// The one tokenizer: `capture` builds the task out of this and the input field
+/// colours it, so the screen cannot drift from the parse. See docs/tui.md#adding.
+pub fn parts(text: &str, today: NaiveDate) -> Vec<(std::ops::Range<usize>, Part)> {
+    let words = words(text);
+    let mut out = Vec::with_capacity(words.len());
+    let mut dated = false;
+    let mut i = 0;
+
+    while i < words.len() {
+        let (at, word) = words[i];
+        let range = at..at + word.len();
+
+        if let Some(rest) = word.strip_prefix('@')
+            && !dated
+            && resolve_date(rest, today).is_some()
+        {
+            dated = true;
+            out.push((range, Part::Date));
+            i += 1;
+            // A time only counts as one directly after a date. On its own it is
+            // words in a title, and `09:30 standup` is a title somebody typed.
+            if let Some(&(at, next)) = words.get(i)
+                && parse_time(next).is_some()
+            {
+                out.push((at..at + next.len(), Part::Time));
+                i += 1;
+            }
+            continue;
+        }
+
+        let part = match word {
+            w if w.strip_prefix('#').is_some_and(|tag| !tag.is_empty()) => Part::Tag,
+            w if parse_priority(w).is_some() => Part::Priority,
+            _ => Part::Text,
+        };
+        out.push((range, part));
+        i += 1;
+    }
+    out
+}
+
+/// `split_whitespace` with the offsets kept, which is the whole difference: the
+/// field has to know *where* a word is to colour it.
+fn words(text: &str) -> Vec<(usize, &str)> {
+    let mut out = Vec::new();
+    let mut start = None;
+    for (i, c) in text.char_indices() {
+        match (c.is_whitespace(), start) {
+            (true, Some(s)) => {
+                out.push((s, &text[s..i]));
+                start = None;
+            }
+            (false, None) => start = Some(i),
+            _ => {}
+        }
+    }
+    if let Some(s) = start {
+        out.push((s, &text[s..]));
+    }
+    out
+}
+
 pub fn capture(text: &str, today: NaiveDate) -> Task {
-    let words: Vec<&str> = text.split_whitespace().collect();
     let mut title: Vec<&str> = Vec::new();
     let mut due: Option<Due> = None;
     let mut tags: Vec<String> = Vec::new();
     let mut priority: Option<Priority> = None;
-    let mut i = 0;
 
-    while i < words.len() {
-        let word = words[i];
-
-        if let Some(rest) = word.strip_prefix('@')
-            && due.is_none()
-            && let Some(date) = resolve_date(rest, today)
-        {
-            let time = words.get(i + 1).and_then(|w| parse_time(w));
-            due = Some(Due { date, time });
-            i += if time.is_some() { 2 } else { 1 };
-            continue;
+    for (range, part) in parts(text, today) {
+        let word = &text[range];
+        match part {
+            Part::Text => title.push(word),
+            Part::Date => {
+                due = resolve_date(&word[1..], today).map(|date| Due { date, time: None })
+            }
+            Part::Time => {
+                if let Some(due) = due.as_mut() {
+                    due.time = parse_time(word);
+                }
+            }
+            Part::Tag => tags.push(word[1..].to_string()),
+            Part::Priority => priority = parse_priority(word),
         }
-
-        if let Some(tag) = word.strip_prefix('#')
-            && !tag.is_empty()
-        {
-            tags.push(tag.to_string());
-            i += 1;
-            continue;
-        }
-
-        if let Some(p) = parse_priority(word) {
-            priority = Some(p);
-            i += 1;
-            continue;
-        }
-
-        title.push(word);
-        i += 1;
     }
 
     Task::new(false, title.join(" "), due, tags, priority)

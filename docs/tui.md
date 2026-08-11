@@ -183,6 +183,18 @@ it proves the shorthand actually did what you meant.
 If nothing parses, the preview line stays empty rather than showing an error —
 plain text is a perfectly good task.
 
+**The field colours itself as you type**, and it colours by what the parser
+*took*: `@thu` and the `09:30` the date took with it go `accent`, `#home` goes
+`tag`, `!high` goes bold. A `@notaday` stays plain text, because that is what it
+will be in the file — a colour that promises more than the parser delivers
+teaches a syntax the format does not have. The preview says *what* was
+understood; the colour says *where*, on the words themselves, which is where the
+typo is.
+
+Both readings come from one tokenizer: `capture::parts` hands out every word with
+what it means, and `capture` builds the task out of the same list. Two readings
+of the same text would drift, and the day they did the field would be lying.
+
 `⏎` saves and closes. `esc` cancels and the text is discarded. `ctrl-c` does the
 same — in here it is not the quit key. `e` is still the way out to `$EDITOR` for
 anything more involved.

@@ -97,6 +97,15 @@ Three lists: what is settled, what was rejected, and what is still open.
   survives the ASCII fallback. The alternatives — dropping the rule from the
   user's headings, or indenting ours — each spent a level of hierarchy the
   design does not have. See [tui.md](tui.md#main-screen).
+- ✅ **The input field is coloured by the parse, not by the leading character**
+  *(2026-08-11)*. `@thu`, `#home` and `!high` light up as they are typed;
+  `@notaday` stays plain, because that is what the file will hold. Rejected on
+  the way: splitting the input into `text | date | tag` sub-fields with `tab`
+  between them — it puts a focus state inside the input mode, and an edit would
+  have to take an existing line apart into fields and put it back, which a line
+  with two tags or a title after the tag does not survive intact. `capture::parts`
+  is the one tokenizer both the field and the parse read. See
+  [tui.md](tui.md#adding).
 - ✅ **The ASCII fallback covers the overlay too** *(2026-08-11)*. `↓ ↑` and `⏎`
   were literals in the key list, `…` was a literal in `shorten`, and `·` came out
   of `text::fields`. The separator is now the caller's, because stdout does not

@@ -1089,13 +1089,39 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
     );
     let at = columns(&head) + columns(&before);
 
-    let field = Line::from(vec![
-        Span::styled(head, dim),
-        Span::styled(
-            format!("{before}{after}"),
-            Style::default().fg(render.colours.foreground),
-        ),
-    ]);
+    // What is on screen, as byte offsets into the whole line, so the colouring
+    // below can be asked about the text rather than about the window.
+    let (from, to) = (input.at - before.len(), input.at + after.len());
+    let plain = Style::default().fg(render.colours.foreground);
+
+    // Coloured while it is typed, and coloured by what the parser **took**: a
+    // `@notaday` stays plain here exactly as it will in the file. This is the
+    // preview's job done a second way — the preview says what it understood, and
+    // this says where — docs/tui.md#adding.
+    let mut spans = vec![Span::styled(head, dim)];
+    let mut cut = from;
+    for (word, part) in crate::capture::parts(&input.text, render.today) {
+        if part == crate::capture::Part::Text || word.end <= from || word.start >= to {
+            continue;
+        }
+        let (start, end) = (word.start.max(from), word.end.min(to));
+        if start > cut {
+            spans.push(Span::styled(input.text[cut..start].to_string(), plain));
+        }
+        spans.push(Span::styled(
+            input.text[start..end].to_string(),
+            match part {
+                crate::capture::Part::Tag => Style::default().fg(render.colours.tag),
+                crate::capture::Part::Priority => plain.bold(),
+                _ => Style::default().fg(render.colours.accent),
+            },
+        ));
+        cut = end;
+    }
+    if cut < to {
+        spans.push(Span::styled(input.text[cut..to].to_string(), plain));
+    }
+    let field = Line::from(spans);
 
     let parsed = crate::capture::capture(&input.text, render.today);
     let (_, dot) = render.glyphs.punctuation();
@@ -3217,6 +3243,74 @@ mod tests {
         input.home();
         input.delete();
         assert_eq!((input.text.as_str(), input.at), ("sh bşu", 0));
+    }
+
+    /// The field is coloured by what the parser **took**, not by the leading
+    /// character: `@notaday` is a word in a title and has to look like one, or
+    /// the field teaches a syntax the file does not have — docs/tui.md#adding.
+    #[test]
+    fn the_field_colours_what_the_parser_understood_and_nothing_else() {
+        let colours = crate::theme::MOCHA;
+        let input = Input::new("pay @thu 09:30 #home !high @notaday".to_string(), None);
+        let (lines, _) = input_lines(&input, 60, render(colours));
+        let spans: Vec<(&str, Style)> = lines[0]
+            .spans
+            .iter()
+            .map(|s| (s.content.as_ref(), s.style))
+            .collect();
+
+        let style = |want: &str| {
+            spans
+                .iter()
+                .find(|(text, _)| text.contains(want))
+                .unwrap_or_else(|| panic!("{want} is not its own span: {spans:?}"))
+                .1
+        };
+
+        assert_eq!(style("@thu").fg, Some(colours.accent));
+        // The time belongs to the date that took it.
+        assert_eq!(style("09:30").fg, Some(colours.accent));
+        assert_eq!(style("#home").fg, Some(colours.tag));
+        assert!(
+            style("!high")
+                .add_modifier
+                .contains(ratatui::style::Modifier::BOLD)
+        );
+
+        // The second `@` resolves to nothing, so it is title text — and it must
+        // not be a span of its own at all.
+        let plain = style("@notaday");
+        assert_eq!(plain.fg, Some(colours.foreground));
+        assert!(!plain.add_modifier.contains(ratatui::style::Modifier::BOLD));
+    }
+
+    /// The colouring is asked about the whole line and drawn over a window of
+    /// it, so a word half off the left edge has to be cut, not dropped — and the
+    /// byte arithmetic that does it must not walk off a multi-byte character.
+    #[test]
+    fn colouring_survives_a_line_wider_than_the_field() {
+        let colours = crate::theme::MOCHA;
+        let mut input = Input::new(
+            "şşşş bir hayli uzun bir cümle @tomorrow #ev burada biter".to_string(),
+            None,
+        );
+        // Every caret position the keys can actually produce — `at` is only ever
+        // moved by whole characters.
+        let stops: Vec<usize> = input
+            .text
+            .char_indices()
+            .map(|(i, _)| i)
+            .chain([input.text.len()])
+            .collect();
+        for width in [12, 20, 34, 60] {
+            for at in stops.iter().copied() {
+                input.at = at;
+                let (lines, cursor) = input_lines(&input, width, render(colours));
+                let drawn: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+                assert!(columns(&drawn) <= width, "{width}/{at}: {drawn:?}");
+                assert!(cursor < width, "{width}/{at}: the caret left the field");
+            }
+        }
     }
 
     /// The window follows the caret. Scrolling only ever to the end of the line
