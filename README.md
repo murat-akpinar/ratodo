@@ -8,6 +8,10 @@
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.88%2B-orange)](https://www.rust-lang.org)
 
+<img src="https://raw.githubusercontent.com/murat-akpinar/ratodo/main/assets/demo.gif"
+     alt="The agenda, grouped by date. A task is ticked off, and a new one is typed as a single line — buy coffee beans @fri #home !high — with the date resolving live underneath."
+     width="820">
+
 </div>
 
 > **v0.5.0, on crates.io.** `cargo install ratodo`. The command line and the TUI

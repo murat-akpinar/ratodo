@@ -12,9 +12,12 @@ categories = ["command-line-utilities"]
 
 # `docs/` stays in — it is the decision record, it is what this project is, and
 # `docs/examples/todo.md` is the fixture a test keeps in sync. What goes is the
-# machinery of working *on* it, which nobody installing the binary needs.
+# machinery of working *on* it, which nobody installing the binary needs —
+# `assets/` included, because the README points at the GIF by URL and would
+# carry a third of a megabyte into every install for nothing.
 exclude = [
     ".vscode/",
+    "assets/",
     "CLAUDE.md",
     "cliff.toml",
     "flake.nix",

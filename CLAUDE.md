@@ -140,6 +140,7 @@ recorded in [docs/decisions.md](docs/decisions.md), not applied silently.
 | `todo.md` | The task list. Work top to bottom |
 | `README.md` | User-facing. English, and the first sentence says "built **with** ratatui" — never "for" |
 | `scripts/check-docs.py` | Verifies every relative Markdown link and anchor resolves |
+| `scripts/demo.py` | Records `assets/demo.gif` for the README. Needs kitty, menyoki, ffmpeg, X11 |
 | `cliff.toml` | git-cliff config. Conventional commits required |
 | `CHANGELOG.md` | Generated. Never edit by hand |
 
