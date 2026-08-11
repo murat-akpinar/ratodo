@@ -27,7 +27,13 @@ The task-by-task breakdown is in [../todo.md](../todo.md).
 - `ratodo archive` — move completed tasks into `## Done`
 - `config.toml` arrives here (and with it, `serde`)
 - Theme hot reload — `theme.conf` joins the `notify` watch list
-- `--as-events` flag for calendar clients that ignore VTODO
+- `--as-events` flag for calendar clients that ignore VTODO. **Measured, not
+  assumed** *(2026-08-11)*: khal shows none of a generated `todo.ics` while a
+  hand-written VEVENT in the same directory under the same config appears, so it
+  is the entry type being ignored and not our output being malformed. Every ❌ in
+  the table in [calendar.md](calendar.md#️-there-is-no-such-thing-as-the-linux-calendar)
+  would draw the same tasks as events. Until then the answer is `todoman`, which
+  reads VTODO and works today
 
 ## v3 — Recurrence and deferral
 
