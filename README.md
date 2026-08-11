@@ -38,7 +38,7 @@ Then, when you want the overview, `ratodo` opens the agenda:
 ```
 ┌ ratodo — 5 open · 1 overdue ───────────────── ▰▱▱▱▱▱▱▱ 1/6 ┐
 │  OVERDUE ───────────────────────────────────────────────── │
-│▌ ! rotate the backup keys                      2d ago  #ops│
+│▌ ! rotate the backup keys               2d ago  !high  #ops│
 │                                                            │
 │  TODAY ─────────────────────────────────────────────────── │
 │  ○ pay the invoice                             today  #home│
@@ -90,7 +90,7 @@ on your fingers:
 ┌────────────────────────────────────────────────────┐
 │ add ▏renew the passport                            │
 ├────────────────────────────────────────────────────┤
-│      [11] 08  2026  ↓ ↑                            │
+│      [10] 08  2026  ↓ ↑                            │
 └────────────────────────────────────────────────────┘
 ```
 
