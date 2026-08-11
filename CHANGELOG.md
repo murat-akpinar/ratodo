@@ -6,6 +6,8 @@
 Somebody who keeps work.md, personal.md and 2026.md apart on disk still wants one screen. Every `*.md` in the config directory is now a list; `--file` and `$RATODO_FILE` still name exactly one.
 - *(format)* [**breaking**] A third state, a completion date, and p to put one off ([fd38a23](https://github.com/murat-akpinar/ratodo/commit/fd38a23309f65f02796e4a00ced507094e76c50e))
 Four things the list could not say, and one it said too quietly.
+- *(ui)* A cancelled row is red ([2433653](https://github.com/murat-akpinar/ratodo/commit/2433653b6ac006b6091a8c28d75806e2026ff188))
+Grey said *finished*, and a cancelled task is the opposite of finished — it is the one that will not be. Three states wanted three colours and the alternatives were both worse: a twelfth theme role for one row, or leaving cancelled looking like something that had been dealt with.
 
 ### 🐛 Bug Fixes
 
