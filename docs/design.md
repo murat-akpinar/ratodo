@@ -38,20 +38,24 @@ change any of them.
 
 - **One accent colour (mauve) plus greys.** If everything is coloured, nothing is
   emphasised.
-- **Red is only for overdue.** Nowhere else.
+- **Red is the negative outcome**: overdue, and cancelled. *(Was "only for
+  overdue" — widened 2026-08-11, see [decisions.md](decisions.md#reversed).)*
+  Nowhere else. `!` and `✗` are what tell the two apart, which is the symbol
+  rule below doing the job it exists for.
 - **Green is only for completed.** Both are earned meanings; don't dilute them.
   The progress bar in the title rule is green for exactly this reason: it is the
   only other thing in the product that means *finished*, so it does not get a
-  colour of its own.
+  colour of its own — and the finished **row** wears it too, since the row is
+  the thing that earned it.
 - Two levels of hierarchy: task title bright, date/tags `dim`. There is no third.
 - Generous whitespace. The blank lines between groups are half of the design.
 - **One layout, no split panes.** No sidebar, no modal. There is one list.
-- `○ ✓ !` symbols — never rely on colour alone (colour blindness, and so output
+- `○ ✓ ✗ !` symbols — never rely on colour alone (colour blindness, and so output
   survives being copy-pasted).
-  ⚠️ These are **screen symbols only**, not file syntax. The file contains only
-  `[ ]` and `[x]`; `!` means overdue and is derived from the date. `- [!]` is
-  never written to the file.
-- **Do not depend on a Nerd Font.** An ASCII fallback is mandatory: `[ ]` `[x]` `[!]`.
+  ⚠️ `!` is a **screen symbol only**, derived from the date, and `- [!]` is
+  never written to the file. `○ ✓ ✗` do have file forms — `[ ]` `[x]` `[-]` —
+  and those three are the whole of it. See [format.md](format.md#the-three-states).
+- **Do not depend on a Nerd Font.** An ASCII fallback is mandatory: `[ ]` `[x]` `[-]` `[!]`.
 - **Do not use strikethrough.** crossterm supports it, but terminal support is
   inconsistent and for half the users a completed task becomes unreadable. Dim
   colour plus `✓` is enough.

@@ -107,11 +107,13 @@ Details that are decisions, not drawing:
 
 - **`▌` is the selection**, in `accent`, with the row on `selection` background.
   A colour alone is not enough — see [design.md](design.md#rules).
-- **A finished row is green** — `done`, the colour [design.md](design.md#rules)
-  reserved for exactly this and had spent only on the progress bar. Ticking a
-  task was the one action on this screen that said nothing back. A **cancelled**
-  row (`✗`) keeps the grey: it is off the list, not finished, and the two must
-  not read alike.
+- **A finished row is green and a cancelled one is red.** Green is `done`, the
+  colour [design.md](design.md#rules) reserved for exactly this and had spent
+  only on the progress bar — ticking a task was the one action on this screen
+  that said nothing back. Red is `overdue`, shared with a late task: the rule
+  widened from "red is only for overdue" to "red is the negative outcome", and
+  `✗` against `!` is what still separates them. Three states, three colours,
+  and none of them carried by colour alone.
 - **A finished row's date is the day it was finished**, not the day it was due —
   that deadline stopped applying the moment it was ticked, and the completion
   date is the one date about it still worth the width. It only ever displaces

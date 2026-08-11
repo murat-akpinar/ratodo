@@ -1702,24 +1702,23 @@ fn progress(
     ]))
 }
 
-/// Red is only for overdue and green only for done — docs/design.md#rules — so
-/// this is the whole of the colour logic and there is nowhere else to add to it.
+/// Green is for done and red for the negative outcome — docs/design.md#rules —
+/// so this is the whole of the colour logic and there is nowhere else to add to
+/// it.
 ///
 /// Green was spent on the progress bar alone and the row that earned it was
 /// grey, which made ticking a task the one action on this screen that said
-/// nothing back. A cancelled row keeps the grey: it is off the list, not
-/// finished, and the two must not read alike.
+/// nothing back. Red widened from "only for overdue" to cover cancelled as
+/// well, a deliberate reversal recorded in docs/decisions.md: `✗` against `!`
+/// is what tells those two apart, and the rule that nothing is carried by
+/// colour alone is why a shared colour is enough.
 fn task_colour(task: &Task, today: NaiveDate, colours: Theme) -> Color {
-    if task.done() {
-        colours.done
-    } else if task.state == State::Cancelled {
-        colours.done_text
-    } else if task.is_overdue(today) {
-        colours.overdue
-    } else if task.due.is_some_and(|d| d.date == today) {
-        colours.today
-    } else {
-        colours.foreground
+    match task.state {
+        State::Done => colours.done,
+        State::Cancelled => colours.overdue,
+        State::Open if task.is_overdue(today) => colours.overdue,
+        State::Open if task.due.is_some_and(|d| d.date == today) => colours.today,
+        State::Open => colours.foreground,
     }
 }
 
@@ -3832,22 +3831,33 @@ mod tests {
         assert!(!late.is_overdue(today()));
     }
 
-    /// Green is the tick saying something back. Cancelled keeps the grey: it is
-    /// off the list, not finished, and the two must not read alike.
+    /// Green is the tick saying something back; red is the other outcome. The
+    /// three states are three colours, and a cancelled row shares `overdue`
+    /// with a late one — `✗` against `!` is what separates those two, which is
+    /// the rule that nothing is carried by colour alone doing its job.
     #[test]
-    fn a_cancelled_row_is_not_coloured_like_a_finished_one() {
+    fn each_state_gets_its_own_colour() {
         let colours = crate::theme::MOCHA;
         let mut task = capture("a @2026-08-01", today());
+
+        assert_eq!(task_colour(&task, today(), colours), colours.overdue);
 
         task.set_state(State::Done, today());
         assert_eq!(task_colour(&task, today(), colours), colours.done);
 
         task.set_state(State::Cancelled, today());
-        assert_eq!(task_colour(&task, today(), colours), colours.done_text);
+        assert_eq!(task_colour(&task, today(), colours), colours.overdue);
         assert_ne!(
-            colours.done, colours.done_text,
-            "the two states would be indistinguishable"
+            colours.done, colours.overdue,
+            "finished and cancelled would be indistinguishable"
         );
+
+        // A cancelled task that was never late is red all the same: it is the
+        // state that is being said, not the date.
+        let mut fine = capture("a @2099-01-01", today());
+        fine.set_state(State::Cancelled, today());
+        assert_eq!(task_colour(&fine, today(), colours), colours.overdue);
+        assert!(!fine.is_overdue(today()));
     }
 
     /// A capture box that hides what you are typing is not a capture box, so the

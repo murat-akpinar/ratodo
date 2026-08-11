@@ -56,7 +56,7 @@ action, and `?` for the rest.
 Ticking something turns the row green and records the day in the file
 (`✓2026-08-11`); the row then shows when it was finished rather than when it was
 due. `X` is the third state — decided against, not done — which stays on the list
-as `- [-]` instead of being deleted, out of the counts and never overdue. `p`
+as `- [-]` in red instead of being deleted, out of the counts and never overdue. `p`
 asks how long (`2`, `3d`, `1w`, `fri`) and moves the date alone, keeping the time
 and everything else on the line.
 

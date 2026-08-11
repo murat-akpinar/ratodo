@@ -219,6 +219,28 @@ no. Reopening one requires new information.
 
 ## Reversed
 
+### Red — only for overdue, then for the negative outcome (2026-08-11)
+
+**Was:** "**Red is only for overdue.** Nowhere else." A cancelled row was drawn
+in the grey a finished row had just given up.
+
+**Now:** a cancelled row is `overdue` too. The rule reads "red is the negative
+outcome": overdue, and cancelled.
+
+**Why:** grey said *finished*, and a cancelled task is the opposite of finished
+— it is the one that will not be. Three states wanted three colours, and the
+alternatives were both worse: a twelfth theme role for one row, or leaving
+cancelled looking like something that had been dealt with.
+
+The cost is real and was weighed: red is the screen's loudest colour and a
+cancelled task needs the least attention on it, so a cancelled row now pulls the
+eye harder than the overdue one above it. What makes that survivable is the rule
+this design has had from the start — **nothing is carried by colour alone**. `✗`
+and `!` are different symbols, they are different in the ASCII fallback
+(`[-]` and `[!]`), and they are different under `NO_COLOR`, where the whole
+question disappears. If it turns out to read badly in practice, the way back is
+a twelfth role, not a return to grey.
+
 ### A finished row — grey, then green (2026-08-11)
 
 **Was:** a completed task was drawn in `done_text`, a grey. `done` — the green —

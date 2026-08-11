@@ -33,8 +33,8 @@ cannot record *having decided against something*. A cancelled task:
   `ratodo done` will not match it
 - is **never overdue**, however far past its date
 - is **not** exported to the calendar — the `.ics` is work still to do
-- shows as `✗` on screen (`[-]` in ASCII), in the same grey as a finished task
-  rather than the green
+- shows as `✗` on screen (`[-]` in ASCII), in red — the same `overdue` a late
+  task wears, with the symbol telling the two apart
 
 `X` sets it and `X` takes it back, exactly like `spc` for done.
 
