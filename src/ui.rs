@@ -903,7 +903,20 @@ fn task_line(
     // column, and pads the full width for one inside it, which is exactly what
     // an undated task in a dated list needs.
     let dim = Style::default().fg(render.colours.dim);
-    push(date, cols.date, dim);
+    // The date is where the lateness actually is, and it was the one field
+    // saying so in grey while the title beside it went red. It borrows the row's
+    // own colour on the two rows where it means something — late, and due today
+    // — and stays dim everywhere else: `Fri` is a fact, not a warning, and a
+    // finished task is neither. No new theme role: `overdue` and `today` are
+    // already the two the title uses — docs/tui.md#main-screen.
+    let pressing = task.is_overdue(render.today)
+        || (!task.done && task.due.is_some_and(|d| d.date == render.today));
+    let date_style = if pressing {
+        Style::default().fg(colour)
+    } else {
+        dim
+    };
+    push(date, cols.date, date_style);
     if size == Size::Wide {
         // `!high` is the one field the user typed to mean *urgent*, and dim
         // beside the tags is the screen saying it back in a whisper. Weight
@@ -2469,6 +2482,42 @@ mod tests {
                 "{missing} was drawn past the budget: {screen:?}"
             );
         }
+    }
+
+    /// The date column carried the fact and the title carried the colour: a red
+    /// title next to a grey `3d ago` puts the warning one field away from the
+    /// thing that is actually late. Only the two that press get it — a `Fri` is
+    /// a fact, and a ticked task is neither late nor due.
+    #[test]
+    fn the_date_goes_loud_only_when_it_is_late_or_today() {
+        let colours = crate::theme::MOCHA;
+        let style_of = |spec: &str, done: bool| {
+            let mut task = capture(spec, today());
+            task.set_done(done);
+            let rows = [Row::Task(task.clone())];
+            let cols = Columns::of(&rows, 86, render(colours), Size::Wide);
+            let line = task_line(&task, 86, cols, render(colours), Size::Wide);
+            // The date is the first styled entry after the mark and the title.
+            line.spans[3..]
+                .iter()
+                .find(|s| !s.content.trim().is_empty())
+                .expect("the date is on the row")
+                .style
+        };
+
+        assert_eq!(style_of("a @2026-08-08", false).fg, Some(colours.overdue));
+        assert_eq!(style_of("a @2026-08-10", false).fg, Some(colours.today));
+        assert_eq!(
+            style_of("a @2026-08-10 16:00", false).fg,
+            Some(colours.today),
+            "a time today is the one most worth seeing"
+        );
+
+        // Neither late nor today, so it is a fact like any other.
+        assert_eq!(style_of("a @2026-08-14", false).fg, Some(colours.dim));
+        // And a finished task is neither, however far past its date it is.
+        assert_eq!(style_of("a @2026-08-08", true).fg, Some(colours.dim));
+        assert_eq!(style_of("a @2026-08-10", true).fg, Some(colours.dim));
     }
 
     /// `!high` is the one field the user typed to mean *urgent*, and it sat in

@@ -102,6 +102,11 @@ Three lists: what is settled, what was rejected, and what is still open.
   fall back and the screen does. Warnings that carried an `—` were reworded
   instead: the bottom line has to read on any terminal. See
   [tui.md](tui.md#no-colour-no-nerd-font).
+- ✅ **The date column borrows the row's colour when it presses** *(2026-08-11)*.
+  `overdue` for a late task, `today` for one due today, dim for everything else
+  — the two roles the title already uses, so nothing new to theme. Colouring
+  every date was the alternative and it flattens the row: the right-hand fields
+  are secondary on purpose. See [tui.md](tui.md#main-screen).
 - ✅ **`!high` is bold, and that is all it gets** *(2026-08-11)*. The one field
   the user typed to mean *urgent* sat in the same grey as the date and the tags.
   Weight rather than a twelfth theme role: a priority colour would have to be

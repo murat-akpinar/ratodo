@@ -121,6 +121,12 @@ Details that are decisions, not drawing:
   absolute where it does not (`Aug 20`). At this width it is right-aligned, so
   the eye reads down the right edge; past eighty columns it becomes a real
   left-aligned column — [below](#width).
+- **The date goes loud only when it presses.** A late task's `3d ago` is in
+  `overdue` and a `16:00` due today is in `today` — the same two colours the
+  title already uses, so no twelfth theme role — while `Fri 09:30` and `Aug 20`
+  stay dim. The date column is where the lateness actually is, and it was the one
+  field saying so in grey while the title beside it went red. A finished task's
+  date is dim whatever it says: it is neither late nor due.
 - **A finished task is never late.** `2d ago` on a ticked line states something
   that stopped being true when the box was ticked, and it contradicts the counts,
   which already leave finished work out of `overdue`. It shows the plain date
