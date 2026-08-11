@@ -38,6 +38,25 @@ cloud, no account. v0.1.0 is tagged; the code is the eight flat modules in
 
 Never skip 2 or 3. Never report "done" for work that was not tested.
 
+## Releasing — the maintainer sees it first
+
+**`cargo publish` is permanent.** A published version cannot be withdrawn, only
+yanked, and the last two releases each shipped something that looked right in a
+test and wrong on a real screen. So a release stops for a human look:
+
+1. `cargo install --force --path .` — the same version number means `--force` is
+   not optional, or the old binary stays on `PATH` and everyone is looking at
+   yesterday's build.
+2. **Stop. Say it is installed, and wait.** The maintainer runs `ratodo` in their
+   own terminal and says whether it is right. Driving it on a pty here is
+   evidence that it *works*; it is not evidence that it *reads* well, and that is
+   the half a release cannot take back.
+3. Only after they say so: bump the version, tag, `cargo publish`, point the
+   PKGBUILD at the new tag.
+
+Never publish on the strength of a green suite alone, and never bundle the
+publish into the same turn as the change it is publishing.
+
 ## Commits — attribution rules
 
 - **Commits go out under the repository owner's signature only.**
