@@ -89,6 +89,17 @@ Three lists: what is settled, what was rejected, and what is still open.
 - ✅ **Display width comes from ratatui, not a new crate** *(2026-08-11)*.
   `Span::width` already does the Unicode arithmetic, so `şğüöç` and 🚀 line up
   without an eighth dependency.
+- ✅ **The user's own headings keep their `##`** *(2026-08-11)*. `OVERDUE` is
+  ours and `## Work` came out of the file, and as the same bold word plus the
+  same rule nothing on the screen said which was which. The marker is already in
+  the file, so it costs no second colour and no third level of hierarchy, and it
+  survives the ASCII fallback. The alternatives — dropping the rule from the
+  user's headings, or indenting ours — each spent a level of hierarchy the
+  design does not have. See [tui.md](tui.md#main-screen).
+- ✅ **A finished task is never late** *(2026-08-11)*. `1d ago` on a ticked line
+  states something that stopped being true, and the counts already left finished
+  work out of `overdue`. It shows the plain date instead, and keeps its place in
+  `OVERDUE`, where membership was always positional.
 - ✅ **A reader that closes the pipe is not an error** *(2026-08-11)*.
   `ratodo list | head` made `println!` panic. Every stdout write goes through
   `writeln!`, and `BrokenPipe` alone exits 0. See

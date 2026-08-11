@@ -8,7 +8,7 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 
-use crate::agenda::{Counts, Group};
+use crate::agenda::{Counts, Group, Kind};
 use crate::model::Task;
 use crate::text;
 use crate::theme::Theme;
@@ -262,7 +262,16 @@ pub fn rows(groups: &[Group<'_>]) -> Vec<Row> {
             out.push(Row::Spacer);
         }
         if let Some(title) = group.kind.title() {
-            out.push(Row::header(title));
+            // `OVERDUE` is ours and `## Work` is the user's, and until now they
+            // were the same bold word plus the same rule. The markdown marker
+            // the heading already carries in the file is what tells them apart
+            // — it costs no colour and no third level of hierarchy, and it says
+            // "this line is yours" to anyone who has seen the file
+            // — docs/tui.md#main-screen.
+            match group.kind {
+                Kind::Section(_) => out.push(Row::header(&format!("## {title}"))),
+                _ => out.push(Row::header(title)),
+            }
         }
         out.extend(group.tasks.iter().map(|t| Row::Task((*t).clone())));
     }
@@ -1434,6 +1443,22 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
+    /// `OVERDUE` is ours, `## Work` came out of the user's file, and the same
+    /// bold word plus the same rule said nothing about which was which. Only
+    /// the marker separates them: no second colour, no third level of
+    /// hierarchy — docs/tui.md#main-screen.
+    #[test]
+    fn the_users_own_headings_keep_the_markdown_marker_and_ours_do_not() {
+        let mut mixed = in_section(&[("write the plan", "Work")]);
+        mixed.extend(tasks(&["late @2026-08-08"]));
+
+        let groups = agenda(&mixed, today());
+        assert_eq!(
+            titles(&rows(&groups)),
+            ["# OVERDUE", "late", "", "# ## Work", "write the plan"]
+        );
+    }
+
     #[test]
     fn every_key_the_dumb_list_answers_to() {
         let cases = [
@@ -1987,7 +2012,7 @@ mod tests {
                 "│  OVERDUE ───────────────────────────────────────────────── │",
                 "│▌ ! late                                        1d ago  #ops│",
                 "│                                                            │",
-                "│  Work ──────────────────────────────────────────────────── │",
+                "│  ## Work ───────────────────────────────────────────────── │",
                 "│  ○ write the plan                                          │",
                 "│                                                            │",
                 "│                                                            │",
@@ -2164,7 +2189,7 @@ mod tests {
                 "┌ ratodo — 2 · 1! ───────────────────────────┐",
                 "│  OVERDUE ───────────────────────────────── │",
                 "│▌ ! late                              1d ago│",
-                "│  Work ──────────────────────────────────── │",
+                "│  ## Work ───────────────────────────────── │",
                 "│  ○ write the plan                          │",
                 "│                                            │",
                 "└────────────────────────────────────────────┘",
@@ -3216,7 +3241,7 @@ mod tests {
         assert_eq!(screen.fold(Fold::Close), None, "nothing was folded");
         assert_eq!(
             titles(&screen.rows),
-            ["# Work", "", "# Home", "plumber"],
+            ["# ## Work", "", "# ## Home", "plumber"],
             "the tasks are gone but the heading stayed"
         );
         assert!(
@@ -3233,7 +3258,7 @@ mod tests {
         assert_eq!(screen.fold(Fold::Open), None);
         assert_eq!(
             titles(&screen.rows),
-            ["# Work", "deploy", "invoice", "", "# Home", "plumber"]
+            ["# ## Work", "deploy", "invoice", "", "# ## Home", "plumber"]
         );
     }
 
@@ -3275,8 +3300,8 @@ mod tests {
             rows,
             [
                 "┌ ratodo — 3 · 0! ─────────────────────────┐",
-                "│▌ Work (2) ──────────────────────────── l │",
-                "│  Home ────────────────────────────────── │",
+                "│▌ ## Work (2) ───────────────────────── l │",
+                "│  ## Home ─────────────────────────────── │",
                 "│  ○ plumber                               │",
                 "│                                          │",
                 "│                                          │",
@@ -3325,9 +3350,9 @@ mod tests {
             rows,
             [
                 "┌ ratodo — 3 open · 0 overdue ─────────────────────────────────────────────────────┐",
-                "│▌ Work (2) ── l                                                                   │",
+                "│▌ ## Work (2)  l                                                                  │",
                 "│                                                                                  │",
-                "│  Home ────────                                                                   │",
+                "│  ## Home ─────                                                                   │",
                 "└──────────────────────────────────────────────────────────────────────────────────┘",
                 " ?                                                                                  ",
             ]

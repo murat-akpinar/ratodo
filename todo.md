@@ -204,9 +204,12 @@ side pane turns into a dashboard nobody leaves open.
       place on every row and the group rule stops at the title column. The
       section a task came from is still not shown; it is a second decision, not
       part of this one. See [docs/decisions.md](docs/decisions.md#reversed)
-- [ ] **Dated groups and the file's own `##` sections look identical.** `OVERDUE`
+- [x] **Dated groups and the file's own `##` sections look identical.** `OVERDUE`
       and `Work` are both a bold word plus a rule, though one is ours and one is
-      the user's. Careful: "two levels of hierarchy, there is no third"
+      the user's. Careful: "two levels of hierarchy, there is no third" —
+      **done**: the user's headings keep the `##` they have in the file. No
+      second colour and no third level; see
+      [docs/decisions.md](docs/decisions.md#settled)
 - [x] **A completed task still shows how late it is** — `✓ review the deploy PR
       … 1d ago`. It is finished; the lateness stopped being true —
       **done**: it shows the plain date (`Aug 8`) instead, and stays in

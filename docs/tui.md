@@ -80,7 +80,7 @@ slots when the capture keys arrived — adding a task is what the tool is for, a
 │   ○ book a dentist appointment         Thu 09:30  #health  │
 │   ✓ migrate the server                                     │
 │                                                            │
-│ SOMEDAY ─────────────────────────────────────────────────  │
+│ ## Someday ──────────────────────────────────────────────  │
 │   ○ finish chapter 13 of the Rust book               !low  │
 │                                                            │
 │ LATER (3) ──────────────────────────────────────────── l   │
@@ -111,8 +111,12 @@ Details that are decisions, not drawing:
   another pane must not quietly undo them. A file with the same heading twice
   therefore folds both at once, which is the price of that and is the user's own
   arrangement.
-- **`SOMEDAY` is a `##` heading from the user's file**, not one of ours. Dated
-  groups come first, then the user's own sections in file order.
+- **`## Someday` is a heading from the user's file**, not one of ours, and it
+  **keeps its `##`** to say so. Both are a bold word plus a rule, and without the
+  marker nothing on the screen told you whose word it was. The marker is already
+  in the file, it costs no second colour and no third level of hierarchy
+  ([design.md](design.md#rules)), and it survives the ASCII fallback unchanged.
+  Dated groups come first, then the user's own sections in file order.
 - The date is relative where that reads better (`2d ago`, `Thu 09:30`) and
   absolute where it does not (`Aug 20`). At this width it is right-aligned, so
   the eye reads down the right edge; past eighty columns it becomes a real
@@ -340,7 +344,7 @@ title column is as wide as the widest title in the list:
 │  ○ book a dentist appointment          Thu 09:30        #health              │
 │  ✓ migrate the server                  Thu                                   │
 │                                                                              │
-│  SOMEDAY ───────────────────────────                                         │
+│  ## Someday ────────────────────────                                         │
 │▌ ○ finish chapter 13 of the Rust book             !low                       │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
