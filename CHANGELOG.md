@@ -38,6 +38,8 @@ The keys `lf`, `ranger` and `yazi` users arrive with: `h` collapses the group un
 `a` and `o` open a field on the bottom line and `⏎` opens it already holding the selected task. While it is open the keyboard belongs to it — `q` and `d` are letters in there, which is what makes "you can never be in a mode you did not open" true by construction. `esc` and `ctrl-c` both cancel, and `ctrl-c` in here never quits: somebody half-way through a sentence loses the sentence, not the session.
 - *(ui)* Keep the selection on the task, not on its line ([14dfde6](https://github.com/murat-akpinar/ratodo/commit/14dfde60e5e9c43fe8c359bd8757900a372be211))
 The cursor followed the raw line, so anything that rewrote it let go: a `ratodo done` in the next pane, a tag arriving over `git pull`, a date moved. The line is not the task.
+- *(ui)* Show what is finished on the title rule ([501905f](https://github.com/murat-akpinar/ratodo/commit/501905f853f138f9ed72e1140eaec428376d39b6))
+Eight cells and a `3/8` on the right of the top border. The screen had nothing to say about work that was done: `5 open · 1 overdue` counts what is left and stops there, which makes a todo list that never acknowledges the todo part.
 
 ### 🐛 Bug Fixes
 
