@@ -274,50 +274,61 @@ not usable as a side pane.
 The first thing a new user sees, so it has to teach rather than apologise:
 
 ```
-┌─ ratodo ────────────────────────────────────────── 0 open ─┐
+┌ ratodo — 0 open · 0 overdue ───────────────────────────────┐
 │                                                            │
-│   Nothing here yet.                                        │
+│  Nothing here yet.                                         │
 │                                                            │
-│   a          add your first task                           │
-│   e          open ~/.config/ratodo/todo.md in $EDITOR      │
+│  a          add your first task                            │
+│  e          open ~/.config/ratodo/todo.md in $EDITOR       │
 │                                                            │
-│   Try:  a  then  buy milk @tomorrow #home                  │
+│  ┌──────────────────────────────────────────────┐          │
+│  │ add ▏buy milk @tomorrow #home                │          │
+│  │      due tomorrow (2026-08-11)  ·  #home     │          │
+│  └──────────────────────────────────────────────┘          │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
 ```
 
-The example line is doing the real work: it shows `@` and `#` in use, which is
-faster than any syntax table. It names the file path too, because the promise of
-this product is that the file is yours — you should be told where it is on day
-one.
+The example is doing the real work: it shows `@` and `#` in use, which is faster
+than any syntax table. It sits in the box `a` actually opens, drawn by the same
+code — so the line under it has already resolved `@tomorrow` into a date before
+anything has been typed, which is the part of the syntax worth teaching. The
+border is the frame's colour, not the accent: the accent border marks the box
+that has the keyboard, and this one is a picture of it.
+
+Below ten rows the box does not fit and the example goes back to being a line —
+`Try:  a  then  buy milk @tomorrow #home`. It is the part that teaches, so it is
+the last thing a short pane loses.
+
+The screen names the file path too, because the promise of this product is that
+the file is yours — you should be told where it is on day one.
 
 ## Help — `?`
 
 ```
-┌─ keys ───────────────────────────────────────┐
-│                                              │
-│  move     j k   ↑ ↓        g G   top / bottom│
-│           ctrl-d ctrl-u    half page         │
-│                                              │
-│  do       spc   toggle done                  │
-│           a o   add        ⏎   edit          │
-│           d     delete     u   undo          │
-│                                              │
-│  view     h l   fold / unfold this group     │
-│           z     the same, as one toggle      │
-│                                              │
-│  file     e     $EDITOR    r   reload        │
-│                                              │
-│  quit     q     ctrl-c                       │
-│                                              │
-├──────────────────────────────────────────────┤
-│            esc or ? to close                 │
-└──────────────────────────────────────────────┘
+┌ keys ──────────────────────────────────┐
+│  j k  ↓ ↑        move                  │
+│  g G             top / bottom          │
+│  ctrl-d ctrl-u   half page             │
+│  spc             toggle done           │
+│  a o  ⏎          add / edit            │
+│  d  u            delete / undo         │
+│  h l  z          fold this group       │
+│  e  r            $EDITOR / re-read     │
+│  :  /            answer, for now       │
+│  q  ctrl-c       quit                  │
+└────────── esc or ? to close ───────────┘
 ```
 
 This is the one overlay in the product, and it is the only place a popup is the
 right answer — you asked for it, and it covers nothing you were mid-way through
 reading.
+
+The way out is on the bottom border, where it costs no row. Ten keys plus two of
+border is twelve, and twelve is what fits a fourteen-row pane: the last line of a
+help screen must never be the one that falls off, least of all when it is quit.
+Grouping the keys into blocks with blank lines between them would cost four rows
+and exactly that. Only keys that are built are listed.
 
 ## Keys
 

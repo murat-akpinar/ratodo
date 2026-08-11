@@ -127,6 +127,20 @@ Three lists: what is settled, what was rejected, and what is still open.
   states something that stopped being true, and the counts already left finished
   work out of `overdue`. It shows the plain date instead, and keeps its place in
   `OVERDUE`, where membership was always positional.
+- ✅ **The empty screen shows the real input box, and the overlay puts its exit
+  on the border** *(2026-08-11)*. The example was a line of text saying
+  `Try:  a  then  buy milk @tomorrow #home`; it is now the same field `a` opens,
+  drawn by the same code, with the live parse under it already reading
+  `due tomorrow (2026-08-11) · #home`. The shorthand is the thing worth teaching
+  and it now teaches itself before a key is pressed. No new concept and no new
+  colour: the frame's own border colour, because the accent border is what marks
+  the box that has the keyboard. Under ten rows it goes back to being a line —
+  the example is the last thing a short pane is allowed to lose. In the help
+  overlay `? esc  this, and away again` left the key list for the bottom border
+  as `esc or ? to close`, which costs no row and takes the box back to twelve.
+  Grouping the keys with blank lines was the alternative and it costs four rows,
+  which is `q  ctrl-c` falling off a fourteen-row pane. See
+  [tui.md](tui.md#empty).
 - ✅ **A reader that closes the pipe is not an error** *(2026-08-11)*.
   `ratodo list | head` made `println!` panic. Every stdout write goes through
   `writeln!`, and `BrokenPipe` alone exits 0. See

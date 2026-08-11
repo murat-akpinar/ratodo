@@ -1309,7 +1309,7 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
     // Two of these carry a glyph, and the overlay is the one screen where a
     // character the terminal cannot draw does the most damage: it is the screen
     // somebody opens *because* they are lost — docs/tui.md#no-colour-no-nerd-font.
-    let keys: [(String, &str); 11] = [
+    let keys: [(String, &str); 10] = [
         (format!("j k  {}", render.glyphs.arrows()), "move"),
         ("g G".to_string(), "top / bottom"),
         ("ctrl-d ctrl-u".to_string(), "half page"),
@@ -1322,15 +1322,14 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
         // and a help screen that cuts off at quit is worse than none.
         ("e  r".to_string(), "$EDITOR / re-read"),
         (":  /".to_string(), "answer, for now"),
-        ("? esc".to_string(), "this, and away again"),
         ("q  ctrl-c".to_string(), "quit"),
     ];
 
     let width = 40.min(area.width);
-    // Two for the border, and not a row more: at eleven keys a spare blank line
-    // is the difference between the box fitting a 14-row pane and `q  ctrl-c`
-    // being the line that falls off it. A help screen that cuts off at quit is
-    // worse than no help screen.
+    // Two for the border, and not a row more: at ten keys a spare blank line is
+    // the difference between the box fitting a 14-row pane and `q  ctrl-c` being
+    // the line that falls off it. A help screen that cuts off at quit is worse
+    // than no help screen.
     let height = (keys.len() as u16 + 2).min(area.height);
     // Centred, and clamped: on a pane smaller than the box the box wins the
     // space it has rather than drawing outside it.
@@ -1359,6 +1358,10 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
                 .border_set(render.glyphs.border())
                 .border_style(Style::default().fg(render.colours.accent))
                 .title(" keys ")
+                // On the border, where it costs no row: the way out of the
+                // overlay is the one thing that must never be the line that
+                // falls off the bottom of a short pane.
+                .title_bottom(Line::from(" esc or ? to close ").centered())
                 .style(Style::default().bg(render.colours.background)),
         ),
         box_area,
@@ -1375,7 +1378,7 @@ fn empty(frame: &mut Frame, area: Rect, block: Option<Block<'_>>, render: Render
     }
 
     let dim = Style::default().fg(render.colours.dim);
-    let lines = vec![
+    let mut lines = vec![
         Line::raw(""),
         Line::styled(
             "  Nothing here yet.",
@@ -1398,15 +1401,53 @@ fn empty(frame: &mut Frame, area: Rect, block: Option<Block<'_>>, render: Render
             dim,
         ),
         Line::raw(""),
-        Line::styled(
-            "  Try:  a  then  buy milk @tomorrow #home",
-            Style::default().fg(render.colours.accent),
-        ),
     ];
+    // Four rows for the box under the six above it. Where they do not fit, the
+    // example stays a line of text: it is the part that teaches, so it is the
+    // last thing a short pane is allowed to lose.
+    let room = inner.height >= 10 && inner.width >= 34;
+    if !room {
+        lines.push(Line::styled(
+            format!("  Try:  a  then  {EXAMPLE}"),
+            Style::default().fg(render.colours.accent),
+        ));
+    }
 
     frame.render_widget(
         Paragraph::new(lines).style(Style::default().bg(render.colours.background)),
         inner,
+    );
+
+    if room {
+        example(frame, inner, render);
+    }
+}
+
+/// The one line of syntax anybody needs, and the shorthand in it is the point.
+const EXAMPLE: &str = "buy milk @tomorrow #home";
+
+/// The example in the box it will actually be typed into: the same field `a`
+/// opens, drawn by the same code, with the live parse under it already turning
+/// `@tomorrow` into a date. Nothing has to be typed to find that out.
+///
+/// The frame's own colour rather than the accent, because the accent border is
+/// what marks the box that has the keyboard — this one is a picture of it.
+fn example(frame: &mut Frame, inner: Rect, render: Render<'_>) {
+    let width = 48.min(inner.width.saturating_sub(4));
+    let area = Rect::new(inner.x + 2, inner.y + 6, width, 4);
+    let (lines, _) = input_lines(
+        &Input::new(EXAMPLE.to_string(), None),
+        (width as usize).saturating_sub(2),
+        render,
+    );
+
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .border_set(render.glyphs.border())
+                .border_style(Style::default().fg(render.colours.border)),
+        ),
+        area,
     );
 }
 
@@ -1716,9 +1757,9 @@ mod tests {
                 "│   │  h l  z         fold this group      │   │",
                 "│   │  e  r           $EDITOR / re-read    │   │",
                 "│   │  :  /           answer, for now      │   │",
-                "│   │  ? esc          this, and away again │   │",
                 "│   │  q  ctrl-c      quit                 │   │",
-                "└───└──────────────────────────────────────┘───┘",
+                "│   └───────── esc or ? to close ──────────┘   │",
+                "└──────────────────────────────────────────────┘",
                 " j k  spc  a  d  e  ?  q                        ",
             ]
         );
@@ -1732,7 +1773,7 @@ mod tests {
         let tasks = tasks(&["a @2026-08-01"]);
         let groups = agenda(&tasks, today());
 
-        for (height, top) in [(15u16, 0usize), (17, 1), (21, 3)] {
+        for (height, top) in [(15u16, 1usize), (17, 2), (21, 4)] {
             let mut screen = Screen::new(rows(&groups));
             let mut terminal = Terminal::new(TestBackend::new(48, height)).unwrap();
             terminal
@@ -3832,6 +3873,66 @@ mod tests {
             "the worked example is what actually teaches the syntax: {text}"
         );
         assert!(text.contains("$EDITOR"), "{text}");
+    }
+
+    /// The example sits in the box it will be typed into, and the line under it
+    /// has already resolved the shorthand: `@tomorrow` is a date before anybody
+    /// has pressed a key. That resolution is the whole reason the box is there.
+    #[test]
+    fn the_empty_screen_shows_the_example_in_a_real_input_box() {
+        let screen = rendered(60, 16, &[]);
+        let text = screen.join("\n");
+
+        assert!(
+            text.contains(&format!("add ▏{EXAMPLE}")),
+            "the field is not the one `a` opens: {text}"
+        );
+        assert!(
+            text.contains("due tomorrow (2026-08-11)"),
+            "the shorthand was left unresolved: {text}"
+        );
+        assert!(
+            screen.iter().filter(|r| r.contains('┌')).count() == 2,
+            "the box did not draw inside the frame: {screen:?}"
+        );
+
+        // Six rows of text and four of box: below that the example goes back to
+        // being a line, because losing it entirely is the one thing a short pane
+        // must not do.
+        let short = rendered(60, 12, &[]).join("\n");
+        assert!(!short.contains("add ▏"), "the box did not fit: {short}");
+        assert!(
+            short.contains(&format!("Try:  a  then  {EXAMPLE}")),
+            "{short}"
+        );
+
+        let mut empty = Screen::new(vec![]);
+        let mut terminal = Terminal::new(TestBackend::new(60, 16)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut empty,
+                    Counts::default(),
+                    Render {
+                        glyphs: Glyphs::Ascii,
+                        ..render(crate::theme::MOCHA)
+                    },
+                    &Notice::Hints,
+                    false,
+                    None,
+                )
+            })
+            .unwrap();
+        let ascii: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(ascii.contains("add |"), "{ascii}");
+        assert!(ascii.is_ascii(), "something non-ASCII reached it: {ascii}");
     }
 
     /// A `--file` path can be arbitrarily long. It gets shortened, because a

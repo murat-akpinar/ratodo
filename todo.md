@@ -218,7 +218,13 @@ side pane turns into a dashboard nobody leaves open.
       field the user typed to mean *urgent* and the screen barely says so —
       **done**: it is bold and in the row's own colour. Weight, not a twelfth
       theme role, so it still reads under `NO_COLOR`. `!med` and `!low` unchanged
-- [ ] Empty screen and `?` overlay — both correct and both plain
+- [x] Empty screen and `?` overlay — both correct and both plain —
+      **done**: the empty screen's example moved into the box `a` actually
+      opens, drawn by the same code, so the live parse under it resolves
+      `@tomorrow` before a key is pressed; under ten rows it goes back to being
+      a line. The overlay's exit moved to the bottom border — no row spent, and
+      the box is back to twelve on a fourteen-row pane. See
+      [docs/decisions.md](docs/decisions.md#settled)
 - [x] Decide what to do about the help overlay's `↓ ↑` under a non-UTF-8 locale.
       The main screen goes fully ASCII and the overlay does not; the buffer test
       never covered it because it does not open the overlay —
