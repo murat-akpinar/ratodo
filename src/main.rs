@@ -1001,10 +1001,19 @@ fn run(
                         ui::Typed::Right => typing.right(),
                         ui::Typed::Home => typing.home(),
                         ui::Typed::End => typing.end(),
+                        ui::Typed::Field => typing.toggle_field(today),
+                        ui::Typed::Step(by) => typing.step(by),
+                        // One `esc` per thing that is open: the field first, and
+                        // the box only once there is no field over it.
                         ui::Typed::Cancel => {
-                            input = None;
-                            notice = ui::Notice::Hints;
+                            if !typing.close_field() {
+                                input = None;
+                                notice = ui::Notice::Hints;
+                            }
                         }
+                        // And the same for `⏎`: it puts the date in the line
+                        // before it ever saves one.
+                        ui::Typed::Save if typing.apply_field() => {}
                         ui::Typed::Save => {
                             let typed = input.take().expect("the input was open a line ago");
                             notice = live.save_typed(paths, today, &typed)?;

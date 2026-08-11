@@ -116,6 +116,12 @@ surface.
 
 ## The date field — a proposal, not a decision (2026-08-11)
 
+**Built on 2026-08-11, to the shape the last paragraph here argues for: `tab`
+opens it, `esc` leaves it, and the text box is untouched until it does. The
+decision, and how each objection below is answered rather than waved past, is in
+[docs/decisions.md](docs/decisions.md#settled). Kept here because the objections
+are the reason it has the shape it has.**
+
 Out of the same session. The ask: `↑` `↓` on the part of the date under the
 cursor, and typing eight digits filling `DD` `MM` `YYYY` in order — so that a
 month of `13` is unreachable rather than merely wrong.

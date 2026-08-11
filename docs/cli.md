@@ -286,6 +286,7 @@ about. Full keymap, the reasoning, and the keys left deliberately unbound are in
 | `spc` | Toggle done |
 | `a` / `o` | Add a task (inline input on the bottom line) |
 | `⏎` | Edit the selected task |
+| `tab` | While the input is open: the date field, `↑ ↓` on the part under the cursor. See [tui.md](tui.md#the-date-field--tab) |
 | `d` / `u` | Delete / undo |
 | `h` / `l` | Fold / unfold the group under the cursor |
 | `z` | Same, as one toggle — `z` is the vim fold prefix |

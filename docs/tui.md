@@ -344,6 +344,50 @@ two lists is two writes against two mtimes. The rest — why the default is fixe
 at all, why `$50` is money, and why the first `$` wins — is in
 [decisions.md](decisions.md#a-capture-always-goes-to-todomd--work-picks-the-list-2026-08-11).
 
+### The date field — `tab`
+
+`@thu` and `@3d` are how a date gets typed, and they are why the box has no
+picker in the way. But `@2026-13-45` is a date the text box takes and the
+preview can only *say* is wrong, and a keyboard that stutters is how it gets
+typed. `tab` opens a field where that date does not exist:
+
+```
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │ add ▏renew the passport                               │ │
+│  ├───────────────────────────────────────────────────────┤ │
+│  │      [11] 08  2026  ↓ ↑                               │ │
+│  └───────────────────────────────────────────────────────┘ │
+ ⏎ date   esc back
+```
+
+`↑` `↓` change the part in brackets, `←` `→` move between the three, and digits
+fill them in order — `13082026` is the 13th of August, eight keystrokes and no
+arrows, because a part that cannot take another digit hands the cursor on by
+itself. `⏎` writes the day into the line as one `@YYYY-MM-DD` word and gives the
+keyboard back to the text; `esc` closes the field and leaves the line alone.
+
+**The brackets, not just the colour.** Which of the three the arrows are
+pointing at is the one thing this row has to say, and `NO_COLOR` must not take
+it. They are also always there and always around exactly one part, so the row is
+the same width wherever the cursor is — a strip that shifted sideways on every
+`←` would be a row nobody can read.
+
+**It cannot produce a day the calendar does not have.** The day is clamped to
+the month it is in, so arrowing the 31st of January into February gives the 28th
+— or the 29th, in a leap year, because the length of a month is asked of the
+calendar rather than of a table. A month of `13` is unreachable: the `1` is the
+month, the `3` cannot join it, so the `3` starts the year. That is the whole
+point of the field, and it is the half of the `@2026-13-45` complaint the
+warning line under the box cannot do.
+
+**It opens on the date the line already has** — through `capture`, so `@thu`
+resolves first — and on today when there is none. A field that opened on the 1st
+of January would make you arrow back to where you already were.
+
+It takes the same `tab` in the `p` box, where it writes the bare date rather
+than an `@` word: that is the one form `p` accepts past
+[its year horizon](#putting-a-date-off--p).
+
 ### Putting a date off — `p`
 
 `p` opens the same box, and it is the same box for a reason: the caret, the

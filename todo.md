@@ -11,8 +11,9 @@ that is actually open is the short list directly under this line.
 
 ## What is left
 
-Three open: the field-by-field date entry, and two pieces of packaging. Nothing
-here blocks anything else, so the order is by reach rather than by dependency.
+Two open, and both are packaging: the product itself has nothing left on this
+list. Nothing here blocks anything else, so the order is by reach rather than by
+dependency.
 The ticked ones are kept here rather than moved down, because the reasoning in
 them is about things that were asked for and are **not** being built — a key,
 and a box split into fields.
@@ -79,7 +80,7 @@ and a box split into fields.
         answered by the first piece — `$nosuchfile` is refused before the write
         rather than created, and with one list `$` parses the same and refuses
         anything but that list
-- [ ] **A date that does not exist is accepted in silence.** Found in use on
+- [x] **A date that does not exist is accepted in silence.** Found in use on
       2026-08-11: `@2026-13-45` resolves to nothing, so the whole word falls
       back to being part of the title — the file gets
       `- [ ] task @2026-13-45`, the task keeps no date, and neither the live
@@ -95,14 +96,26 @@ and a box split into fields.
             by running the binary, not by the suite — the first version nagged
             through ten presses. See
             [docs/decisions.md](docs/decisions.md#settled)
-      - [ ] **The field-by-field date entry** — `↑ ↓` on the part under the
+      - [x] **The field-by-field date entry** — `↑ ↓` on the part under the
             cursor and eight digits filling `DD MM YYYY`, which is a keymap and
             a widget, not a message, and makes the invalid state unrepresentable
             rather than merely detectable. What it would cost is worked through
             in
             [notes.md](notes.md#the-date-field--a-proposal-not-a-decision-2026-08-11),
-            and it becomes an entry in
-            [docs/decisions.md](docs/decisions.md) before a line of it is written
+            and it became an entry in
+            [docs/decisions.md](docs/decisions.md#settled) before a line of it
+            was written —
+            **done, as `tab`**, to the shape those notes argued their way to:
+            the text box is untouched until you press it, `esc` gives it back,
+            and the fast path is still `@thu`. The day is clamped to the month
+            it is in, so the 31st of January arrowed into February is the 28th —
+            the 29th in a leap year, because the length of a month is asked of
+            the calendar and not of a table — and a month of `13` is
+            unreachable rather than refused. It takes the same `tab` in the `p`
+            box, where it writes the bare date `p` accepts past its horizon.
+            The brackets around the focused part are what carry it under
+            `NO_COLOR`, and they keep the row the same width wherever the
+            cursor is
 - [x] **`cargo publish`** — the email was verified on 2026-08-11 and the crate
       went up as **v0.3.0** the same day: `cargo install ratodo` is the install
       line now. It went out as a minor rather than a patch because the six

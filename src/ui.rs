@@ -1,6 +1,6 @@
 //! ratatui drawing. See docs/tui.md.
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -128,6 +128,35 @@ pub struct Input {
     /// char boundary — every move steps by a whole `char`.
     pub at: usize,
     pub purpose: Purpose,
+    /// The date field, while `tab` has it open. `None` is the whole of the box
+    /// as it was: one line of text — docs/decisions.md#settled.
+    pub field: Option<DateField>,
+}
+
+/// `DD MM YYYY` with one part under the cursor.
+///
+/// Held as three numbers rather than as a `NaiveDate`, because a date being
+/// edited passes through states a date cannot hold: the 31st on its way to a
+/// month with thirty days. Every edit puts it back — `day` is clamped to the
+/// month it is in — so what the field hands back is always a real day, which is
+/// the entire reason it exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DateField {
+    day: u32,
+    month: u32,
+    year: i32,
+    part: DatePart,
+    /// Digits typed into `part` since it took the cursor. Two fill a day or a
+    /// month and four fill a year, and then the cursor moves on by itself —
+    /// which is what makes `13082026` one gesture rather than seven.
+    digits: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DatePart {
+    Day,
+    Month,
+    Year,
 }
 
 /// Why the field is open, and so what `⏎` will do with the line in it.
@@ -161,6 +190,165 @@ impl Purpose {
     }
 }
 
+/// How many days a month has, asked of the calendar rather than of a table:
+/// the leap year comes free and there is nothing to get wrong.
+fn days_in(year: i32, month: u32) -> u32 {
+    (28..=31)
+        .rev()
+        .find(|day| NaiveDate::from_ymd_opt(year, month, *day).is_some())
+        .unwrap_or(28)
+}
+
+impl DateField {
+    fn new(date: NaiveDate) -> Self {
+        DateField {
+            day: date.day(),
+            month: date.month(),
+            year: date.year(),
+            part: DatePart::Day,
+            digits: 0,
+        }
+    }
+
+    /// Always a real day: the parts are only ever set through here, and the day
+    /// is clamped to the month it has landed in.
+    fn date(self) -> NaiveDate {
+        let mut settled = self;
+        settled.settle();
+        NaiveDate::from_ymd_opt(settled.year, settled.month, settled.day).unwrap_or_default()
+    }
+
+    /// Puts the three numbers back into a date.
+    ///
+    /// A part being typed passes through states a date cannot hold — `0` on the
+    /// way to `05`, the 31st on the way into February — and this is where every
+    /// one of them ends. Called on the way out of a part and again before the
+    /// date is read, which is every path there is, which is what makes the
+    /// fallback above unreachable rather than a guess.
+    fn settle(&mut self) {
+        self.month = self.month.clamp(1, 12);
+        self.year = self.year.clamp(1970, 9999);
+        self.day = self.day.clamp(1, days_in(self.year, self.month));
+    }
+
+    /// `↑` and `↓`. The day and the month wrap, because their ends are next to
+    /// each other on a calendar; the year does not, because 9999 and 1970 are
+    /// not neighbours and landing on one from the other is never what was meant.
+    fn step(&mut self, by: i32) {
+        self.settle();
+        self.digits = 0;
+        match self.part {
+            DatePart::Day => {
+                let last = days_in(self.year, self.month);
+                self.day = wrap(self.day, by, 1, last);
+            }
+            DatePart::Month => {
+                self.month = wrap(self.month, by, 1, 12);
+                self.day = self.day.min(days_in(self.year, self.month));
+            }
+            DatePart::Year => {
+                self.year = (self.year + by).clamp(1970, 9999);
+                self.day = self.day.min(days_in(self.year, self.month));
+            }
+        }
+    }
+
+    /// `←` and `→`. The cursor stops at the ends rather than cycling: three
+    /// fields are few enough to see, and a wrap would move it somewhere the eye
+    /// was not.
+    fn move_to(&mut self, forward: bool) {
+        self.settle();
+        self.digits = 0;
+        self.part = match (self.part, forward) {
+            (DatePart::Day, true) => DatePart::Month,
+            (DatePart::Month, true) => DatePart::Year,
+            (DatePart::Year, false) => DatePart::Month,
+            (DatePart::Month, false) => DatePart::Day,
+            (part, _) => part,
+        };
+    }
+
+    /// One digit of `DDMMYYYY`.
+    ///
+    /// A part that is full, or that could not hold another digit, hands the
+    /// cursor on by itself — so eight digits are eight keystrokes and no arrows.
+    /// A digit that would make the part impossible closes it and starts the next
+    /// one, which is how `4` `5` in the day reads as the 4th of May.
+    fn digit(&mut self, d: u32) {
+        let (max, width) = match self.part {
+            DatePart::Day => (days_in(self.year, self.month), 2),
+            DatePart::Month => (12, 2),
+            DatePart::Year => (9999, 4),
+        };
+        let current = match self.part {
+            DatePart::Day => self.day,
+            DatePart::Month => self.month,
+            DatePart::Year => self.year as u32,
+        };
+
+        let next = if self.digits == 0 {
+            d
+        } else {
+            current * 10 + d
+        };
+        if next > max {
+            // No room for it here. The part keeps what it has and the digit
+            // starts the next one — unless there is no next one, and then it is
+            // a keystroke with nowhere to go.
+            if self.part == DatePart::Year {
+                return;
+            }
+            self.move_to(true);
+            self.digit(d);
+            return;
+        }
+
+        // Stored raw, zero and all: `0` is how `05` starts, and a part that
+        // clamped as it was typed could never reach it.
+        self.digits += 1;
+        match self.part {
+            DatePart::Day => self.day = next,
+            DatePart::Month => self.month = next,
+            DatePart::Year => self.year = next as i32,
+        }
+
+        // Full, or one digit short of a number that cannot take another: `4` in
+        // the day is finished, since `40` is not a day.
+        if self.digits == width || next * 10 > max {
+            self.move_to(true);
+        }
+    }
+}
+
+impl DateField {
+    /// The three parts as they are drawn: `[13] 08  2026`.
+    ///
+    /// The brackets are always there and always around exactly one part, so the
+    /// row is the same width wherever the cursor is. A marker that moved the
+    /// digits sideways would be a row that twitches on every `←`.
+    fn cells(self) -> [(DatePart, String); 3] {
+        let cell = |part: DatePart, text: String| {
+            let text = match part == self.part {
+                true => format!("[{text}]"),
+                false => format!(" {text} "),
+            };
+            (part, text)
+        };
+        [
+            cell(DatePart::Day, format!("{:02}", self.day)),
+            cell(DatePart::Month, format!("{:02}", self.month)),
+            cell(DatePart::Year, format!("{:04}", self.year)),
+        ]
+    }
+}
+
+/// One step around a closed range, in either direction.
+fn wrap(value: u32, by: i32, low: u32, high: u32) -> u32 {
+    let span = (high - low + 1) as i32;
+    let at = (value as i32 - low as i32 + by).rem_euclid(span);
+    low + at as u32
+}
+
 impl Input {
     /// The only way to build one: the caret starts at the end of `text`, which
     /// is where a retype begins.
@@ -169,6 +357,7 @@ impl Input {
             at: text.len(),
             text,
             purpose,
+            field: None,
         }
     }
 
@@ -203,6 +392,15 @@ impl Input {
     }
 
     pub fn insert(&mut self, c: char) {
+        // While the field is open the digits are positional, and everything
+        // else is a key with nowhere to go. That is what keeps `12` from having
+        // to mean both December and twelve — docs/decisions.md#settled.
+        if let Some(field) = self.field.as_mut() {
+            if let Some(d) = c.to_digit(10) {
+                field.digit(d);
+            }
+            return;
+        }
         self.text.insert(self.at, c);
         self.at += c.len_utf8();
     }
@@ -223,14 +421,29 @@ impl Input {
     }
 
     pub fn left(&mut self) {
+        if let Some(field) = self.field.as_mut() {
+            field.move_to(false);
+            return;
+        }
         if let Some(c) = self.text[..self.at].chars().next_back() {
             self.at -= c.len_utf8();
         }
     }
 
     pub fn right(&mut self) {
+        if let Some(field) = self.field.as_mut() {
+            field.move_to(true);
+            return;
+        }
         if let Some(c) = self.text[self.at..].chars().next() {
             self.at += c.len_utf8();
+        }
+    }
+
+    /// `↑` and `↓`, which mean nothing at all until the field is open.
+    pub fn step(&mut self, by: i32) {
+        if let Some(field) = self.field.as_mut() {
+            field.step(by);
         }
     }
 
@@ -240,6 +453,71 @@ impl Input {
 
     pub fn end(&mut self) {
         self.at = self.text.len();
+    }
+
+    /// `tab`. Opens the date field on the date the line already has, and closes
+    /// it the way `⏎` does — in and out with one key.
+    ///
+    /// The starting date is the one in the box if there is one, and today if
+    /// there is not: a field that opens on the 1st of January makes you arrow
+    /// back to where you already were.
+    pub fn toggle_field(&mut self, today: NaiveDate) {
+        if self.field.is_some() {
+            self.apply_field();
+            return;
+        }
+        // Through `capture` rather than by looking for an `@` here: the date the
+        // field opens on has to be the date the line actually means, and there
+        // is one function that decides that.
+        let from = match &self.purpose {
+            Purpose::Postpone(_) => crate::capture::later(&self.text, today),
+            _ => crate::capture::capture(&self.text, today)
+                .due
+                .map(|d| d.date),
+        };
+        self.field = Some(DateField::new(from.unwrap_or(today)));
+    }
+
+    /// `⏎` with the field open: the date goes into the line and the keyboard
+    /// goes back to the text. `true` when that is what happened, so that the
+    /// same key still saves when the field is closed.
+    pub fn apply_field(&mut self) -> bool {
+        let Some(field) = self.field.take() else {
+            return false;
+        };
+        let date = field.date();
+        self.text = match &self.purpose {
+            // `p` asks how long, and the one form it takes past its year
+            // horizon is a date written out. There is nothing else in the box
+            // to keep.
+            Purpose::Postpone(_) => date.to_string(),
+            _ => replace_date(&self.text, &format!("@{date}")),
+        };
+        self.at = self.text.len();
+        true
+    }
+
+    /// `esc` with the field open: the field goes and the line is untouched.
+    /// `true` when that is what happened — one `esc` per thing that is open.
+    pub fn close_field(&mut self) -> bool {
+        self.field.take().is_some()
+    }
+}
+
+/// The line with its `@word` swapped for `with`, or `with` appended when there
+/// is none.
+///
+/// The first `@` word, which is the one `capture` reads as the date. A word we
+/// did not understand is still the user's, so this replaces exactly one word
+/// and leaves the spacing of everything around it alone.
+fn replace_date(text: &str, with: &str) -> String {
+    let found = crate::capture::words(text)
+        .into_iter()
+        .find(|(_, word)| word.starts_with('@'));
+    match found {
+        Some((at, word)) => format!("{}{with}{}", &text[..at], &text[at + word.len()..]),
+        None if text.trim().is_empty() => with.to_string(),
+        None => format!("{} {with}", text.trim_end()),
     }
 }
 
@@ -255,6 +533,10 @@ pub enum Typed {
     Right,
     Home,
     End,
+    /// `tab` — the date field, in and out.
+    Field,
+    /// `↑` `↓`, which mean nothing until the field is open.
+    Step(i32),
     Save,
     /// `esc` **and** `ctrl-c`. Somebody half-way through a sentence who reaches
     /// for the universal "stop that" key loses the sentence, not the session.
@@ -280,6 +562,11 @@ pub fn typing(key: KeyEvent) -> Typed {
         KeyCode::Right => Typed::Right,
         KeyCode::Home => Typed::Home,
         KeyCode::End => Typed::End,
+        // The one key that opens something from in here, and the two that only
+        // do anything once it is open — docs/tui.md#the-date-field--tab.
+        KeyCode::Tab | KeyCode::BackTab => Typed::Field,
+        KeyCode::Up => Typed::Step(1),
+        KeyCode::Down => Typed::Step(-1),
         // Every other modified key is left alone: `ctrl-v`, `alt-f` and the rest
         // mean things in a terminal that a one-line field has no business
         // claiming, and a stray control character in a task title is a file the
@@ -1312,7 +1599,25 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
     // already on the line above, in the same white.
     let (_, dot) = render.glyphs.punctuation();
     let mut shown = vec![Span::styled("      ".to_string(), dim)];
-    if moving {
+    if let Some(open) = input.field {
+        // The field takes the preview's row rather than a row of its own: the
+        // box keeps the five it has, which is what lets it open on a pane too
+        // short to grow. What the preview would have said is one keystroke away
+        // and unchanged — docs/tui.md#the-date-field--tab.
+        //
+        // The part under the cursor is in brackets **and** in the accent, and
+        // the brackets are what carry it under `NO_COLOR`: the one thing this
+        // row has to say is which of the three the arrows are pointing at.
+        for (part, text) in open.cells() {
+            let focused = part == open.part;
+            let style = match focused {
+                true => Style::default().fg(render.colours.accent).bold(),
+                false => plain,
+            };
+            shown.push(Span::styled(text, style));
+        }
+        shown.push(Span::styled(format!(" {}", render.glyphs.arrows()), dim));
+    } else if moving {
         // The one thing worth previewing here is the day it lands on, because
         // `2w` is exactly the input whose answer nobody works out in their head.
         match lands {
@@ -1493,8 +1798,16 @@ pub fn draw(
     // nothing else: the list keys under it are letters until `esc`, so
     // advertising them there would be a lie.
     let line = match input {
-        Some(_) => Line::from(Span::styled(
-            format!(" {} save   esc cancel", render.glyphs.enter()),
+        // The third key is only named while it does something. `tab` opens the
+        // date field, and once it is open the line says what ends *it* — the
+        // two keys that end the box are the same two either way, and the row
+        // has to be read at a glance rather than decoded.
+        Some(open) => Line::from(Span::styled(
+            match (open.field.is_some(), size == Size::Wide) {
+                (true, _) => format!(" {} date   esc back", render.glyphs.enter()),
+                (false, true) => format!(" {} save   esc cancel   tab date", render.glyphs.enter()),
+                (false, false) => format!(" {} save   esc cancel", render.glyphs.enter()),
+            },
             Style::default().fg(render.colours.dim),
         )),
         None => notice.line(
@@ -3841,7 +4154,7 @@ mod tests {
                 "│                                                                    │",
                 "│                                                                    │",
                 "└────────────────────────────────────────────────────────────────────┘",
-                " ⏎ save   esc cancel                                                  ",
+                " ⏎ save   esc cancel   tab date                                       ",
             ]
         );
     }
@@ -3914,7 +4227,7 @@ mod tests {
         );
         assert_eq!(
             screen[8].trim(),
-            "⏎ save   esc cancel",
+            "⏎ save   esc cancel   tab date",
             "the way out is on the line under the box: {screen:?}"
         );
     }
@@ -3974,6 +4287,204 @@ mod tests {
                 .collect::<String>();
             assert!(!shown.contains("is not a date"), "{text:?} → {shown:?}");
         }
+    }
+
+    /// The whole claim of the date field in one test: there is no sequence of
+    /// keys that puts a day the calendar does not have into the line. The
+    /// complaint it answers is `@2026-13-45`, which the text box takes and the
+    /// preview can only *say* is wrong.
+    #[test]
+    fn the_date_field_cannot_produce_a_day_that_does_not_exist() {
+        let jan = NaiveDate::from_ymd_opt(2026, 1, 31).unwrap();
+
+        // February, from the 31st of January: the day comes with it, clamped.
+        let mut field = DateField::new(jan);
+        field.move_to(true);
+        field.step(1);
+        assert_eq!(field.date(), NaiveDate::from_ymd_opt(2026, 2, 28).unwrap());
+
+        // And a leap February takes the 29th.
+        let mut field = DateField::new(NaiveDate::from_ymd_opt(2028, 1, 31).unwrap());
+        field.move_to(true);
+        field.step(1);
+        assert_eq!(field.date(), NaiveDate::from_ymd_opt(2028, 2, 29).unwrap());
+
+        // Every arrow from every part, a hundred times over, still a real day.
+        let mut field = DateField::new(jan);
+        for i in 0..100 {
+            field.step(if i % 3 == 0 { -1 } else { 1 });
+            field.move_to(i % 5 == 0);
+            let date = field.date();
+            assert_eq!(
+                NaiveDate::from_ymd_opt(date.year(), date.month(), date.day()),
+                Some(date)
+            );
+        }
+
+        // The day wraps inside its own month rather than spilling into the next.
+        let mut field = DateField::new(NaiveDate::from_ymd_opt(2026, 4, 30).unwrap());
+        field.step(1);
+        assert_eq!(field.date(), NaiveDate::from_ymd_opt(2026, 4, 1).unwrap());
+        field.step(-1);
+        assert_eq!(field.date(), NaiveDate::from_ymd_opt(2026, 4, 30).unwrap());
+
+        // The month wraps; the year does not, because 9999 and 1970 are not
+        // neighbours on any calendar.
+        let mut field = DateField::new(NaiveDate::from_ymd_opt(2026, 12, 1).unwrap());
+        field.move_to(true);
+        field.step(1);
+        assert_eq!(field.date(), NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+        field.move_to(true);
+        field.step(-100_000);
+        assert_eq!(field.date().year(), 1970);
+    }
+
+    /// The row it draws: three parts, one of them in brackets, and the same
+    /// width wherever the cursor is — a strip that shifted sideways on every
+    /// `←` would be unreadable. It fits the narrowest pane the box opens in,
+    /// under a locale that cannot draw an arrow.
+    #[test]
+    fn the_date_field_row_is_steady_and_fits() {
+        let mut input = Input::new("renew the passport".to_string(), Purpose::Add);
+        input.toggle_field(NaiveDate::from_ymd_opt(2026, 8, 11).unwrap());
+
+        let row = |input: &Input, glyphs: Glyphs| {
+            let render = Render {
+                glyphs,
+                ..render(crate::theme::MOCHA)
+            };
+            // 28 columns is the box inside a 34-column pane.
+            let (lines, _) = input_lines(input, 28, render);
+            lines[2]
+                .spans
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+
+        let day = row(&input, Glyphs::Unicode);
+        assert!(day.contains("[11] 08  2026"), "{day:?}");
+
+        input.right();
+        let month = row(&input, Glyphs::Unicode);
+        assert!(month.contains(" 11 [08] 2026"), "{month:?}");
+        assert_eq!(
+            columns(&day),
+            columns(&month),
+            "the row moved sideways with the cursor"
+        );
+
+        for glyphs in [Glyphs::Unicode, Glyphs::Ascii] {
+            let row = row(&input, glyphs);
+            assert!(columns(&row) <= 28, "{glyphs:?}: {row:?} is too wide");
+            if glyphs == Glyphs::Ascii {
+                assert!(row.is_ascii(), "{row:?}");
+            }
+        }
+    }
+
+    /// Eight digits, in order, and no arrows: `13082026` is the 13th of August.
+    /// A part that cannot take another digit hands the cursor on by itself,
+    /// which is what makes it one gesture.
+    #[test]
+    fn eight_digits_fill_the_date_in_order() {
+        let type_in = |keys: &str| {
+            let mut field = DateField::new(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+            for c in keys.chars() {
+                field.digit(c.to_digit(10).expect("a digit"));
+            }
+            field.date()
+        };
+
+        assert_eq!(
+            type_in("13082026"),
+            NaiveDate::from_ymd_opt(2026, 8, 13).unwrap()
+        );
+        assert_eq!(
+            type_in("01012030"),
+            NaiveDate::from_ymd_opt(2030, 1, 1).unwrap()
+        );
+
+        // A digit that cannot fit closes its part and starts the next: `4` is
+        // the whole day, because there is no 40th, and `5` is then the month.
+        assert_eq!(
+            type_in("452026"),
+            NaiveDate::from_ymd_opt(2026, 5, 4).unwrap()
+        );
+
+        // A month of 13 is unreachable rather than refused: the `1` is the
+        // month, the `3` cannot join it, so the `3` is the year's first digit.
+        let mut field = DateField::new(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+        for c in "0113".chars() {
+            field.digit(c.to_digit(10).unwrap());
+        }
+        assert_eq!(field.month, 1, "a 13th month was reachable");
+        assert_eq!(field.part, DatePart::Year);
+    }
+
+    /// What `tab` and `⏎` do to the line: one `@` word replaced or one
+    /// appended, and the rest of the sentence left exactly as it was.
+    #[test]
+    fn the_field_writes_one_word_into_the_line() {
+        let today = today();
+        let apply = |text: &str, purpose: Purpose| {
+            let mut input = Input::new(text.to_string(), purpose);
+            input.toggle_field(today);
+            input.field.as_mut().expect("the field is open").day = 20;
+            assert!(input.apply_field());
+            input.text
+        };
+
+        // It opens on the date the line already has, and puts it back in place.
+        assert_eq!(
+            apply("call the accountant @2026-08-13 #work", Purpose::Add),
+            "call the accountant @2026-08-20 #work"
+        );
+        // Shorthand is a date too, and it is resolved before it is replaced.
+        assert_eq!(
+            apply("call the accountant @thu !high", Purpose::Add),
+            "call the accountant @2026-08-20 !high"
+        );
+        // No date in the line: one word, appended, with one space.
+        assert_eq!(
+            apply("call the accountant", Purpose::Add),
+            "call the accountant @2026-08-20"
+        );
+        assert_eq!(apply("", Purpose::Add), "@2026-08-20");
+        // `p` asks how long, and takes the bare date — the one form it accepts
+        // past its year horizon.
+        assert_eq!(apply("", Purpose::Postpone(String::new())), "2026-08-20");
+
+        // An `@` word that is not a date is still the date's place in the line,
+        // and replacing it is the point: it is the typo being fixed.
+        assert_eq!(
+            apply("pay it @2026-13-45 #home", Purpose::Add),
+            "pay it @2026-08-20 #home"
+        );
+    }
+
+    /// The field is a mode you open on purpose and leave with `esc`, and the
+    /// box underneath is untouched while it is open.
+    #[test]
+    fn esc_closes_the_field_before_the_box() {
+        let mut input = Input::new("water the plants".to_string(), Purpose::Add);
+        assert!(!input.close_field(), "there was nothing open to close");
+
+        input.toggle_field(today());
+        assert!(input.field.is_some());
+
+        // Typing while it is open moves digits, not the line.
+        input.insert('1');
+        input.insert('5');
+        assert_eq!(input.text, "water the plants");
+
+        assert!(input.close_field(), "esc did not take the field");
+        assert_eq!(input.text, "water the plants", "esc changed the line");
+        assert!(!input.close_field(), "the second esc is the box's");
+
+        // And with no field open, the keys are the keys they always were.
+        input.insert('!');
+        assert_eq!(input.text, "water the plants!");
     }
 
     /// An empty box says what goes in it, and it fits the narrowest pane the

@@ -142,6 +142,35 @@ Three lists: what is settled, what was rejected, and what is still open.
   — the two roles the title already uses, so nothing new to theme. Colouring
   every date was the alternative and it flattens the row: the right-hand fields
   are secondary on purpose. See [tui.md](tui.md#main-screen).
+- ✅ **A date field, opened by `tab` and not standing in anybody's way**
+  *(2026-08-11)*. `↑ ↓` on the part under the cursor and eight digits filling
+  `DD MM YYYY`, which makes a month of `13` **unreachable** rather than merely
+  detectable — the stronger half of the complaint whose cheap half is the
+  "@… is not a date" line above. It is built to the shape
+  [notes.md](../notes.md#the-date-field--a-proposal-not-a-decision-2026-08-11)
+  argued its way to, and each of the three objections recorded there is answered
+  by that shape rather than waved past:
+  - **"A second mode inside a mode."** It is, and it is one you open on purpose
+    with `tab` and leave with `esc`, which is the same in-and-out the help
+    overlay has. Nothing about the box changes until you press it: `a` still
+    opens one line of text with the same five keys on it.
+  - **"It competes with the thing that already works."** It cannot, because it
+    is not on the path. `@thu`, `@3d` and `@tomorrow` are still what the common
+    case types, and the field is what you reach for when you were going to count
+    days on your fingers anyway. The empty box still advertises `@thu`, not
+    `tab`.
+  - **"Two entry methods for one field is the trap."** Avoided by there being
+    exactly one at a time. While the field is open the digits are positional and
+    the text box is not being typed into; `⏎` writes one `@YYYY-MM-DD` word back
+    into the line and hands the keyboard back. Free text never has to guess
+    whether `12` means December.
+
+  The date it writes is always a date: the day is clamped to the month it is in,
+  so arrowing January 31st into February gives the 28th (or the 29th) rather
+  than a word the parser will refuse. It edits the `@` word already in the line
+  if there is one and appends if there is not, and in the `p` box — which asks
+  *how long* and not *which day* — it writes the bare ISO date, which is the one
+  form `p` accepts past its year horizon.
 - ✅ **The packaging lives in this repository, and neither file carries a
   version** *(2026-08-11)*. `flake.nix` reads the version out of `Cargo.toml`
   with `fromTOML` and pins its dependencies with `cargoLock.lockFile`; the
