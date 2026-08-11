@@ -3,18 +3,19 @@
 The build list. Decisions behind any of these live in [docs/](docs/README.md);
 loose ends live in [notes.md](notes.md).
 
-**v1 shipped as `v0.1.0` and the next batch as `v0.2.0`, both on 2026-08-11.**
+**v1 shipped as `v0.1.0`, the next batch as `v0.2.0` and the crates.io release
+as `v0.3.0` — all on 2026-08-11.**
 Steps 0–8 below are the record of how that was built and are kept for the
 reasoning in them, not because there is anything left to do in them. The work
 that is actually open is the short list directly under this line.
 
 ## What is left
 
-Four open: one is code in the product and came out of a day of real use, the
-other three are packaging. Nothing here blocks anything else, so the order is by
-reach rather than by dependency. The ticked ones are kept here rather than moved
-down, because the reasoning in them is about things that were asked for and are
-not being built — a key, and a box split into fields.
+Three open: the field-by-field date entry, and two pieces of packaging. Nothing
+here blocks anything else, so the order is by reach rather than by dependency.
+The ticked ones are kept here rather than moved down, because the reasoning in
+them is about things that were asked for and are **not** being built — a key,
+and a box split into fields.
 
 - [x] **Copying a task means retyping it.** A task that is nearly one you already
       have — same tag, same shape, different day — had no way in but `a` and the
@@ -102,10 +103,12 @@ not being built — a key, and a box split into fields.
             [notes.md](notes.md#the-date-field--a-proposal-not-a-decision-2026-08-11),
             and it becomes an entry in
             [docs/decisions.md](docs/decisions.md) before a line of it is written
-- [ ] **`cargo publish`** — `--dry-run` passes (44 files, 157 KiB), and the only
-      thing in the way is a verified email address on crates.io. One command
-      after that. This is the item that decides whether anyone outside this
-      machine can install the thing with a tool they already have
+- [x] **`cargo publish`** — the email was verified on 2026-08-11 and the crate
+      went up as **v0.3.0** the same day: `cargo install ratodo` is the install
+      line now. It went out as a minor rather than a patch because the six
+      commits after the `v0.2.0` tag include a breaking one — the `d`/`X` swap —
+      and publishing `0.2.0` from a tree the tag does not point at would have
+      been permanently wrong on crates.io
 - [ ] **Thunderbird** — the third and last calendar data point. Its Tasks view is
       a different code path from the month grid and is where a VTODO would land.
       `todoman` displays the file correctly and `khal` ignores it; Thunderbird is

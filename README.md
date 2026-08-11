@@ -4,17 +4,18 @@
 
 **A todo TUI, built with ratatui — one Markdown file, no cloud, no account.**
 
-[![release](https://img.shields.io/badge/release-v0.2.0-green)](https://github.com/murat-akpinar/ratodo/releases)
+[![crates.io](https://img.shields.io/badge/crates.io-v0.3.0-green)](https://crates.io/crates/ratodo)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.88%2B-orange)](https://www.rust-lang.org)
 
 </div>
 
-> **v0.2.0.** The command line and the TUI are built and tested — capture,
-> editing, undo, folding, themes, the `.ics` export, and several lists in one
-> agenda. It is not on crates.io or the AUR yet, so [build it](#install) from the
-> tag. Reasoning behind every decision is in [`docs/`](docs/README.md), what
-> comes next in [`todo.md`](todo.md).
+> **v0.3.0, on crates.io.** `cargo install ratodo`. The command line and the TUI
+> are built and tested — capture, editing, undo, folding, themes, the `.ics`
+> export, several lists in one agenda, and `$work` to say which one a capture
+> goes to. A `flake.nix` and an AUR `PKGBUILD` are what is still missing.
+> Reasoning behind every decision is in [`docs/`](docs/README.md), what comes
+> next in [`todo.md`](todo.md).
 
 ## What it is
 
@@ -315,11 +316,15 @@ cp completions/ratodo.fish ~/.config/fish/completions/ratodo.fish
 
 ## Install
 
-Rust 1.88 or newer, and no other build dependency:
+```console
+$ cargo install ratodo
+```
+
+Rust 1.88 or newer, and no other build dependency. From source instead:
 
 ```console
 $ git clone https://github.com/murat-akpinar/ratodo && cd ratodo
-$ git checkout v0.2.0
+$ git checkout v0.3.0
 $ cargo install --path .        # → ~/.cargo/bin/ratodo
 ```
 
@@ -327,8 +332,7 @@ Or take the binary from the [release
 page](https://github.com/murat-akpinar/ratodo/releases) — x86_64 Linux, built
 against the system glibc.
 
-crates.io, a `flake.nix` and an AUR `PKGBUILD` are next; the tag had to exist
-first.
+A `flake.nix` and an AUR `PKGBUILD` are next.
 
 ## Documentation
 
