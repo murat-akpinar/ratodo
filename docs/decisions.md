@@ -142,6 +142,16 @@ Three lists: what is settled, what was rejected, and what is still open.
   — the two roles the title already uses, so nothing new to theme. Colouring
   every date was the alternative and it flattens the row: the right-hand fields
   are secondary on purpose. See [tui.md](tui.md#main-screen).
+- ✅ **A length of time stops at a year** *(2026-08-11)*. Reported from use: a
+  keyboard that stutters turns `22` into `2222` in the `p` box, and both are
+  perfectly good arithmetic — twenty-two days and six years — so the file took
+  the second one without a word. `capture::later` now refuses past 365 days in
+  every form that can carry a doubled digit (`2222`, `2222d`, `222w`), and the
+  refusal names the way out. The horizon is on `p` alone and **an ISO date is
+  not measured against it**: `p` asks *how long*, and past a year that has
+  stopped being the question, while `@2032-09-10` is a day somebody meant. A
+  digit-count check was the alternative and it is the wrong shape — `366` is two
+  wrong digits and `22` is two right ones. See [tui.md](tui.md#putting-a-date-off--p).
 - ✅ **`!high` is bold, and that is all it gets** *(2026-08-11)*. The one field
   the user typed to mean *urgent* sat in the same grey as the date and the tags.
   Weight rather than a twelfth theme role: a priority colour would have to be

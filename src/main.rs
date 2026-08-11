@@ -802,13 +802,15 @@ impl Live {
         }
 
         // Refused before anything is opened or cloned: `p` is the one field
-        // whose contents can be simply wrong, and "3x" is not a length of time.
+        // whose contents can be simply wrong. "3x" is not a length of time, and
+        // "2222" is `22` typed twice — six years, which the file used to take
+        // without a word. docs/tui.md#putting-a-date-off--p.
         let moved_to = match &input.purpose {
             ui::Purpose::Postpone(_) => match capture::later(typed, today) {
                 Some(date) => Some(date),
                 None => {
                     return Ok(ui::Notice::Warned(
-                        "not a length of time - try 2, 3d, 1w, fri".to_string(),
+                        "try 2, 3d, 1w, fri - a year at most, or write the date".to_string(),
                     ));
                 }
             },
@@ -1455,20 +1457,40 @@ mod tests {
             "## Work\n- [ ] first @2026-08-12 16:00 #ops !high\n> a note\n"
         );
 
-        // What is not a length of time is refused before the file is opened.
+        // What is not a length of time is refused before the file is opened —
+        // and so is one past the horizon, because `2222` is `22` typed twice
+        // and six years is not the question the box asked.
         let then = std::fs::read_to_string(&path).unwrap();
-        let bad = ui::Input::new(
-            "3x".to_string(),
+        for typed in ["3x", "2222", "2222d", "222w"] {
+            let bad = ui::Input::new(
+                typed.to_string(),
+                ui::Purpose::Postpone("- [ ] first @2026-08-12 16:00 #ops !high".to_string()),
+            );
+            let notice = live
+                .save_typed(std::slice::from_ref(&path), a_day(), &bad)
+                .unwrap();
+            assert!(
+                matches!(&notice, ui::Notice::Warned(text) if text.contains("a year at most")),
+                "{typed}: {notice:?}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                then,
+                "{typed}: a refusal wrote something"
+            );
+        }
+
+        // The way past the horizon is to write the date, which is why the
+        // refusal names it.
+        let far = ui::Input::new(
+            "2032-09-10".to_string(),
             ui::Purpose::Postpone("- [ ] first @2026-08-12 16:00 #ops !high".to_string()),
         );
-        let notice = live
-            .save_typed(std::slice::from_ref(&path), a_day(), &bad)
+        live.save_typed(std::slice::from_ref(&path), a_day(), &far)
             .unwrap();
-        assert!(matches!(&notice, ui::Notice::Warned(_)), "{notice:?}");
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            then,
-            "a refusal wrote something"
+            "## Work\n- [ ] first @2032-09-10 16:00 #ops !high\n> a note\n"
         );
     }
 

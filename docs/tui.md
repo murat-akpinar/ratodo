@@ -371,6 +371,20 @@ somebody typing about the number two. An empty box says `how long?  2  3d  1w
 fri` rather than nothing, and anything unparseable is refused before the file is
 opened.
 
+**A length of time stops at a year.** A keyboard that stutters turns `22` into
+`2222`, and the difference between those two is twenty-two days and six years —
+both perfectly good arithmetic, which is why the file used to take the second one
+without a word. Past 365 days the answer is refused, in every form that can carry
+a doubled digit: `2222`, `2222d`, `222w`. The way to move a task past a year is
+to **write the date out** — `2032-09-10` is a day somebody meant and is not
+capped, which is also why the refusal names it:
+
+```
+ ⚠ try 2, 3d, 1w, fri - a year at most, or write the date
+```
+
+The horizon is on `p` alone. `@` names a day, and a day you name is yours.
+
 It moves `@` and nothing else. The time stays — putting "Friday at 09:30" off by
 a week is still half past nine — and a task with no date at all gets one, which
 is the only sense `p` can make of it. Before this, moving a date meant reopening

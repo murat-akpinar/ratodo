@@ -242,11 +242,26 @@ fn reachable(digits: &str, max: u32) -> bool {
 /// reading of it — and "1 day, 2 days" is how the question gets answered.
 pub fn later(text: &str, today: NaiveDate) -> Option<NaiveDate> {
     let text = text.trim();
-    match text.parse::<u64>() {
-        Ok(days) => today.checked_add_days(Days::new(days)),
-        Err(_) => resolve_date(text, today),
+    // A date typed out in full is a day somebody meant, and is not measured
+    // against the horizon below.
+    if let Ok(date) = NaiveDate::parse_from_str(text, "%Y-%m-%d") {
+        return Some(date);
     }
+    let date = match text.parse::<u64>() {
+        Ok(days) => today.checked_add_days(Days::new(days))?,
+        Err(_) => resolve_date(text, today)?,
+    };
+    (date <= today.checked_add_days(Days::new(HORIZON))?).then_some(date)
 }
+
+/// How far a length of time may reach, in days.
+///
+/// A keyboard that stutters turns `22` into `2222`, which is twenty-two days
+/// and six years — and the file took the second one without a word, because
+/// both are perfectly good arithmetic. `p` asks *how long*, and past a year
+/// that question has stopped being the one being answered: the way to say
+/// 2032 is to write the date, which is not capped.
+const HORIZON: u64 = 365;
 
 /// `2026-08-12`, `today`, `tomorrow`, `mon`..`sun`, `3d`, `2w`.
 fn resolve_date(s: &str, today: NaiveDate) -> Option<NaiveDate> {
@@ -369,6 +384,35 @@ mod tests {
         for nonsense in ["", "   ", "3x", "-1", "soon", "2026-13-45"] {
             assert_eq!(later(nonsense, today()), None, "{nonsense:?}");
         }
+    }
+
+    /// The stutter this exists for: `22` typed twice is `2222`, which is six
+    /// years out and used to be written without a word. A length of time is
+    /// refused past a year, in every form that can carry a doubled digit.
+    #[test]
+    fn a_length_of_time_stops_at_a_year() {
+        // The horizon itself is inside, and the day after it is not.
+        assert_eq!(later("365", today()), Some(ymd(2027, 8, 10)));
+        assert_eq!(later("52w", today()), Some(ymd(2027, 8, 9)));
+        assert_eq!(later("366", today()), None);
+
+        for stutter in ["2222", "2222d", "222w", "999999999"] {
+            assert_eq!(later(stutter, today()), None, "{stutter:?}");
+        }
+
+        // And what the stutter was meant to be still works, which is the whole
+        // point of picking a horizon rather than a digit count.
+        for (typed, expected) in [
+            ("22", ymd(2026, 9, 1)),
+            ("22d", ymd(2026, 9, 1)),
+            ("22w", ymd(2027, 1, 11)),
+        ] {
+            assert_eq!(later(typed, today()), Some(expected), "{typed:?}");
+        }
+
+        // A date written out in full is a day somebody meant, so it is not
+        // measured against the horizon — that is how a task moves past a year.
+        assert_eq!(later("2032-09-10", today()), Some(ymd(2032, 9, 10)));
     }
 
     /// The bare number is `later`'s alone. `@2` in a sentence is somebody typing
