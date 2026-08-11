@@ -723,6 +723,107 @@ fn the_bare_command_opens_a_screen_on_a_terminal_and_gives_it_back() {
     );
 }
 
+/// The locale reaches the screen. Asserted through a terminal because the
+/// wiring between `$LC_ALL` and the glyphs is the part a unit test cannot see.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_locale_picks_the_glyphs_the_screen_is_drawn_with() {
+    use std::io::Write;
+
+    let dir = TempDir::new("glyphs");
+    let path = dir.file("todo.md");
+    fs::write(&path, "- [ ] pay the invoice\n").unwrap();
+
+    let screen_under = |locale: &str| {
+        let mut child = Command::new("timeout")
+            .args([
+                "20",
+                "script",
+                "-qec",
+                &format!("stty rows 12 cols 50; {BIN} --file {}", path.display()),
+                "/dev/null",
+            ])
+            .env("LC_ALL", locale)
+            .env("LANG", locale)
+            .env("XDG_STATE_HOME", dir.file("state"))
+            .env("XDG_CONFIG_HOME", dir.file("config"))
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("script(1) is needed for this test — it is in util-linux");
+        child.stdin.take().expect("stdin").write_all(b"q").unwrap();
+        let out = child.wait_with_output().expect("waiting");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    let utf8 = screen_under("en_US.UTF-8");
+    assert!(
+        utf8.contains('○'),
+        "no unicode mark in a UTF-8 locale: {utf8:?}"
+    );
+    assert!(utf8.contains('▌'), "{utf8:?}");
+
+    let plain = screen_under("C");
+    assert!(
+        plain.contains("[ ]"),
+        "no ascii mark in the C locale: {plain:?}"
+    );
+    assert!(!plain.contains('○'), "a unicode mark survived: {plain:?}");
+}
+
+/// Round-trip fidelity through the TUI, which is where it is easiest to lose:
+/// `spc` on a task has to change the one checkbox byte and nothing else in a
+/// file full of things ratodo does not understand.
+#[cfg(target_os = "linux")]
+#[test]
+fn ticking_a_task_on_the_screen_changes_one_byte_of_the_file() {
+    use std::io::Write;
+
+    let dir = TempDir::new("toggle");
+    let path = dir.file("todo.md");
+    let before = "# My list\n\n## Work\n- [ ]   oddly   spaced  @2026-08-09 #ops\n\
+                  - [ ] second\n\n| a | table |\n|---|---|\n\n> a note\n";
+    fs::write(&path, before).unwrap();
+
+    let mut child = Command::new("timeout")
+        .args([
+            "20",
+            "script",
+            "-qec",
+            &format!("stty rows 14 cols 60; {BIN} --file {}", path.display()),
+            "/dev/null",
+        ])
+        .env("XDG_STATE_HOME", dir.file("state"))
+        .env("XDG_DATA_HOME", dir.file("data"))
+        .env("XDG_CONFIG_HOME", dir.file("config"))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("script(1) is needed for this test — it is in util-linux");
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let mut stdin = child.stdin.take().expect("stdin");
+    stdin.write_all(b" ").unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    stdin.write_all(b"q").unwrap();
+    drop(stdin);
+
+    let out = child.wait_with_output().expect("waiting");
+    assert!(out.status.success());
+
+    let after = fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        after,
+        before.replacen("- [ ]   oddly", "- [x]   oddly", 1),
+        "something other than the one checkbox moved"
+    );
+
+    // And the screen said so, in place — the ticked row is still the first one
+    // under OVERDUE rather than having jumped to the end of its group.
+    let screen = String::from_utf8_lossy(&out.stdout);
+    assert!(screen.contains("done:"), "{screen:?}");
+}
+
 /// The promise in docs/architecture.md#concurrent-editing: an edit from vim,
 /// `git pull` or `ratodo add` next door reaches the open screen on its own.
 /// Timing, so it needs a real process and real waiting.

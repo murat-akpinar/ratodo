@@ -6,7 +6,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 
 use crate::model::Doc;
 use crate::parse;
@@ -113,14 +113,29 @@ fn write_temp(tmp: &Path, text: &str, existing: Option<&fs::Metadata>) -> Result
     Ok(())
 }
 
+/// Somebody else wrote the file first. Its own type because it is the one
+/// failure that is not a fault: the TUI answers it with a line offering a
+/// reload, where any other error is a reason to stop.
+#[derive(Debug)]
+pub struct Conflict(pub PathBuf);
+
+impl std::fmt::Display for Conflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} changed on disk since it was read — nothing was written.\n\
+             Re-run to pick up the new version.",
+            self.0.display()
+        )
+    }
+}
+
+impl std::error::Error for Conflict {}
+
 fn check_unchanged(path: &Path, read_mtime: Option<SystemTime>) -> Result<()> {
     let current = fs::metadata(path).and_then(|m| m.modified()).ok();
     if current != read_mtime {
-        bail!(
-            "{} changed on disk since it was read — nothing was written.\n\
-             Re-run to pick up the new version.",
-            path.display()
-        );
+        return Err(Conflict(path.to_path_buf()).into());
     }
     Ok(())
 }

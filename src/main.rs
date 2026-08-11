@@ -257,15 +257,6 @@ fn quietly_sync(path: &Path) {
     let _ = sync(path, false);
 }
 
-/// Everything the screen needs, read fresh. Called again on every outside
-/// change, which is why it takes a path rather than a document.
-fn snapshot(path: &Path, today: chrono::NaiveDate) -> Result<(Vec<ui::Row>, agenda::Counts)> {
-    let doc = write::load(path)?.doc;
-    let tasks: Vec<_> = doc.tasks().cloned().collect();
-    let counts = agenda::Counts::of(&tasks, today);
-    Ok((ui::rows(&agenda::agenda(&tasks, today)), counts))
-}
-
 enum Msg {
     Input(Event),
     /// The list changed underneath us — vim, `git pull`, `ratodo add` next door.
@@ -313,8 +304,7 @@ fn tui(path: &Path, theme_flag: Option<&str>) -> Result<ExitCode> {
         glyphs: ui::Glyphs::for_locale(locale().as_deref()),
         today: Local::now().date_naive(),
     };
-    let (rows, counts) = snapshot(path, render.today)?;
-    let mut screen = ui::Screen::new(rows);
+    let mut live = Live::read(path, render.today)?;
 
     let (tx, rx) = std::sync::mpsc::channel();
     let _watcher = watch(path, tx.clone());
@@ -343,32 +333,122 @@ fn tui(path: &Path, theme_flag: Option<&str>) -> Result<ExitCode> {
     // Drop puts the cursor back. That is the whole of invariant 5, and it is the
     // library's, so it cannot drift out of step with the setup it undoes.
     let mut terminal = ratatui::try_init()?;
-    let result = run(&mut terminal, &mut screen, counts, path, &rx, render);
+    let result = run(&mut terminal, &mut live, path, &rx, render);
     ratatui::restore();
     result
 }
 
+/// The open list: the document, what the screen is showing of it, and enough to
+/// tell our own writes apart from somebody else's.
+struct Live {
+    doc: ratodo::model::Doc,
+    mtime: Option<std::time::SystemTime>,
+    /// The exact bytes we last put on disk. Every save wakes the watcher, and
+    /// re-reading our own write would undo the in-place update that keeps a
+    /// ticked task from jumping.
+    written: Option<String>,
+    screen: ui::Screen,
+    counts: agenda::Counts,
+}
+
+impl Live {
+    fn read(path: &Path, today: chrono::NaiveDate) -> Result<Self> {
+        let loaded = write::load(path)?;
+        let tasks: Vec<_> = loaded.doc.tasks().cloned().collect();
+        Ok(Live {
+            counts: agenda::Counts::of(&tasks, today),
+            screen: ui::Screen::new(ui::rows(&agenda::agenda(&tasks, today))),
+            doc: loaded.doc,
+            mtime: loaded.mtime,
+            written: None,
+        })
+    }
+
+    fn reload(&mut self, path: &Path, today: chrono::NaiveDate) -> Result<()> {
+        let loaded = write::load(path)?;
+        let tasks: Vec<_> = loaded.doc.tasks().cloned().collect();
+        self.counts = agenda::Counts::of(&tasks, today);
+        self.screen
+            .replace(ui::rows(&agenda::agenda(&tasks, today)));
+        self.doc = loaded.doc;
+        self.mtime = loaded.mtime;
+        self.written = None;
+        Ok(())
+    }
+
+    /// Ticks the selected task, in the document and on the screen, and writes.
+    ///
+    /// The row is updated in place rather than regrouped: a task marked done
+    /// stays where it is until the next reload. Nothing else on screen moves.
+    fn toggle(&mut self, path: &Path, today: chrono::NaiveDate) -> Result<ui::Notice> {
+        let Some(raw) = self.screen.task().map(|t| t.raw.clone()) else {
+            return Ok(ui::Notice::Hints);
+        };
+        let Some(task) = self.doc.tasks_mut().find(|t| t.raw == raw) else {
+            return Ok(ui::Notice::Hints);
+        };
+
+        let done = !task.done;
+        task.set_done(done);
+        let updated = task.clone();
+
+        match write::save(path, &self.doc, self.mtime, &backup_dir()?) {
+            Ok(()) => {
+                self.written = Some(write::render(&self.doc));
+                self.mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+                self.screen.update_selected(updated.clone());
+
+                let tasks: Vec<_> = self.doc.tasks().cloned().collect();
+                self.counts = agenda::Counts::of(&tasks, today);
+                quietly_sync(path);
+
+                Ok(ui::Notice::Said(format!(
+                    "{}: {}",
+                    if done { "done" } else { "reopened" },
+                    text::plain(&updated.title)
+                )))
+            }
+            Err(e) => {
+                // Put the document back: the file still says otherwise, and a
+                // screen that disagrees with disk is how the next write loses data.
+                if let Some(task) = self.doc.tasks_mut().find(|t| t.raw == updated.raw) {
+                    task.set_done(!done);
+                }
+                if e.downcast_ref::<write::Conflict>().is_some() {
+                    Ok(ui::Notice::Warned(
+                        "changed on disk — nothing was written.  r reload".to_string(),
+                    ))
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+}
+
 fn run(
     terminal: &mut ratatui::DefaultTerminal,
-    screen: &mut ui::Screen,
-    mut counts: agenda::Counts,
+    live: &mut Live,
     path: &Path,
     rx: &std::sync::mpsc::Receiver<Msg>,
     render: ui::Render,
 ) -> Result<ExitCode> {
     let today = render.today;
+    let mut notice = ui::Notice::Hints;
+
     loop {
-        terminal.draw(|frame| ui::draw(frame, screen, counts, render))?;
+        terminal.draw(|frame| ui::draw(frame, &mut live.screen, live.counts, render, &notice))?;
 
         match rx.recv().context("both event sources went away")? {
             Msg::InputGone => return Ok(ExitCode::SUCCESS),
             Msg::Reload => {
-                // One save can arrive as several events. Re-reading a small file
-                // twice costs nothing and the second draw emits no cells, so
-                // there is nothing here worth a debounce that could swallow a key.
-                let (rows, fresh) = snapshot(path, today)?;
-                screen.replace(rows);
-                counts = fresh;
+                // Our own save wakes the watcher too. Re-reading it would throw
+                // away the in-place update and let the ticked task jump.
+                let on_disk = std::fs::read_to_string(path).ok();
+                if on_disk.is_some() && on_disk == live.written {
+                    continue;
+                }
+                live.reload(path, today)?;
             }
             // Anything else — a resize, say — falls through to the redraw above.
             Msg::Input(Event::Key(key)) => {
@@ -376,9 +456,18 @@ fn run(
                 // loop only knows how to read one and how to obey.
                 match ui::action(key) {
                     ui::Action::Quit => return Ok(ExitCode::SUCCESS),
-                    ui::Action::Move(n) => screen.move_by(n),
-                    ui::Action::Top => screen.top(),
-                    ui::Action::Bottom => screen.bottom(),
+                    ui::Action::Move(n) => {
+                        live.screen.move_by(n);
+                        notice = ui::Notice::Hints;
+                    }
+                    ui::Action::Top => live.screen.top(),
+                    ui::Action::Bottom => live.screen.bottom(),
+                    ui::Action::Toggle => notice = live.toggle(path, today)?,
+                    ui::Action::Reload => {
+                        live.reload(path, today)?;
+                        notice = ui::Notice::Said("reloaded".to_string());
+                    }
+                    ui::Action::Say(what) => notice = ui::Notice::Said(what.to_string()),
                     ui::Action::Ignore => {}
                 }
             }
@@ -528,6 +617,46 @@ mod tests {
             "our own writer's temp file must not look like the list"
         );
         assert!(!touches(&notify::Event::new(notify::EventKind::Any), name));
+    }
+
+    /// The one case where the tool must interrupt, because the alternative is
+    /// losing somebody's work. Deterministic here in a way it cannot be through
+    /// a terminal: the file is changed behind `Live`'s back, with no reload in
+    /// between, which is exactly the state the mtime check exists to catch.
+    #[test]
+    fn a_write_over_somebody_elses_edit_is_refused_and_says_so() {
+        let dir = std::env::temp_dir().join(format!("ratodo-conflict-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("todo.md");
+
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 8, 11).unwrap();
+        std::fs::write(&path, "- [ ] mine\n").unwrap();
+        let mut live = Live::read(&path, today).unwrap();
+
+        // Somebody else gets there first. The sleep is for filesystems whose
+        // mtime resolution is coarser than two writes in a row.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&path, "- [ ] mine\n- [ ] theirs\n").unwrap();
+
+        let notice = live.toggle(&path, today).unwrap();
+        assert!(
+            matches!(&notice, ui::Notice::Warned(w) if w.contains("changed on disk")),
+            "{notice:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "- [ ] mine\n- [ ] theirs\n",
+            "the refused write went through anyway"
+        );
+        // And the in-memory document went back, so the screen does not sit there
+        // claiming a task is done that the file says is not.
+        assert!(
+            live.doc.tasks().all(|t| !t.done),
+            "the model kept a change the file refused"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A rename reports both ends. Reading only the first would miss every

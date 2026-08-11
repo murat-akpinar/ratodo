@@ -129,21 +129,24 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
 - [x] Draw the grouped agenda with header rules, `○ ✓ !` symbols, `▌` selection
 - [x] ASCII fallback: `[ ]` `[x]` `[!]`, `>` selection — chosen from the locale,
       and it takes the frame and the punctuation with it
-- [ ] The bottom line, multiplexed: hints / input / result / warning
-- [ ] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `a o` · `⏎` · `d u` · `h l z` · `e` · `r` · `?` · `q`
+- [~] The bottom line: hints and results done, the input field comes with the
+      input mode
+- [~] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `r` · `q` done. `a o ⏎ d u h l z e ?`
+      still to come
 - [ ] `h`/`l` fold the group under the cursor — lf/ranger/yazi muscle memory, not "fold LATER"
 - [ ] Input mode: `⏎` save, `esc` cancel, `ctrl-c` cancel (**never quit**), and nothing else can open it
 - [ ] **Live parse preview** under the input — `@thu` resolves as you type
 - [ ] `d` deletes immediately; `u` undoes delete / toggle / edit
-- [ ] Write-conflict line with `r` reload, keeping the typed text
+- [~] Write-conflict line with `r` reload — the line and the reload are in;
+      keeping the typed text waits for the input mode
 - [ ] Selection survives reload — track by identity, not row index
-- [ ] A toggled task does not change position until the next reload
+- [x] A toggled task does not change position until the next reload
 - [ ] Empty state with the file path and a worked example
 - [ ] `?` help overlay
 - [x] Width breakpoints: ≥60 / 34–59 / <34, in the documented drop order
-- [ ] Height under 10 rows: collapse the hint bar
+- [x] Height under 10 rows: collapse the hint bar
 - [x] `NO_COLOR=1` on a bare TTY still reads correctly
-- [ ] `:` and `/` answer on the bottom line instead of doing nothing
+- [x] `:` and `/` answer on the bottom line instead of doing nothing
 - [x] `clap`: `ratodo` · `add` · `list` · `done` · `sync` · `theme`
 - [x] `--file` and `--theme` global flags
 - [x] Check column alignment with non-ASCII and emoji — display columns via

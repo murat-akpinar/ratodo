@@ -3,9 +3,10 @@
 use chrono::NaiveDate;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState};
+use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 
 use crate::agenda::{Counts, Group};
 use crate::model::Task;
@@ -20,6 +21,11 @@ pub enum Action {
     Move(isize),
     Top,
     Bottom,
+    Toggle,
+    Reload,
+    /// A key that is bound to nothing on purpose but still owes an answer.
+    /// Silence reads as a broken program — docs/tui.md#deliberately-unbound.
+    Say(&'static str),
     Ignore,
 }
 
@@ -41,8 +47,18 @@ pub fn action(key: KeyEvent) -> Action {
         KeyCode::Char('q') if !ctrl => Action::Quit,
         KeyCode::Char('j') | KeyCode::Down => Action::Move(1),
         KeyCode::Char('k') | KeyCode::Up => Action::Move(-1),
+        // `gg` in vim is two keys; here the first one already did it and the
+        // second is a harmless no-op, so there is no pending-key state to hold.
         KeyCode::Char('g') => Action::Top,
         KeyCode::Char('G') => Action::Bottom,
+        KeyCode::Char('d') if ctrl => Action::Move(10),
+        KeyCode::Char('u') if ctrl => Action::Move(-10),
+        KeyCode::Char(' ') => Action::Toggle,
+        KeyCode::Char('r') => Action::Reload,
+        // Bound to an answer rather than to nothing. A key that appears broken
+        // is worse than one that explains itself.
+        KeyCode::Char(':') => Action::Say("no command mode — ? for keys"),
+        KeyCode::Char('/') => Action::Say("search comes in v2"),
         _ => Action::Ignore,
     }
 }
@@ -114,6 +130,16 @@ impl Screen {
         match self.rows.get(self.state.selected()?) {
             Some(Row::Task(t)) => Some(t),
             _ => None,
+        }
+    }
+
+    /// Rewrites the selected row and **nothing else**. A task ticked done marks
+    /// in place; it does not jump to the end of its group until the next
+    /// reload. Watching a row you just touched fly somewhere else is
+    /// disorienting — docs/tui.md, the first of the side-pane rules.
+    pub fn update_selected(&mut self, task: Task) {
+        if let Some(Row::Task(row)) = self.state.selected().and_then(|i| self.rows.get_mut(i)) {
+            *row = task;
         }
     }
 
@@ -381,8 +407,73 @@ fn header_line(title: &str, width: usize, render: Render) -> Line<'static> {
     ])
 }
 
-pub fn draw(frame: &mut Frame, screen: &mut Screen, counts: Counts, render: Render) {
-    let area = frame.area();
+/// What the one reserved line under the frame is saying. One line, and it is
+/// the only part of the screen that changes shape — docs/tui.md#the-bottom-line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Notice {
+    /// The default: which keys do what.
+    Hints,
+    /// Just after an action.
+    Said(String),
+    /// A write that was refused. The one thing worth interrupting for.
+    Warned(String),
+}
+
+impl Notice {
+    fn line(&self, size: Size, height: u16, glyphs: Glyphs, colours: Theme) -> Line<'static> {
+        let (text, colour) = match self {
+            // Only the keys that do something. A hint bar advertising a key that
+            // is not implemented yet is a worse lie than no hint bar.
+            Notice::Hints if height < 10 => (" ?".to_string(), colours.dim),
+            Notice::Hints if size == Size::Wide => (
+                " j k move   spc done   r reload   ? keys   q quit".to_string(),
+                colours.dim,
+            ),
+            Notice::Hints => (" j k  spc  r  ?  q".to_string(), colours.dim),
+            Notice::Said(text) => (format!(" {text}"), colours.dim),
+            Notice::Warned(text) => {
+                let mark = match glyphs {
+                    Glyphs::Unicode => "⚠",
+                    Glyphs::Ascii => "!",
+                };
+                (format!(" {mark} {text}"), colours.overdue)
+            }
+        };
+        Line::from(Span::styled(text, Style::default().fg(colour)))
+    }
+}
+
+pub fn draw(
+    frame: &mut Frame,
+    screen: &mut Screen,
+    counts: Counts,
+    render: Render,
+    notice: &Notice,
+) {
+    let whole = frame.area();
+    // One row held back, always. The list never moves to make room for a
+    // message, which is the point of having a fixed line rather than a popup.
+    //
+    // Written with `Rect::new` rather than struct update syntax: a mutation that
+    // drops the `height:` field from `Rect { height: 1, ..whole }` produces a
+    // rectangle that is clipped back to the same one row, so it is a change no
+    // test can ever object to. Positional arguments leave nothing to drop.
+    let (area, bottom) = if whole.height <= 1 {
+        // One row goes to the list. A pane this short is somebody dragging a
+        // splitter past the point of usefulness, and a lone hint bar helps less
+        // than a lone task does.
+        (whole, None)
+    } else {
+        (
+            Rect::new(whole.x, whole.y, whole.width, whole.height - 1),
+            Some(Rect::new(
+                whole.x,
+                whole.y + whole.height - 1,
+                whole.width,
+                1,
+            )),
+        )
+    };
     let size = Size::of(area.width);
 
     // Under 34 columns the frame is two of them, which is a tenth of the pane.
@@ -427,6 +518,14 @@ pub fn draw(frame: &mut Frame, screen: &mut Screen, counts: Counts, render: Rend
     }
 
     frame.render_stateful_widget(list, area, &mut screen.state);
+
+    if let Some(bottom) = bottom {
+        frame.render_widget(
+            Paragraph::new(notice.line(size, whole.height, render.glyphs, render.colours))
+                .style(Style::default().bg(render.colours.background)),
+            bottom,
+        );
+    }
 }
 
 /// `5 open · 1 overdue` while it fits, `5 · 1!` when it does not — and the same
@@ -538,15 +637,41 @@ mod tests {
     /// matters: pressed out of habit, it must not take the pane down with it.
     #[test]
     fn the_deliberately_unbound_keys_do_nothing() {
-        for code in [
-            KeyCode::Esc,
-            KeyCode::Char('x'),
-            KeyCode::Char(':'),
-            KeyCode::Char('/'),
-            KeyCode::Char('Q'),
-        ] {
+        for code in [KeyCode::Esc, KeyCode::Char('x'), KeyCode::Char('Q')] {
             assert_eq!(action(press(code)), Action::Ignore, "{code:?}");
         }
+    }
+
+    /// `:` and `/` are unbound but not silent. A key that appears broken is
+    /// worse than one that explains itself — docs/tui.md#deliberately-unbound.
+    #[test]
+    fn the_keys_with_nothing_behind_them_still_answer() {
+        assert_eq!(
+            action(press(KeyCode::Char(':'))),
+            Action::Say("no command mode — ? for keys")
+        );
+        assert_eq!(
+            action(press(KeyCode::Char('/'))),
+            Action::Say("search comes in v2")
+        );
+    }
+
+    #[test]
+    fn the_keys_that_change_the_list() {
+        assert_eq!(action(press(KeyCode::Char(' '))), Action::Toggle);
+        assert_eq!(action(press(KeyCode::Char('r'))), Action::Reload);
+        assert_eq!(
+            action(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL)),
+            Action::Move(10)
+        );
+        assert_eq!(
+            action(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL)),
+            Action::Move(-10)
+        );
+        // Without the modifier they belong to delete and undo, which are not
+        // built yet and must not be half-bound to something else meanwhile.
+        assert_eq!(action(press(KeyCode::Char('d'))), Action::Ignore);
+        assert_eq!(action(press(KeyCode::Char('u'))), Action::Ignore);
     }
 
     /// Windows sends a release for every press. Acting on both moves the cursor
@@ -707,12 +832,37 @@ mod tests {
     }
 
     fn rendered(width: u16, height: u16, tasks: &[Task]) -> Vec<String> {
+        rendered_with(width, height, tasks, |_| {})
+    }
+
+    fn rendered_notice(width: u16, height: u16, tasks: &[Task], notice: &Notice) -> Vec<String> {
+        paint(width, height, tasks, notice, |_| {})
+    }
+
+    /// Renders after doing something to the screen first — a toggle, a move.
+    fn rendered_with(
+        width: u16,
+        height: u16,
+        tasks: &[Task],
+        act: impl FnOnce(&mut Screen),
+    ) -> Vec<String> {
+        paint(width, height, tasks, &Notice::Hints, act)
+    }
+
+    fn paint(
+        width: u16,
+        height: u16,
+        tasks: &[Task],
+        notice: &Notice,
+        act: impl FnOnce(&mut Screen),
+    ) -> Vec<String> {
         let groups = agenda(tasks, today());
         let mut screen = Screen::new(rows(&groups));
+        act(&mut screen);
         let counts = Counts::of(tasks, today());
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render(crate::theme::MOCHA)))
+            .draw(|f| draw(f, &mut screen, counts, render(crate::theme::MOCHA), notice))
             .unwrap();
         terminal
             .backend()
@@ -735,7 +885,7 @@ mod tests {
         let tasks = [capture("late @2026-08-09 #ops", today()), work];
 
         assert_eq!(
-            rendered(62, 7, &tasks),
+            rendered(62, 10, &tasks),
             [
                 "┌ ratodo — 2 open · 1 overdue ───────────────────────────────┐",
                 "│  OVERDUE ───────────────────────────────────────────────── │",
@@ -743,7 +893,10 @@ mod tests {
                 "│                                                            │",
                 "│  Work ──────────────────────────────────────────────────── │",
                 "│  ○ write the plan                                          │",
+                "│                                                            │",
+                "│                                                            │",
                 "└────────────────────────────────────────────────────────────┘",
+                " j k move   spc done   r reload   ? keys   q quit             ",
             ]
         );
     }
@@ -762,8 +915,8 @@ mod tests {
                 "┌ ratodo — 1 · 1! ───────────────────────────────┐",
                 "│  OVERDUE ───────────────────────────────────── │",
                 "│▌ ! an extremely long task title that w…  1d ago│",
-                "│                                                │",
                 "└────────────────────────────────────────────────┘",
+                " ?                                                ",
             ]
         );
     }
@@ -777,7 +930,7 @@ mod tests {
         let tasks = [capture("late @2026-08-09 #ops", today()), work];
 
         assert_eq!(
-            rendered(46, 7, &tasks),
+            rendered(46, 8, &tasks),
             [
                 "┌ ratodo — 2 · 1! ───────────────────────────┐",
                 "│  OVERDUE ───────────────────────────────── │",
@@ -786,6 +939,7 @@ mod tests {
                 "│  ○ write the plan                          │",
                 "│                                            │",
                 "└────────────────────────────────────────────┘",
+                " ?                                            ",
             ]
         );
     }
@@ -895,11 +1049,12 @@ mod tests {
         // Not `chars().count()`: a double-width character takes two cells and
         // ratatui leaves the second one empty, so the row's character count is
         // shorter than the row. What matters is that the frame still closes.
-        let last = screen.len() - 1;
-        for row in &screen[1..last] {
+        // The bottom row is the notice line, outside the frame.
+        let frame = screen.len() - 2;
+        for row in &screen[1..frame] {
             assert!(row.ends_with('│'), "the right edge broke: {screen:?}");
         }
-        assert!(screen[0].ends_with('┐') && screen[last].ends_with('┘'));
+        assert!(screen[0].ends_with('┐') && screen[frame].ends_with('┘'));
         assert!(screen[2].ends_with("9d ago│"), "{screen:?}");
     }
 
@@ -917,7 +1072,7 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(62, 8)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render))
+            .draw(|f| draw(f, &mut screen, counts, render, &Notice::Hints))
             .unwrap();
         let text: String = terminal
             .backend()
@@ -993,7 +1148,15 @@ mod tests {
         let counts = Counts::of(&tasks, today());
         let mut terminal = Terminal::new(TestBackend::new(30, 6)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render(crate::theme::MOCHA)))
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    counts,
+                    render(crate::theme::MOCHA),
+                    &Notice::Hints,
+                )
+            })
             .unwrap();
 
         let text: String = terminal
@@ -1017,7 +1180,7 @@ mod tests {
         let counts = Counts::of(tasks, today());
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render(colours)))
+            .draw(|f| draw(f, &mut screen, counts, render(colours), &Notice::Hints))
             .unwrap();
 
         // Cell by cell, not by searching a flattened string: `│` and `─` are
@@ -1089,13 +1252,134 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render(plain)))
+            .draw(|f| draw(f, &mut screen, counts, render(plain), &Notice::Hints))
             .unwrap();
 
         for cell in terminal.backend().buffer().content() {
             assert_eq!(cell.fg, Color::Reset, "{:?}", cell.symbol());
             assert_eq!(cell.bg, Color::Reset, "{:?}", cell.symbol());
         }
+    }
+
+    /// The first of the side-pane rules: a task ticked done marks in place. If
+    /// it jumped to the end of its group the row you just touched would fly off
+    /// somewhere while you were looking at it.
+    #[test]
+    fn a_toggled_task_marks_in_place_and_moves_nothing() {
+        let tasks = tasks(&["first @2026-08-01", "second @2026-08-01"]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let before = screen.selected();
+
+        let mut done = screen.task().unwrap().clone();
+        done.set_done(true);
+        screen.update_selected(done);
+
+        assert_eq!(screen.selected(), before, "the cursor moved");
+        assert!(screen.task().unwrap().done);
+        assert_eq!(
+            screen.task().unwrap().title,
+            "first",
+            "a different row was rewritten"
+        );
+
+        let text = rendered_with(62, 8, &tasks, |s| {
+            let mut d = s.task().unwrap().clone();
+            d.set_done(true);
+            s.update_selected(d);
+        });
+        assert!(text[2].contains("✓ first"), "{text:?}");
+        assert!(text[3].contains("! second"), "{text:?}");
+    }
+
+    /// The bottom line does four jobs and never changes the list's shape.
+    #[test]
+    fn the_bottom_line() {
+        let colours = crate::theme::MOCHA;
+        let shown = |notice: &Notice, size, height, glyphs| {
+            notice
+                .line(size, height, glyphs, colours)
+                .spans
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+
+        assert!(
+            shown(&Notice::Hints, Size::Wide, 20, Glyphs::Unicode).contains("spc done"),
+            "the hints have to name the keys"
+        );
+        assert_eq!(
+            shown(&Notice::Hints, Size::Wide, 9, Glyphs::Unicode),
+            " ?",
+            "under ten rows the hint bar collapses"
+        );
+        assert!(!shown(&Notice::Hints, Size::Narrow, 20, Glyphs::Unicode).contains("move"));
+
+        assert_eq!(
+            shown(
+                &Notice::Said("done: milk".into()),
+                Size::Wide,
+                20,
+                Glyphs::Unicode
+            ),
+            " done: milk"
+        );
+        assert_eq!(
+            shown(
+                &Notice::Warned("nope".into()),
+                Size::Wide,
+                20,
+                Glyphs::Unicode
+            ),
+            " ⚠ nope"
+        );
+        assert_eq!(
+            shown(
+                &Notice::Warned("nope".into()),
+                Size::Wide,
+                20,
+                Glyphs::Ascii
+            ),
+            " ! nope",
+            "the warning mark has an ASCII form too"
+        );
+    }
+
+    /// One row is held back whatever happens, so a message never pushes the list
+    /// up under the reader.
+    #[test]
+    fn the_list_is_the_same_height_whatever_the_bottom_line_says() {
+        let tasks = tasks(&["a @2026-08-01", "b", "c", "d"]);
+        let quiet = rendered_notice(40, 9, &tasks, &Notice::Hints);
+        let noisy = rendered_notice(40, 9, &tasks, &Notice::Warned("careful".into()));
+
+        assert_eq!(quiet[..8], noisy[..8], "the list moved to make room");
+        assert!(noisy[8].contains("careful"), "{noisy:?}");
+    }
+
+    /// A pane can be dragged down to one row. Holding a line back out of two is
+    /// arithmetic that underflows if it is written the obvious way.
+    #[test]
+    fn a_pane_too_short_for_a_bottom_line_still_draws() {
+        let tasks = tasks(&["a @2026-08-01"]);
+
+        for height in [1u16, 2, 3] {
+            let screen = rendered(40, height, &tasks);
+            assert_eq!(screen.len(), height as usize);
+            assert!(
+                screen.iter().any(|r| !r.trim().is_empty()),
+                "nothing was drawn at {height} rows: {screen:?}"
+            );
+        }
+
+        // One row goes to the list, not to the hint bar: what fits there is the
+        // frame and its counts, which is more use than " ?" on its own.
+        assert!(
+            rendered(40, 1, &tasks)[0].starts_with('┌'),
+            "the notice took the only row: {:?}",
+            rendered(40, 1, &tasks)
+        );
     }
 
     /// A title from a file that arrived over `git pull` must not be able to
