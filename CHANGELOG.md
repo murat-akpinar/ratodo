@@ -5,6 +5,11 @@
 - *(ui)* Open the input box on today's date ([c57e559](https://github.com/murat-akpinar/ratodo/commit/c57e5597e0d053dc4d3293465b34382b7c26fbb6))
 `a` gave you an empty line, and the date was the one field the tool can guess right most of the time. The box now opens with `@today ` in it and the caret after it, one backspace from gone.
 
+### 🐛 Bug Fixes
+
+- *(ui)* Put the opening date behind the caret, not in front of it ([61453d2](https://github.com/murat-akpinar/ratodo/commit/61453d2b8b43b31bfe97ea9817fd8c7b74c638bb))
+The box opened on `@2026-08-12 ` with the caret after it, so the date the tool guessed was the leftmost thing in it and the title the user came to type went second. It is now ` @2026-08-12` with the caret at the front: the title goes where the written line has it and where the row on the screen reads it.
+
 ### 📚 Documentation
 
 - Record a demo gif for the readme ([b392334](https://github.com/murat-akpinar/ratodo/commit/b39233479513e7e649519f32c8db5a14ac3f21a4))
