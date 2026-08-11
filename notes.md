@@ -98,6 +98,51 @@ surface.
   turns it into a spec: a floating terminal that takes a beat to paint feels
   broken in a way the same delay in a long-lived window does not. Aim under
   50 ms cold, and measure rather than assume.
+- **The preview only speaks when it understood.** First day of real use, and the
+  thing that bit was typing a date that does not exist. `@2026-13-45` is not a
+  date, so the word stays in the title and the task has no `@` — which is the
+  right thing to do with words we did not understand, and the wrong thing to do
+  in silence. The preview under the input resolves `@thu` out loud and then says
+  nothing at all about the one case where the user is actually wrong. Watch for
+  the same shape elsewhere: every place the parser falls back is a place the
+  screen should have an opinion.
+
+---
+
+## The date field — a proposal, not a decision (2026-08-11)
+
+Out of the same session. The ask: `↑` `↓` on the part of the date under the
+cursor, and typing eight digits filling `DD` `MM` `YYYY` in order — so that a
+month of `13` is unreachable rather than merely wrong.
+
+What is good about it: it makes the invalid state unrepresentable instead of
+detectable, which is the stronger of the two fixes. Nothing about it is
+out-of-scope — [product.md](docs/product.md#out-of-scope) rejects sync, boards
+and recurrence, not input widgets.
+
+What it costs, and why it is not just "add two keys":
+
+- **It is a second mode inside a mode.** The input box is a single line of text
+  today, and `⏎` `esc` `ctrl-c` are the whole of its keymap. Fields mean a
+  cursor that lives *between* three places, `↑` `↓` meaning something they mean
+  nowhere else in the product, and a decision about what `←` `→` do at a
+  boundary. [tui.md](docs/tui.md) opens with "vim keys, no vim modes".
+- **It competes with the thing that already works.** `@thu`, `@3d`, `@tomorrow`
+  and `p` exist precisely so that the common case never touches a digit. A date
+  picker is the fast path for the *uncommon* case — a specific day months out —
+  and it must not become the thing standing between the user and `@tomorrow`.
+- **Two entry methods for one field is the trap.** If the box accepts both free
+  text and positional digits, every keystroke has to decide which it is. `12`
+  typed into a field means December; `12` typed into a sentence means twelve.
+
+The shape that probably survives all three: leave the text box alone, and let
+the picker be something the `@` opens on demand — a small calendar or a field
+strip that appears *after* an explicit key, with `esc` back to typing. That way
+the fast path is untouched and the picker is what you reach for when you were
+going to count days on your fingers anyway.
+
+Not started, and it does not get built before the preview learns to say "that is
+not a date" — the cheap half of the same complaint.
 
 *(`line_no` left on 2026-08-11: the field is gone. Nothing in the product read
 it, it went stale the moment `push_task` inserted above a task, and the two

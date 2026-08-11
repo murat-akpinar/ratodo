@@ -10,9 +10,25 @@ that is actually open is the short list directly under this line.
 
 ## What is left
 
-Three items, none of which is code in the product. Nothing here blocks anything
-else, so the order is by reach rather than by dependency.
+Four items. One is code in the product and came out of a day of real use; the
+other three are packaging. Nothing here blocks anything else, so the order is by
+reach rather than by dependency.
 
+- [ ] **A date that does not exist is accepted in silence.** Found in use on
+      2026-08-11: `@2026-13-45` resolves to nothing, so the whole word falls
+      back to being part of the title — the file gets
+      `- [ ] task @2026-13-45`, the task keeps no date, and neither the live
+      preview nor the status line ever says so. The fallback itself is correct
+      and stays: a word we did not understand is the user's text and we do not
+      eat it. What is missing is that the preview goes quiet in exactly the
+      moment it should speak. **First:** an unresolved `@word` gets an answer
+      under the input, the same way `@thu` gets one. **Then, separately:** the
+      field-by-field date entry — `↑ ↓` on the part under the cursor and eight
+      digits filling `DD MM YYYY` — which is a keymap and a widget, not a
+      message. What it would cost is worked through in
+      [notes.md](notes.md#the-date-field--a-proposal-not-a-decision-2026-08-11),
+      and it becomes an entry in [docs/decisions.md](docs/decisions.md) before a
+      line of it is written
 - [ ] **`cargo publish`** — `--dry-run` passes (44 files, 157 KiB), and the only
       thing in the way is a verified email address on crates.io. One command
       after that. This is the item that decides whether anyone outside this
@@ -178,7 +194,7 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
 - [x] ASCII fallback: `[ ]` `[x]` `[!]`, `>` selection — chosen from the locale,
       and it takes the frame and the punctuation with it
 - [x] The bottom line: hints, results, warnings and the input field
-- [x] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `a o ⏎` · `d u` · `h l z` · `e` ·
+- [x] Keys: `j k g G ctrl-d ctrl-u` · `spc` · `a o ⏎` · `d u X` · `h l z` · `e` ·
       `r` · `?` · `esc` · `q`
 - [x] `h`/`l` fold the group under the cursor — lf/ranger/yazi muscle memory, not
       "fold LATER". A collapsed group is selectable, which is the only way back
@@ -186,8 +202,10 @@ Screens and keymap: [docs/tui.md](docs/tui.md).
 - [x] **Live parse preview** under the input — `@thu` resolves as you type. It
       costs the list a row while it is open — see
       [docs/decisions.md](docs/decisions.md#reversed)
-- [x] `d` deletes immediately; `u` undoes delete / toggle. Edit joins it with the
-      input mode
+- [x] `X` deletes immediately; `u` undoes delete / toggle. Edit joins it with the
+      input mode. *(Was `d`; swapped with cancel on 2026-08-11 so that the key
+      taking a line out of the file is the one asking for shift — see
+      [docs/decisions.md](docs/decisions.md#reversed))*
 - [x] Write-conflict line with `r` reload. A refusal while the input is open
       re-reads by itself and hands the typed text back to the field
 - [x] Selection survives reload — by identity, not row index. `Task::identity`
@@ -297,10 +315,11 @@ that were on this list have moved up to [What is left](#what-is-left).
       it was finished rather than the deadline that stopped applying
 - [x] **There is no third state.** A task that is neither done nor still wanted
       can only be deleted, which loses the record of having decided against it.
-      `- [-]` — the Obsidian/Logseq convention — with `X` to set it, out of the
+      `- [-]` — the Obsidian/Logseq convention — with `d` to set it, out of the
       counts and never overdue — **done**: `✗` on screen in the grey a finished
-      row gave up, out of the counts, never overdue, never exported, and `X`
-      takes it back. `x` itself stays unbound, for the reason it always was
+      row gave up, out of the counts, never overdue, never exported, and `d`
+      takes it back. `x` itself stays unbound, for the reason it always was.
+      *(Shipped on `X`; swapped with delete on 2026-08-11)*
 - [x] **Pushing a date out means retyping the whole line.** `⏎` reopens the
       input for a task whose only problem is that it is not today's problem.
       `p` should ask for how long — `2`, `3d`, `1w`, `fri` — and move `@` alone,
