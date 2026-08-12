@@ -1,5 +1,18 @@
 ## [unreleased]
 
+### 🚀 Features
+
+- *(ui)* Draw every group as a box and land the column rules on it ([76a0d75](https://github.com/murat-akpinar/ratodo/commit/76a0d759dc271ca3c692caebf5dc2f04eeeb3a9d))
+The screen drew three line systems that never touched. The group rule stopped in mid-air at column 39, the column dividers began at column 40 attached to nothing, and each group ended in a blank row that closed nothing. Every field was correct and the whole thing read as unfinished.
+- *(ui)* Count on every heading, rounded corners, keycaps on the bar ([f2b774f](https://github.com/murat-akpinar/ratodo/commit/f2b774fee59ba752ce7ad0547e8be591262a836c))
+Three of the six changes the dashboard step asks for, and they share the same three functions.
+- *(ui)* The date column says what the heading does not ([ddfc2d6](https://github.com/murat-akpinar/ratodo/commit/ddfc2d67c545114de2821cd638328edb969158bb))
+A task due today sat under a heading that says TODAY with a column that said 'today'. Nine characters to repeat the box it was already in, on the group most people look at most often.
+- *(ui)* A band at the top and the file's own line at the bottom ([edc85b7](https://github.com/murat-akpinar/ratodo/commit/edc85b702902d3425db909a42d63033eb3fa5e0c))
+Screen 0's two additions, and the only two things on the main screen that are about this product rather than about looking better.
+- *(ui)* Two lines of welcome on the first run, and a width sweep ([23b776a](https://github.com/murat-akpinar/ratodo/commit/23b776a89bb23779a0b9b666b112dde385d22526))
+The empty screen already named the file and already drew the box a opens with @tomorrow resolved by the real parser. What it did not have is the greeting, and the greeting is two centred lines. No ASCII-art logo: this is a pane somebody leaves open beside their work and a banner is charming exactly once.
+
 ### 📚 Documentation
 
 - Drop the windows findings, now that they are fixed or tracked ([7255048](https://github.com/murat-akpinar/ratodo/commit/725504868427b3da618e0f20eeb3bbd0f53ed952))
@@ -12,6 +25,7 @@ The first pass named one reversal (design.md:108, no split panes) and missed thr
 - Measure the redesign against the code, and unhedge step 4 ([3ba577e](https://github.com/murat-akpinar/ratodo/commit/3ba577e5db2dd069c289a855fc7ce2b9c8a8dc81))
 - Map the code, not only the decisions ([e6aa99d](https://github.com/murat-akpinar/ratodo/commit/e6aa99d943f014cc7cf91975869128c80cb774c0))
 docs/README.md indexes the decision record; nothing indexed the source. Eleven files, 12k lines, and 60% of ui.rs is its own test module — knowing which file to open was the undocumented half.
+- *(docs)* Tick the dashboard step ([f2d4f7d](https://github.com/murat-akpinar/ratodo/commit/f2d4f7d73cdaf18d144b9a8d91560ed8ac347dc6))
 
 ### 🧪 Testing
 
