@@ -1,9 +1,20 @@
 # TUI redesign
 
-> Status: **accepted 2026-08-12, building as v0.8.0.** Screens 0, 2, 3 and 5 are
-> the work; Screen 4 is conditional on its own test. The list of steps is in
-> [todo.md](../todo.md#what-is-left); the reversals each one owes to
-> [decisions.md](decisions.md) are named under [What each one costs](#what-each-one-costs).
+> Status: **accepted 2026-08-12, building as v0.8.0.** All five screens are the
+> work. Screen 4 was accepted *conditionally* and then unconditionally the same
+> day, on three things read out of the code rather than assumed — `Task::splice`
+> already implements its four cases and has since v0.2.0, `parts` claims title
+> words too, and `retype` already normalises an edited line, so the risk this
+> document hedges against below is one the product **already ships**. The
+> correction is in [todo.md](../todo.md#what-is-left) beside the step; the
+> paragraphs under Screen 4 are left as they were written, because the reasoning
+> is still why the splice is the right shape.
+>
+> The steps are in [todo.md](../todo.md#what-is-left); the reversals each one
+> owes to [decisions.md](decisions.md) are named under
+> [What each one costs](#what-each-one-costs) — and that table is **short by
+> three**: [design.md](design.md#rules) also rules on the blank line between
+> groups, on rules being between two columns and nowhere else, and on modals.
 
 What the five mockups in `tui/` ask for, drawn against ratodo's real data, at
 ratodo's real widths, so the choice could be made from pictures rather than from
@@ -696,11 +707,10 @@ Stats at the same width drops the second column and the daily labels:
 
 ## Build order
 
-Four steps, each shippable on its own, each leaving the tool working. **Steps 1
-to 3 were accepted on 2026-08-12 and step 4 was accepted conditionally** — it is
-built only if the splice test in Screen 4 passes, and dropped without loss if it
-does not. The steps as checkable work are in
-[todo.md](../todo.md#what-is-left):
+Four steps, each shippable on its own, each leaving the tool working. **All four
+were accepted on 2026-08-12** — step 4 after the code was read, which is what
+turned it from conditional into ordinary work; see the status note at the top.
+The steps as checkable work are in [todo.md](../todo.md#what-is-left):
 
 1. **The dashboard (Screen 0).** No decision to reverse, no new key, and it
    changes how every screen after it looks. Do it first for that reason alone.

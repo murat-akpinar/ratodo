@@ -51,11 +51,13 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
       screen's last row is the selected task's raw line, byte for byte.
 
       Four steps, in this order, each shippable on its own and each leaving the
-      tool working. **1 to 3 are the work; 4 is conditional** on a test named in
-      it, and is dropped without loss if that test does not pass. The order is
-      not preference: step 1 changes how every screen after it looks, so doing it
-      second means drawing everything twice. The costs and the rejected
-      alternatives for each are the table in
+      tool working. **All four are the work.** Step 4 was written up as
+      conditional and that was **corrected on 2026-08-12 by reading the code**:
+      the machinery it was waiting on has been in `model.rs` since v0.2.0, and
+      the danger it was hedging against is already in the product — see the step
+      itself. The order is not preference: step 1 changes how every screen after
+      it looks, so doing it second means drawing everything twice. The costs and
+      the rejected alternatives for each are the table in
       [docs/redesign.md](docs/redesign.md#what-each-one-costs).
 
       - [ ] **1 · The dashboard.** Screen 0, and the cheapest thing in the
@@ -70,6 +72,24 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   a bottom edge — and four columns. A **folded** group stays a
                   bare rule rather than an empty two-row box: the difference
                   between a container and a line *is* the open/closed signal
+            - [ ] **What the box actually costs, which is not draw code.**
+                  `ui::rows` (`src/ui.rs:668`) flattens the agenda into a flat
+                  `Vec<Row>` of `Header`, `Task` and `Spacer`, and its own doc
+                  comment says *"the blank row between groups is half of the
+                  design … so it is a row, not a margin"* — the rule is in the
+                  **code**, not only in `design.md`. A box means `Header` and
+                  `Spacer` become a top and a bottom edge, and the cursor has to
+                  step over edges the way it steps over headers and blanks today
+                  (`moving_steps_over_the_headers_and_the_blanks`). That is the
+                  selection logic, which is the one thing on this screen with an
+                  invariant on it — four tests are pinned to the current shape and
+                  they are the specification, not an obstacle
+            - [ ] **`COLUMNS_AT` is 76, not 80.** The redesign says eighty
+                  throughout — the width a terminal opens at — but the constant
+                  the code breaks on is `76` (`src/ui.rs:1287`), chosen so the
+                  breakpoint sits above the row it measures. Use the constant;
+                  the drawings are right about the shape and wrong about the
+                  number
             - [ ] **The band at the top** — the date spelled out, stat tiles as a
                   big number over a small label, and a seven-cell week sparkline
                   off the `✓` stamps. Five rows, and the only thing on the screen
@@ -176,14 +196,22 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   signature and `agenda`'s exact purity, so it goes in
                   `agenda.rs` beside it and the module list does not move. A
                   twelfth file would be the first `mod.rs` pyramid brick
-            - [ ] **`s` needs a slot in two places that are already full.** The
-                  `?` overlay is exactly ten keys plus two of border, which is
-                  what fits a fourteen-row pane — the last line of a help screen
-                  must never be the one that falls off, and it is currently `q
-                  quit`. And the hint bar has a fixed priority order (`move ·
-                  done · add · edit · cancel · later · copy`); `s` goes into it
-                  somewhere, and that somewhere is a decision about what gets
-                  pushed off a sixty-column pane
+            - [ ] **`s` has room in both places it has to go, and the code says
+                  how much.** The `?` overlay is ten keys plus two of border
+                  (`src/ui.rs:2062`), and its own comment gives the ceiling:
+                  twelve keys plus the border is fourteen, which is the pane it
+                  must fit. So `s` gets **its own row at eleven**, with one row
+                  still spare — no doubling up, no reshuffle. The hint bar is a
+                  greedy fill over a fixed array of seven (`src/ui.rs:1534`)
+                  ordered by how often a key is reached for, so `("s", "stats")`
+                  goes on the **end** and the existing fill decides the rest:
+                  no new logic at all
+            - [ ] **Keycaps are not free on that bar.** `[a] add` is two columns
+                  more than `a add`, times seven or eight entries — and the bar
+                  is exactly a width-driven `break`. At sixty columns it gets
+                  through `⏎ edit` today; measure what it gets through after,
+                  because the answer decides whether `p later` and `y copy`
+                  survive the width most panes are actually opened at
             - [ ] **What the screen does in a short pane.** Drawn at 80 and at 44
                   in [docs/redesign.md](docs/redesign.md#all-of-it-at-40-columns)
                   — both about twenty rows tall, and **neither says what happens
@@ -196,34 +224,70 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   that document owns every screen and the keymap, and unit tests
                   over `stats` including the empty list and the unstamped case
 
-      - [ ] **4 · `⏎` opens the form too — conditional, and last.** The naive
-            version of this is **forbidden**: a form that parses six fields and
-            re-serialises them turns `- [ ] #ops rotate the keys !high @2026-08-10`
-            into the canonical order having edited nothing, and that is
-            [docs/architecture.md](docs/architecture.md#round-trip-fidelity)
-            broken by the prettiest screen in the program. `y` is allowed to
-            re-serialise because a copy is a *new* line; `⏎` is not.
-            - [ ] **The splice, not a rebuild.** `capture::parts` already hands
-                  back a `Range<usize>` per token: an untouched field leaves its
-                  span alone, a changed one replaces its own span and nothing
-                  else. Four cases — **unchanged** (and if nothing changed, no
-                  write at all and no undo spent), **changed** in place, **added**
-                  at the end of the line, **removed** with one adjacent space or
-                  the line keeps a double space and does it again next time. The
-                  title is the awkward one, because it is not a token: it is
-                  everything `parts` did not claim, and it is the case to write
-                  the test for **first**
-            - [ ] **The gate, and it is a gate.** A property test in
+      - [ ] **4 · `⏎` opens the form too — last, and smaller than it was
+            written up as.** The redesign hedged this step on the risk that a
+            form which parses six fields and re-serialises them would turn
+            `- [ ] #ops rotate the keys !high @2026-08-10` into the canonical
+            order having edited nothing. Three things read out of the code on
+            2026-08-12 change that arithmetic, and they are worth stating because
+            each one was assumed the other way round:
+            - **`Task::splice` already exists** — `model.rs:224`, private, taking
+              a predicate and an `Option<&str>` — and it *is* the four cases:
+              replaced in place, removed **with one adjacent space** (one, both
+              ways, deliberately), appended at the end of the line, or nothing.
+              `postpone` has used it for `p` since v0.2.0, so moving one field
+              and leaving the rest of the line where the user put it is not a
+              thing to build. It even carries its `cargo mutants` equivalent
+              mutant written down in the doc comment.
+            - **`parts` claims every word**, title words included, as
+              `Part::Text`. The write-up called the title "everything `parts` did
+              not claim"; its spans are known like any other token's.
+            - **The danger is already shipped.** `main.rs:882` writes nothing
+              when the typed text is unchanged, and calls `retype` when it is
+              not — and `retype` rebuilds the body canonically. `model.rs:474`
+              is the test that says so: `* [x] wash up @2026-08-12 #home`,
+              edited, comes back as `* [x] wash up tonight #home !high`. So
+              today's `⏎` is byte-perfect only in the case where it writes
+              nothing at all. **This step does not add that risk, it takes it
+              away** — which is the opposite of the reason it was going to be
+              dropped.
+            - [ ] **Splice per field — but by range, not by predicate, and this
+                  is the trap.** `splice` takes a predicate and returns the
+                  **first** word that matches it. There is no `is_time`, and
+                  `16:00` in a *title* would be found before the real time and
+                  spliced instead. `is_due` has the mirror of it: it insists on
+                  `@YYYY-MM-DD`, so a hand-written `@friday` is not found and a
+                  Due edit **appends a second date** to the line. Both go away by
+                  taking the range from `parts` — which knows a time only counts
+                  directly after a date, and knows which `@` won — so step 4 adds
+                  a `splice_at(range, to)` beside the predicate version rather
+                  than three more predicates. The predicate form stays for
+                  `postpone` and the done stamp, which have no line position to
+                  work from
+            - [ ] A field the form did not touch never reaches either, so its
+                  bytes, its position and the whitespace either side stay the
+                  user's — which is more than `⏎` promises now
+            - [ ] **The two that `splice` cannot do as written, and they are the
+                  real work.** It finds **one** word: tags are a set, so adding
+                  one and removing another is two calls and an order to decide;
+                  and the title is a **run** of `Text` words that the user may
+                  have interleaved with tokens — `rotate #ops the keys`. Rule:
+                  replace the run when the `Text` words are contiguous, and when
+                  they are not, that one edit falls back to today's `retype`.
+                  Nothing regresses, because `retype` is what happens now
+            - [ ] **The test, which is now a regression test and not a gate.**
                   `tests/fidelity.rs`: open the form on every fixture including
-                  the gnarly ones, change nothing, save — the line comes back byte
-                  for byte. Then one field at a time, asserting every *other* byte
-                  survived. Plus `cargo mutants --timeout 90`, per
-                  [CLAUDE.md](CLAUDE.md), because this touches `capture`
-            - [ ] **If it does not pass, `⏎` keeps the one-line box** — already
-                  built, already byte-perfect — and the form stays add-only.
-                  Nothing else in the redesign depends on this step. A beautiful
-                  TUI that silently reformats the user's file has spent the only
-                  thing this product actually sells
+                  the gnarly ones, change nothing, save — byte for byte. Then one
+                  field at a time, asserting every *other* byte survived. Plus
+                  `cargo mutants --timeout 90` per [CLAUDE.md](CLAUDE.md), since
+                  this touches `model` and `capture`
+            - [ ] **[docs/tui.md](docs/tui.md) says what an edit does to the
+                  field order, because right now it does not.** *"Saving replaces
+                  exactly that"* is true of the body and reads as true of the
+                  bytes, one sentence before it invokes
+                  [round-trip fidelity](docs/architecture.md#round-trip-fidelity).
+                  A reader cannot tell from it that editing a word normalises the
+                  line. Fixed by this step, and worth writing down either way
 
       - [ ] **The docs owe more than the one reversal, and the extra ones were
             missed on the first read.** [docs/redesign.md](docs/redesign.md)
@@ -255,6 +319,16 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   its own then [docs/theming.md](docs/theming.md) grows a key and
                   every built-in theme grows a line, which is a much bigger
                   change than it looks from the screen
+      - [ ] **`src/ui.rs` is 5,654 lines and this adds three screens to it.**
+            [docs/architecture.md](docs/architecture.md#module-layout) says
+            eleven files, flat, and `ui.rs` is already three times the next
+            largest. Flat is the rule and a `ui/` directory is the pyramid that
+            document forbids — but **one more flat file is not a pyramid**, and
+            the form is the natural seam: it has its own state machine, its own
+            fields and its own keymap, and it is the one part of this work that
+            can be read without the list. Either way `architecture.md`'s file
+            list changes, so decide it at step 2 rather than discovering it at
+            seven thousand lines
       - [ ] **`assets/demo.gif` shows the old screen**, and it is the first thing
             on the README and on crates.io. `scripts/demo.py` re-records it but
             needs kitty, menyoki, ffmpeg and X11, so it is the maintainer's
