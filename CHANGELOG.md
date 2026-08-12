@@ -16,6 +16,8 @@ The empty screen already named the file and already drew the box a opens with @t
 The second screen, and the answer to 'there is only one screen'. Every number on it is already in the file: the completion stamps are what it reads.
 - *(ui)* A opens a form, o keeps the one-line box ([67deeb3](https://github.com/murat-akpinar/ratodo/commit/67deeb33bb5549eb2476fdca5e40269f5dc4407d))
 Six fields, and they are the six the format already carries. The line is the model: the text box holds the whole line exactly as the one-line box does, and Due, Time, Priority, Tags and List are views of it — each reads capture::parts to know what is selected and writes back by replacing the span that tokenizer claimed. One string, one tokenizer, one truth, which is what lets the form exist at all: the labelled-field box was rejected for needing either a join back into a line or a second parser.
+- *(ui)* ⏎ opens the form too, and an edit keeps its bytes ([206acf1](https://github.com/murat-akpinar/ratodo/commit/206acf1652c55719dfff8965ac4eb8df892cbfe8))
+The last of the four, and smaller than it was written up as — the splice never went into model.rs at all.
 
 ### 📚 Documentation
 
@@ -32,6 +34,8 @@ docs/README.md indexes the decision record; nothing indexed the source. Eleven f
 - *(docs)* Tick the dashboard step ([f2d4f7d](https://github.com/murat-akpinar/ratodo/commit/f2d4f7d73cdaf18d144b9a8d91560ed8ac347dc6))
 - *(docs)* Reverse the one-field box before the form is built ([652fe68](https://github.com/murat-akpinar/ratodo/commit/652fe6829be5e3891a6b5c3172a2c4cd16dec787))
 The order CLAUDE.md asks for: the reversal goes in first, the way $work and the date field did.
+- *(docs)* The redesign is built, and the tag is not cut ([fbcfa8e](https://github.com/murat-akpinar/ratodo/commit/fbcfa8e0b7b233525e693e096516acc34f96307c))
+All four steps are in. redesign.md's status says so, and names the two things that came out different from the write-up: COLUMNS_AT moved 76 to 71 because the group box takes five columns off every row, and Screen 4's splice never reached model.rs because the form edits the line in place.
 
 ### 🧪 Testing
 
