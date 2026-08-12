@@ -1,3 +1,8 @@
+## [unreleased]
+
+### ⚙️ Miscellaneous Tasks
+
+- Point the PKGBUILD at v0.8.0 ([f589be3](https://github.com/murat-akpinar/ratodo/commit/f589be3ff6f8b00e5da06d239417241a698f4b8f))
 ## [0.8.0] - 2026-08-12
 
 ### 🚀 Features
