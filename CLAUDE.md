@@ -53,6 +53,12 @@ test and wrong on a real screen. So a release stops for a human look:
    the half a release cannot take back.
 3. Only after they say so: bump the version, tag, `cargo publish`, point the
    PKGBUILD at the new tag.
+4. **A GitHub release, every time, no exceptions.** `gh release create vX.Y.Z`
+   with the `x86_64-linux` binary attached as `ratodo-vX.Y.Z-x86_64-linux`, a
+   title that says what changed rather than the number again, and a body written
+   for a reader — not the generated changelog pasted in. This step was skipped
+   for v0.6.0, v0.7.0 and v0.7.1, and the three had to be filled in afterwards.
+   The tag is not the release; people find the binary on that page.
 
 Never publish on the strength of a green suite alone, and never bundle the
 publish into the same turn as the change it is publishing.
