@@ -27,6 +27,8 @@ It was the whole line — call the plumber @fri 14:00 !med #home — because the
 
 - *(ui)* The form names shift-tab, and its button stops at the frame ([2832abf](https://github.com/murat-akpinar/ratodo/commit/2832abfce5e06a0851a91aab37aa772750b6dfd0))
 Two things found by opening the form and looking at it.
+- *(ui)* No key edits the date on its way to showing it, and the rest are named ([0b95573](https://github.com/murat-akpinar/ratodo/commit/0b9557396e27e6a76ad29ffff5c8672e02a9b369))
+Three, decided on user-friendliness and all the same shape underneath.
 
 ### 📚 Documentation
 
