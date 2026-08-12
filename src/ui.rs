@@ -1214,18 +1214,18 @@ impl Form {
                 self.sync();
             }
             // The three-part picker, on the one field it belongs to. `tab` is
-            // next-field in here, so the arrows are the door: the picker opens
-            // on the date the line already means and the first press steps it.
-            (Typed::Step(by), Field::Due) => {
+            // next-field in here, so the arrows are the door — and the first
+            // press only opens it. A key that edits the date on the way to
+            // showing you the date is one you have to notice and undo, and a
+            // picker is the wrong place to be surprised: docs/decisions.md.
+            (Typed::Step(_), Field::Due) => {
                 // On the date the line already means, so a field that opens on
                 // the 1st of January is not something to arrow back out of.
                 let from = crate::capture::capture(&self.line, self.today)
                     .due
                     .map(|d| d.date)
                     .unwrap_or(self.today);
-                let mut picker = DateField::new(from);
-                picker.step(by);
-                self.picker = Some(picker);
+                self.picker = Some(DateField::new(from));
             }
             // Typed fields take the arrows as nothing rather than as a nudge:
             // there is no set of options behind them to step through.
@@ -1727,6 +1727,14 @@ impl Glyphs {
         }
     }
 
+    /// The other half of the date field's keymap: `←` `→` walk the three parts.
+    fn moves(self) -> &'static str {
+        match self {
+            Glyphs::Unicode => "← →",
+            Glyphs::Ascii => "<- ->",
+        }
+    }
+
     /// What a cut title ends in. Three columns in ASCII rather than one, which
     /// `shorten` has to hold back rather than assume.
     fn ellipsis(self) -> &'static str {
@@ -1920,6 +1928,21 @@ fn lead(text: &str, limit: usize) -> String {
         used += w;
     }
     out
+}
+
+/// What the open date field answers to, in whatever room the row has left.
+///
+/// The brackets say which of the three parts has the cursor and nothing said how
+/// to move them, so `← →` was a key you found by accident or not at all — the
+/// same half `shift-tab` was missing in the form. It is the first thing dropped
+/// when the row runs out of room, because a picker whose hint has overrun the
+/// frame is worse than one that names half its keys.
+fn picker_keys(glyphs: Glyphs, room: usize) -> String {
+    let both = format!("{} {}", glyphs.moves(), glyphs.arrows());
+    match columns(&both) <= room {
+        true => both,
+        false => glyphs.arrows().to_string(),
+    }
 }
 
 /// The right-hand date column. Near dates read as words and far ones as
@@ -2646,7 +2669,14 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
             };
             shown.push(Span::styled(text, style));
         }
-        shown.push(Span::styled(format!(" {}", render.glyphs.arrows()), dim));
+        let used: usize = shown.iter().map(|s| columns(&s.content)).sum();
+        shown.push(Span::styled(
+            format!(
+                " {}",
+                picker_keys(render.glyphs, width.saturating_sub(used + 1))
+            ),
+            dim,
+        ));
     } else if moving {
         // The one thing worth previewing here is the day it lands on, because
         // `2w` is exactly the input whose answer nobody works out in their head.
@@ -3378,8 +3408,14 @@ fn stats_screen(frame: &mut Frame, area: Rect, stats: &Stats, period: Period, re
                 format!("  PRIORITY{}", " ".repeat(half.saturating_sub(10))),
                 Style::default().fg(render.colours.foreground).bold(),
             ),
+            // The word over the block says what is in it. With several lists
+            // open these are file names, and `SECTIONS` over `work.md` is the
+            // heading disagreeing with the column under it.
             Span::styled(
-                "SECTIONS",
+                match stats.by_list {
+                    true => "LISTS",
+                    false => "SECTIONS",
+                },
                 Style::default().fg(render.colours.foreground).bold(),
             ),
         ]),
@@ -3720,8 +3756,12 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
                         },
                     ));
                 }
+                let used: usize = spans.iter().map(|s| columns(&s.content)).sum();
                 spans.push(Span::styled(
-                    format!(" {}", render.glyphs.arrows()),
+                    format!(
+                        " {}",
+                        picker_keys(render.glyphs, inner.saturating_sub(LABEL + used + 1))
+                    ),
                     Style::default().fg(render.colours.dim),
                 ));
                 spans
@@ -5317,7 +5357,8 @@ mod tests {
 
     /// `↑` `↓` on the date open the three-part picker the box already has, and
     /// it takes the row over while it is up. `tab` is next-field in here, so the
-    /// arrows are the door.
+    /// arrows are the door — and the door does not move the date on its way
+    /// open: the first press opens it, the second steps it.
     #[test]
     fn the_arrows_open_the_date_picker_on_the_date_field() {
         let mut form = form("x @2026-08-12", &[]);
@@ -5326,14 +5367,16 @@ mod tests {
 
         form.press(press(KeyCode::Up));
         assert!(form.picking(), "the picker did not open");
+        assert_eq!(form.text(), "x @2026-08-12", "opening it edited the date");
+
         form.press(press(KeyCode::Up));
         form.press(press(KeyCode::Enter));
 
         assert!(!form.picking(), "⏎ did not put it away");
-        assert_eq!(form.text(), "x @2026-08-14");
+        assert_eq!(form.text(), "x @2026-08-13");
         // And what the field is holding was re-seeded from the line the picker
         // just wrote, rather than being a keystroke out of date.
-        assert_eq!(form.typed_text(), "2026-08-14");
+        assert_eq!(form.typed_text(), "2026-08-13");
     }
 
     /// A radio writes into the line and nothing else. What is around the token
@@ -5677,6 +5720,11 @@ mod tests {
             radios(&[("a".into(), true), ("b".into(), false)], Glyphs::Ascii),
             "(o) a  ( ) b"
         );
+        // Both halves of the date field's keymap where the row has room, and
+        // the half that was always named where it does not.
+        assert_eq!(picker_keys(Glyphs::Ascii, 40), "<- -> down up");
+        assert_eq!(picker_keys(Glyphs::Ascii, 12), "down up");
+        assert_eq!(picker_keys(Glyphs::Unicode, 40), "← → ↓ ↑");
         assert_eq!(
             radios(&[("a".into(), true), ("b".into(), false)], Glyphs::Unicode),
             "◉ a  ○ b"

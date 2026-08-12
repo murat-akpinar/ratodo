@@ -150,6 +150,10 @@ pub struct Stats {
     /// The file's own `##` sections, or the open lists when there is more than
     /// one — a heading can repeat across files and merging them would be a lie.
     pub sections: Vec<(String, usize)>,
+    /// Which of the two `sections` turned out to be, so the screen can put the
+    /// right word over them. A block of file names under `SECTIONS` is the
+    /// heading disagreeing with what is under it.
+    pub by_list: bool,
     /// Completions in the busiest bucket, and which one.
     pub best: Option<(String, usize)>,
     /// Completions per day over the period so far, times ten — the screen writes
@@ -221,6 +225,8 @@ pub fn stats(tasks: &[Task], today: NaiveDate, period: Period) -> Stats {
         .filter(|(on, _)| *on >= from && *on <= today)
         .count();
 
+    let by_list = tasks.iter().any(|t| t.file.is_some());
+
     Stats {
         total: tasks.len(),
         done: counts.done,
@@ -237,7 +243,8 @@ pub fn stats(tasks: &[Task], today: NaiveDate, period: Period) -> Stats {
                 )
             })
             .collect(),
-        sections: sections_of(tasks),
+        sections: sections_of(tasks, by_list),
+        by_list,
         per_day_x10: in_period * 10 / days,
         streak: streak_to(&done, today),
         unstamped: tasks
@@ -288,8 +295,7 @@ fn streak_to(done: &[(NaiveDate, &Task)], today: NaiveDate) -> usize {
 /// there is more than one of them. `## Work` in two files is two different
 /// places, and adding them together would be a lie about a heading nobody
 /// shares — docs/redesign.md.
-fn sections_of(tasks: &[Task]) -> Vec<(String, usize)> {
-    let by_file = tasks.iter().any(|t| t.file.is_some());
+fn sections_of(tasks: &[Task], by_file: bool) -> Vec<(String, usize)> {
     let mut out: Vec<(String, usize)> = Vec::new();
     for task in tasks {
         let name = match by_file {
@@ -636,6 +642,9 @@ mod tests {
             stats(&tasks, today(), Period::Week).sections,
             [("## Work".to_string(), 3)]
         );
+        // Which is also the word the screen puts over the block, so a column of
+        // file names never sits under `SECTIONS` — docs/tui.md#s--the-stats-screen.
+        assert!(!stats(&tasks, today(), Period::Week).by_list);
 
         tasks[0].file = Some("work.md".into());
         tasks[1].file = Some("work.md".into());
@@ -644,6 +653,7 @@ mod tests {
             stats(&tasks, today(), Period::Week).sections,
             [("work.md".to_string(), 2), ("home.md".to_string(), 1)]
         );
+        assert!(stats(&tasks, today(), Period::Week).by_list);
     }
 
     /// Undated tasks group by heading, and with several lists open the heading

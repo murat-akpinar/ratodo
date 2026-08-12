@@ -484,13 +484,17 @@ typed. `tab` opens a field where that date does not exist:
 │  ┌───────────────────────────────────────────────────────┐ │
 │  │ ADD ▏renew the passport                               │ │
 │  ├───────────────────────────────────────────────────────┤ │
-│  │      [11] 08  2026  ↓ ↑                               │ │
+│  │      [11] 08  2026  ← → ↓ ↑                           │ │
 │  └───────────────────────────────────────────────────────┘ │
  ⏎ date   esc back
 ```
 
-`↑` `↓` change the part in brackets, `←` `→` move between the three, and digits
-fill them in order — `13082026` is the 13th of August, eight keystrokes and no
+`↑` `↓` change the part in brackets and `←` `→` move between the three. **The
+row names both pairs**, and drops `← →` first when it runs out of room: the
+brackets say which part has the cursor and nothing in them says how to move it,
+so a key named nowhere is a key found by accident.
+
+Digits fill the parts in order — `13082026` is the 13th of August, eight keystrokes and no
 arrows, because a part that cannot take another digit hands the cursor on by
 itself. `⏎` writes the day into the line as one `@YYYY-MM-DD` word and gives the
 keyboard back to the text; `esc` closes the field and leaves the line alone.
@@ -671,7 +675,9 @@ rather than a second copy of the field above it.
   takes the time with it — a time with no date is not a field the file can keep.
 - **`↑` `↓` on the date open the three-part picker** the box already has, and it
   takes the row over while it is up. `tab` is next-field in here, so the arrows
-  are its door.
+  are its door — and **the first press only opens it.** A key that edits the date
+  on its way to showing you the date is one you have to notice and undo, and a
+  picker is the wrong place to be surprised; the second press steps it.
 - **Radios are `◉` against `○`**, and `(o)` against `( )` in ASCII: a difference
   in *shape*, so the choice survives `NO_COLOR=1` and the fallback. `←` and `→`
   move one, and it applies at once — the preview is the confirmation and it is
@@ -894,6 +900,12 @@ it is already in the file: `✓2026-08-11` completion stamps are what it reads.
   at a time, and a frame round each would be furniture with nothing to hold. A
   statistics screen is exactly where a tool starts trying to look like Grafana,
   and the restraint is spent here rather than argued about later.
+- **The right-hand block is `SECTIONS` or `LISTS`, and the word follows what is
+  under it.** With one list open those rows are the file's own `## ` headings;
+  with several they are the files, because `## Work` in two files is two places
+  and adding them together would be a lie about a heading nobody shares. A
+  column of file names under the word `SECTIONS` is the heading disagreeing with
+  its own block.
 - **Only the top bar has a trough.** How far through the list you are is a
   fraction and a fraction needs its denominator drawn; everywhere else a bar is a
   length read against the length beside it, and a row of `░` behind each one

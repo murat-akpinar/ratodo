@@ -606,6 +606,34 @@ are the tool's own word rather than the user's, and the screen says so the same
 way twice. A heading out of the user's file keeps its `##` *and* its own casing,
 which is what still tells the two apart.
 
+### The arrows open the date picker and step it → the first press only opens it (2026-08-12)
+
+**Was:** `↑` on the form's date field built the picker and immediately stepped
+it, so opening it on 2026-08-12 showed you the 13th. Written up as deliberate —
+the arrow that opened it "did something", rather than looking dead once.
+
+**Now:** the first press opens it on the date the line already means and changes
+nothing; the second steps it. Costs one keystroke in the case where the next
+thing you wanted *was* tomorrow, and buys the rule that no key edits the date on
+its way to showing you the date. The keystroke it costs is a key you pressed on
+purpose; the one it stops is a value you have to notice changed and then undo,
+which is the more expensive of the two by a long way.
+
+**What it does not change:** `esc` still closes the picker and leaves the line
+alone, and `tab` in the one-line box has always opened its field without
+stepping — this is the form catching up with the box rather than a new rule.
+
+**Two discoverability fixes went out beside it**, both the same shape: a key
+that exists and is named nowhere.
+
+- **The form's border names `shift-tab`.** It walked the fields backwards since
+  it was built and said only `tab · next field`, so the way back was found by
+  guessing or not at all. Below 43 columns the border has no room and names
+  `tab` alone.
+- **The date field's row names `← →`.** The brackets say which of the three
+  parts has the cursor; nothing said how to move them. First thing dropped when
+  the row runs out of room, since `↓ ↑` was always the half that was named.
+
 ### The input box opens empty → it opens on today (2026-08-12)
 
 **Was:** `a` gave you an empty line, and the date was one more thing to type.
