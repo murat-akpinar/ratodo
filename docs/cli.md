@@ -35,6 +35,21 @@ Path precedence: `--file` → `$RATODO_FILE` → **every `*.md` in
 `$XDG_CONFIG_HOME/ratodo/`**. The environment variable exists so that `direnv`
 can give a repository its own list without an alias per checkout.
 
+The three directories are asked of `directories`, which off Linux answers from
+the platform's own convention rather than from XDG. Linux is the tested and
+promised one — [product.md](product.md#out-of-scope) — but where the files land
+elsewhere is worth writing down:
+
+| | Linux | Windows |
+|---|---|---|
+| the list | `~/.config/ratodo/todo.md` | `%APPDATA%\ratodo\config\todo.md` |
+| the calendar | `~/.local/share/ratodo/todo.ics` | `%APPDATA%\ratodo\data\todo.ics` |
+| the backups | `~/.local/state/ratodo/` | `%LOCALAPPDATA%\ratodo\cache\` |
+
+The backups land in the cache directory on Windows because `state_dir()` is
+`None` off Linux and the code falls back to `cache_dir()`. Setting
+`$XDG_CONFIG_HOME` there does nothing — `directories` does not read it.
+
 ## Several lists
 
 Some people keep one list. Others keep `work.md`, `personal.md` and `2026.md`,
