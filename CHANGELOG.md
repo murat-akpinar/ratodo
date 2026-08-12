@@ -6,6 +6,11 @@
 Every section landed: the backup name and the AltGr chord are fixed, the cfg(unix) gate and the check-docs separator are in, the paths table is in docs/cli.md, and the $XDG integration tests are a decision in todo.md.
 - Make the github release a step of the release, not an option ([7773a44](https://github.com/murat-akpinar/ratodo/commit/7773a441bdda85464777bba23740163dfb126e00))
 
+### 🧪 Testing
+
+- *(cli)* Gate the six $XDG-steered cases on unix ([8c1168a](https://github.com/murat-akpinar/ratodo/commit/8c1168aa8f6441d22b9b32907bf87608ec07b883))
+directories reads none of those variables off Linux, so the six that depend on one for where a file lands were reading the developer's real config and data directories instead of the scratch tree. A gate, not a fix: threading the config directory down from main is the portable answer and is still open in todo.md.
+
 ### ⚙️ Miscellaneous Tasks
 
 - Point the PKGBUILD at v0.7.2 ([d30eafe](https://github.com/murat-akpinar/ratodo/commit/d30eafe51cc48d495abb1b5e11f07db71343ff1d))
