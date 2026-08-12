@@ -60,10 +60,13 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
       the rejected alternatives for each are the table in
       [docs/redesign.md](docs/redesign.md#what-each-one-costs).
 
-      - [ ] **1 · The dashboard.** Screen 0, and the cheapest thing in the
+      - [x] **1 · The dashboard.** Screen 0, and the cheapest thing in the
             document: no new state, no new key, no new data — the numbers are the
             ones `ratodo status` already computes. Six changes to how the same
-            rows are drawn.
+            rows are drawn. **Done 2026-08-12**, and one thing it cost that was
+            not on the list: `COLUMNS_AT` came down five, because the box takes
+            five columns off every row and eighty columns of terminal had to keep
+            the columns it already had.
             - [x] **Every group becomes a nested box, and the column separators
                   become its `┬`/`┴` junctions.** **Done.** This is the one that matters and
                   it is a **correction, not a decoration**: nothing floats, every
