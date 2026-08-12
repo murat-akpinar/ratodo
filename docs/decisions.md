@@ -316,6 +316,73 @@ Three lists: what is settled, what was rejected, and what is still open.
   also a stretch where they share an `.ics` UID. See
   [tui.md](tui.md#copying--y).
 
+### The box is "one field, not five labelled ones" → `a` opens a form, and the box is what it falls back to (2026-08-12)
+
+**Was, twice.** [tui.md](tui.md#adding) says the input is one field and not five
+labelled ones, and the second ask for labelled fields was
+[measured and rejected](#settled) the day before this: five fields and four
+separators in a 34-column pane is three characters a field, and joining them back
+into a line for `capture::parts` makes the boundaries decoration over the same
+string — paid for with a focus state, `tab`/`shift-tab`, five carets and five
+scroll windows.
+
+**Now:** `a` opens a **form** — but the arithmetic that killed the last attempt is
+untouched, because the reversal **narrows** rather than dies:
+
+- **It is a screen, not a row.** The rejection was about five fields *inside the
+  one-line box*, at `min(70, pane − 4)` columns. The form is a centred overlay
+  with a row per field and the whole pane to lay them out in. Nothing about
+  28 columns is being argued with; that case is simply not this one.
+- **"One field, not five labelled ones" still governs the narrow pane**, which
+  is the case its arithmetic was always about. Under **15 rows or 40 columns**
+  `a` opens the one-line box instead. A form that half-fits is worse than a box
+  that always fits, and the box is already built and already tested.
+- **`p` and `y` keep the box at every width.** Each asks one question, and a form
+  for one question is a form nobody wants.
+
+**And the invariant is kept the way the rejection demanded, not in spite of it.**
+The old objection was that five fields mean either joining them back into a line
+(decoration) or a second parser (drift). The form does neither: **the line is the
+model.** The text box holds the whole line exactly as the one-line box does, and
+Due, Time, Priority, Tags and List are *views* of it — each reads
+`capture::parts` to know what is selected, and each writes back by replacing the
+span that tokenizer claimed. There is one string, one tokenizer and one truth,
+and a tag field that cannot hold `#home #work` is not a problem this design can
+have, because there is no tag field holding anything.
+
+**What the form adds that the box could not**, and it is the reason to build it
+at all: a `PREVIEW`, with its own label and its own rule above it. The difference
+between a form that happens to show a line and a form whose *conclusion* is a
+line. A Todoist form saves into a database and can tell you nothing; this one
+saves into your file, so the file is the last word on the screen.
+
+**Six fields and no seventh.** Title, date, time, tags, priority and which list —
+exactly the six a one-line format carries. No Description and no Project, because
+there is nowhere in a line to put them, and no Section picker, because that means
+teaching the writer to *insert* into the middle of a file it only appends to
+today. See [redesign.md](redesign.md#screen-2--a-the-add-screen----replaced).
+
+**Rejected on the way, again:** a separate text field per token. It is the same
+proposal as the one measured down the page, moved to a bigger screen, and it
+brings back the same two problems in a room where they are easier to hide.
+
+### The form is a modal, and `design.md` said there were none (2026-08-12)
+
+[design.md](design.md#rules) says *"One layout, no split panes. No sidebar, no
+modal"*, and [tui.md](tui.md#help) calls the help overlay *the one overlay in
+the product*. The form in the step above is a centred overlay, so both sentences
+had to move rather than be quietly outlived.
+
+**Amended:** the rule is **no sidebar and no split pane**, which is what it was
+protecting — a layout that divides the pane permanently and works at 68 columns
+and nowhere else. An overlay is not that: it is opened by a key, closed by `esc`,
+covers nothing you were mid-way through reading, and gives the whole pane back
+the moment it goes. The product already had one and the input box is a second;
+the form is a third of the same kind and it falls back to the box at the width
+where an overlay stops fitting.
+
+The rule that does **not** move: nothing may be *permanently* beside the list.
+
 ### `s` — a second screen, and the first one this product has had (2026-08-12)
 
 **Nothing is reversed by this.** A new screen is a new promise, so it gets an

@@ -119,7 +119,17 @@ Two things follow from the table that are easy to get wrong:
   same `│` separates the fields in the input box's preview, so the screen has
   one separator and not two. Rules are `border`, the colour the frame is
   already drawn in — a grid is scenery, and scenery does not get the accent.
-- **One layout, no split panes.** No sidebar, no modal. There is one list.
+- **One layout, no split panes. No sidebar.** There is one list, and nothing is
+  ever *permanently* beside it. **Amended 2026-08-12:** the words "no modal" came
+  off. What this rule protects is a layout that divides the pane for good and
+  works at 68 columns and nowhere else — drawn honestly and rejected in
+  [redesign.md](redesign.md#screen-6--the-split-layout-drawn-honestly----reject).
+  An overlay is not that: opened by a key, closed by `esc`, covering nothing you
+  were mid-way through reading, and handing the whole pane back the moment it
+  goes. The product already had two — the help screen and the input box — and the
+  add form is a third, which falls back to the one-line box at the width where an
+  overlay stops fitting. See
+  [decisions.md](decisions.md#the-form-is-a-modal-and-designmd-said-there-were-none-2026-08-12).
 - `○ ✓ ✗ !` symbols — never rely on colour alone (colour blindness, and so output
   survives being copy-pasted).
   ⚠️ `!` is a **screen symbol only**, derived from the date, and `- [!]` is
