@@ -211,33 +211,36 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   longer what `a` opens, and `tab` meaning *next field* in the
                   form and *date picker* in the box
 
-      - [ ] **3 · `s` — the stats screen.** The one mockup that takes nothing
+      - [x] **3 · `s` — the stats screen.** **Done 2026-08-12.** The one mockup that takes nothing
             away, and the answer to "there is only one screen". Every number is
             already in the file; `✓2026-08-11` is what `done_on` reads.
-            - [ ] **`stats(&[Task], today) -> Stats`, pure, `today` a parameter**
+            - [x] **`stats(&[Task], today) -> Stats`, pure, `today` a parameter**
                   — the same shape as `agenda` and testable for the same reason.
-                  No clock inside it, ever
-            - [ ] **No new dependency and no new format.** The bars are `█` and
+                  No clock inside it, ever. **Done**, with `period` as a third
+                  parameter for `1`/`2`/`3`, and `agenda::week` — written for the
+                  main screen's sparkline — is the same arithmetic one bucket
+                  wide
+            - [x] **No new dependency and no new format.** The bars are `█` and
                   `░`. `s` opens and `s` or `esc` closes; `1` `2` `3` are week,
                   month and year. A **screen, not an overlay** — nothing on it is
                   glanced at mid-task
-            - [ ] **No boxes and no rules between the blocks, deliberately.** The
+            - [x] **No boxes and no rules between the blocks, deliberately.** The
                   list is a grid because its rows are read across; this is five
                   paragraphs read one at a time. A statistics screen is exactly
                   where a tool starts trying to look like Grafana, and the
                   restraint gets spent here rather than argued about later
-            - [ ] **One caveat on the screen, not in a doc:** a task ticked before
+            - [x] **One caveat on the screen, not in a doc:** a task ticked before
                   the completion stamp existed has no `done_on`, so it counts in
                   `31 done` and in nothing with a day attached. If that number is
                   large the screen says so rather than quietly under-reporting the
                   streak
-            - [ ] **It does not get a file of its own.**
+            - [x] **It does not get a file of its own.**
                   [docs/architecture.md](docs/architecture.md#module-layout) says
                   eleven files, flat, and means it. `stats` has `agenda`'s exact
                   signature and `agenda`'s exact purity, so it goes in
                   `agenda.rs` beside it and the module list does not move. A
                   twelfth file would be the first `mod.rs` pyramid brick
-            - [ ] **`s` has room in both places it has to go, and the code says
+            - [x] **`s` has room in both places it has to go, and the code says
                   how much.** The `?` overlay is ten keys plus two of border
                   (`src/ui.rs:2062`), and its own comment gives the ceiling:
                   twelve keys plus the border is fourteen, which is the pane it
@@ -246,7 +249,11 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   greedy fill over a fixed array of seven (`src/ui.rs:1534`)
                   ordered by how often a key is reached for, so `("s", "stats")`
                   goes on the **end** and the existing fill decides the rest:
-                  no new logic at all
+                  no new logic at all. **Done, and one consequence measured:**
+                  on the end of a greedy fill, `[s] stats` needs about 106
+                  columns before it appears on the bar at all — so `?`, which is
+                  on the bar at every width, is where the key is actually found.
+                  Written up in [docs/decisions.md](docs/decisions.md#s--a-second-screen-and-the-first-one-this-product-has-had-2026-08-12)
             - [x] **Keycaps are not free on that bar.** **Measured on
                   2026-08-12, before `s` was added to it.** With two-space
                   separators eighty columns lost `[p] later` *and* `[y] copy`;
@@ -255,14 +262,12 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   `[d] cancel`. Pinned in `the_bottom_line`, so adding
                   `("s", "stats")` to the array will move a number a test is
                   watching rather than something nobody notices
-            - [ ] **What the screen does in a short pane.** Drawn at 80 and at 44
-                  in [docs/redesign.md](docs/redesign.md#all-of-it-at-40-columns)
-                  — both about twenty rows tall, and **neither says what happens
-                  in ten**. Every other screen in this product has a documented
-                  answer to that; this one needs the same, in the same drop order
-                  (the two-column block first, then the daily labels, then the
-                  histogram) rather than a scrollbar
-            - [ ] A [docs/decisions.md](docs/decisions.md) entry — a new screen,
+            - [x] **What the screen does in a short pane.** **Answered and
+                  pinned**, in exactly that order: the two-column block goes at
+                  14 rows, the day labels at 13, the histogram at 12, and the
+                  header and the summary line are what is left standing. Never a
+                  scrollbar
+            - [x] A [docs/decisions.md](docs/decisions.md) entry — a new screen,
                   nothing reversed — a [docs/tui.md](docs/tui.md) section, since
                   that document owns every screen and the keymap, and unit tests
                   over `stats` including the empty list and the unstamped case

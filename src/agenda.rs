@@ -101,6 +101,217 @@ pub fn week<'a>(tasks: impl IntoIterator<Item = &'a Task>, today: NaiveDate) -> 
     out
 }
 
+/// What the stats screen is counting over. `1` `2` `3` on that screen —
+/// docs/tui.md#stats.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Period {
+    #[default]
+    Week,
+    Month,
+    Year,
+}
+
+impl Period {
+    pub fn name(self) -> &'static str {
+        match self {
+            Period::Week => "WEEK",
+            Period::Month => "MONTH",
+            Period::Year => "YEAR",
+        }
+    }
+
+    /// The first day it counts from. Its own week, its own month, its own year —
+    /// never "the last thirty days", which is a different question and one a
+    /// calendar cannot be asked about at a glance.
+    fn from(self, today: NaiveDate) -> NaiveDate {
+        match self {
+            Period::Week => today - Days::new(today.weekday().num_days_from_monday() as u64),
+            Period::Month => today.with_day(1).unwrap_or(today),
+            Period::Year => today.with_ordinal(1).unwrap_or(today),
+        }
+    }
+}
+
+/// Everything the stats screen draws, and nothing it does not. Derived, never
+/// stored: every number here is already in the file — docs/redesign.md.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Stats {
+    pub total: usize,
+    pub done: usize,
+    pub open: usize,
+    pub overdue: usize,
+    /// A label and a count per bucket: seven days of the week, the weeks of the
+    /// month, or twelve months. Never more than twelve, so the histogram fits a
+    /// row rather than needing a scrollbar.
+    pub buckets: Vec<(String, usize)>,
+    /// High, med and low, in that order. A priority nobody used is still listed:
+    /// a missing row reads as a rendering bug, a zero reads as a fact.
+    pub priority: Vec<(&'static str, usize)>,
+    /// The file's own `##` sections, or the open lists when there is more than
+    /// one — a heading can repeat across files and merging them would be a lie.
+    pub sections: Vec<(String, usize)>,
+    /// Completions in the busiest bucket, and which one.
+    pub best: Option<(String, usize)>,
+    /// Completions per day over the period so far, times ten — the screen writes
+    /// the decimal point. An integer, so `Stats` stays comparable and a test can
+    /// say what it expects without worrying about float equality.
+    pub per_day_x10: usize,
+    /// Consecutive days up to today with something finished on them. Today not
+    /// having anything on it yet does not break it — a streak that resets every
+    /// morning is a streak nobody keeps.
+    pub streak: usize,
+    /// Finished tasks with no `✓` stamp. They are in `done` and in no bucket, so
+    /// the screen says so rather than quietly under-reporting — this is the one
+    /// caveat that belongs on the screen and not in a document.
+    pub unstamped: usize,
+}
+
+/// The same shape as `agenda` and pure for the same reason: `today` is a
+/// parameter, and a function that asks the calendar what day it is cannot be
+/// tested on any other day.
+pub fn stats(tasks: &[Task], today: NaiveDate, period: Period) -> Stats {
+    let counts = Counts::of(tasks, today);
+    let done: Vec<(NaiveDate, &Task)> = tasks
+        .iter()
+        .filter(|t| t.done())
+        .filter_map(|t| t.done_on.map(|on| (on, t)))
+        .collect();
+
+    let from = period.from(today);
+    let buckets = match period {
+        Period::Week => (0..7)
+            .map(|n| {
+                let day = from + Days::new(n);
+                (
+                    day.format("%a").to_string().to_uppercase(),
+                    done.iter().filter(|(on, _)| *on == day).count(),
+                )
+            })
+            .collect(),
+        // Weeks, not days: thirty-one bars is not a histogram at eighty columns,
+        // it is a texture.
+        Period::Month => (0..5)
+            .map(|n| {
+                let start = from + Days::new(n * 7);
+                let end = start + Days::new(7);
+                (
+                    format!("W{}", n + 1),
+                    done.iter()
+                        .filter(|(on, _)| *on >= start && *on < end && on.month() == from.month())
+                        .count(),
+                )
+            })
+            .collect(),
+        Period::Year => (1..=12u32)
+            .map(|m| {
+                (
+                    MONTHS[m as usize - 1].to_string(),
+                    done.iter()
+                        .filter(|(on, _)| on.year() == from.year() && on.month() == m)
+                        .count(),
+                )
+            })
+            .collect::<Vec<_>>(),
+    };
+
+    // Whole days elapsed, so a Monday morning is not divided by seven.
+    let days = (today - from).num_days().max(0) as usize + 1;
+    let in_period = done
+        .iter()
+        .filter(|(on, _)| *on >= from && *on <= today)
+        .count();
+
+    Stats {
+        total: tasks.len(),
+        done: counts.done,
+        open: counts.open,
+        overdue: counts.overdue,
+        best: best_of(&buckets),
+        buckets,
+        priority: [Priority::High, Priority::Med, Priority::Low]
+            .into_iter()
+            .map(|p| {
+                (
+                    p.as_str(),
+                    tasks.iter().filter(|t| t.priority == Some(p)).count(),
+                )
+            })
+            .collect(),
+        sections: sections_of(tasks),
+        per_day_x10: in_period * 10 / days,
+        streak: streak_to(&done, today),
+        unstamped: tasks
+            .iter()
+            .filter(|t| t.done() && t.done_on.is_none())
+            .count(),
+    }
+}
+
+const MONTHS: [&str; 12] = [
+    "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+];
+
+/// The busiest bucket, and `None` when nothing was finished at all — a "best
+/// day" of zero is worse than no answer. The **first** of a tie, so the week
+/// reads left to right the way it is drawn.
+fn best_of(buckets: &[(String, usize)]) -> Option<(String, usize)> {
+    buckets
+        .iter()
+        .filter(|(_, n)| *n > 0)
+        .max_by_key(|(_, n)| *n)
+        .map(|(label, n)| (label.clone(), *n))
+}
+
+/// Consecutive days with a completion on them, counting back from today.
+///
+/// A day with nothing on it ends the streak — except today, which has not
+/// finished happening yet. A streak that resets every morning and comes back
+/// after lunch is not a streak, it is a clock.
+fn streak_to(done: &[(NaiveDate, &Task)], today: NaiveDate) -> usize {
+    let on = |day: NaiveDate| done.iter().any(|(d, _)| *d == day);
+    let mut day = match on(today) {
+        true => today,
+        false => today - Days::new(1),
+    };
+    let mut out = 0;
+    while on(day) {
+        out += 1;
+        let Some(before) = day.checked_sub_days(Days::new(1)) else {
+            break;
+        };
+        day = before;
+    }
+    out
+}
+
+/// Where the work lives: the file's own `##` sections, or the open lists once
+/// there is more than one of them. `## Work` in two files is two different
+/// places, and adding them together would be a lie about a heading nobody
+/// shares — docs/redesign.md.
+fn sections_of(tasks: &[Task]) -> Vec<(String, usize)> {
+    let by_file = tasks.iter().any(|t| t.file.is_some());
+    let mut out: Vec<(String, usize)> = Vec::new();
+    for task in tasks {
+        let name = match by_file {
+            true => task.file.clone().unwrap_or_else(|| "(none)".to_string()),
+            false => task
+                .section
+                .clone()
+                .map(|s| format!("## {s}"))
+                .unwrap_or_else(|| "(none)".to_string()),
+        };
+        match out.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, n)) => *n += 1,
+            None => out.push((name, 1)),
+        }
+    }
+    // Biggest first, and `sort_by_key` on the negated count rather than a
+    // reversed comparator, because the sort is **stable**: two sections with the
+    // same count keep the order the file put them in.
+    out.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    out
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind<'a> {
     Overdue,
@@ -282,6 +493,157 @@ mod tests {
         task.done_on = None;
 
         assert_eq!(week(std::slice::from_ref(&task), today()), [0; 7]);
+    }
+
+    fn done_on(title: &str, y: i32, m: u32, d: u32) -> Task {
+        let mut task = capture(title, today());
+        task.set_state(State::Done, NaiveDate::from_ymd_opt(y, m, d).unwrap());
+        task
+    }
+
+    /// Every number on the stats screen, over one list, for the week `today`
+    /// falls in — Monday the 10th of August 2026 to Sunday the 16th.
+    #[test]
+    fn the_weeks_stats() {
+        let tasks = [
+            done_on("mon", 2026, 8, 10),
+            done_on("mon two", 2026, 8, 10),
+            done_on("last week", 2026, 8, 5),
+            capture("open one @2026-08-01 !high", today()),
+            capture("open two !low #ops", today()),
+        ];
+        let s = stats(&tasks, today(), Period::Week);
+
+        assert_eq!((s.total, s.done, s.open, s.overdue), (5, 3, 2, 1));
+        assert_eq!(
+            s.buckets,
+            [
+                ("MON".into(), 2),
+                ("TUE".into(), 0),
+                ("WED".into(), 0),
+                ("THU".into(), 0),
+                ("FRI".into(), 0),
+                ("SAT".into(), 0),
+                ("SUN".into(), 0),
+            ]
+        );
+        assert_eq!(s.best, Some(("MON".to_string(), 2)));
+        // Two completions over one elapsed day, and the day before is not in
+        // this week however much was finished on it.
+        assert_eq!(s.per_day_x10, 20);
+        assert_eq!(s.streak, 1);
+        assert_eq!(s.priority, [("!high", 1), ("!med", 0), ("!low", 1)]);
+    }
+
+    /// Nothing at all is a real answer and has to come back as one rather than
+    /// as a division by zero or a best day of nought.
+    #[test]
+    fn an_empty_list_has_stats_too() {
+        let s = stats(&[], today(), Period::Week);
+        assert_eq!(s.total, 0);
+        assert_eq!(s.best, None);
+        assert_eq!(s.per_day_x10, 0);
+        assert_eq!(s.streak, 0);
+        assert_eq!(s.buckets.len(), 7);
+        assert_eq!(s.priority, [("!high", 0), ("!med", 0), ("!low", 0)]);
+    }
+
+    /// A task ticked before the completion stamp existed counts in `done` and in
+    /// nothing with a day attached. The screen says so out loud rather than
+    /// quietly under-reporting the streak.
+    #[test]
+    fn a_completion_with_no_stamp_is_counted_and_named() {
+        let mut old = capture("finished long ago", today());
+        old.set_state(State::Done, today());
+        old.done_on = None;
+        let tasks = [old, done_on("today", 2026, 8, 10)];
+
+        let s = stats(&tasks, today(), Period::Week);
+        assert_eq!(s.done, 2, "it is still finished work");
+        assert_eq!(s.unstamped, 1);
+        assert_eq!(s.buckets[0].1, 1, "and it is in no day's bar");
+    }
+
+    /// Never more than twelve bars, whichever period is asked for: a histogram
+    /// that needs a scrollbar is not one.
+    #[test]
+    fn no_period_asks_for_more_bars_than_a_row_can_hold() {
+        for period in [Period::Week, Period::Month, Period::Year] {
+            let s = stats(&[], today(), period);
+            assert!(
+                (1..=12).contains(&s.buckets.len()),
+                "{period:?}: {}",
+                s.buckets.len()
+            );
+        }
+    }
+
+    #[test]
+    fn the_month_counts_by_week_and_the_year_by_month() {
+        let tasks = [
+            done_on("first of the month", 2026, 8, 1),
+            done_on("second week", 2026, 8, 10),
+            done_on("march", 2026, 3, 3),
+            done_on("last year", 2025, 8, 10),
+        ];
+
+        let month = stats(&tasks, today(), Period::Month);
+        assert_eq!(month.buckets[0], ("W1".to_string(), 1));
+        assert_eq!(month.buckets[1], ("W2".to_string(), 1));
+        assert_eq!(month.buckets[2..].iter().map(|(_, n)| n).sum::<usize>(), 0);
+
+        let year = stats(&tasks, today(), Period::Year);
+        assert_eq!(year.buckets[2], ("MAR".to_string(), 1));
+        assert_eq!(year.buckets[7], ("AUG".to_string(), 2));
+        assert_eq!(year.buckets.iter().map(|(_, n)| n).sum::<usize>(), 3);
+    }
+
+    /// Today not having anything on it yet must not break a streak: one that
+    /// resets every morning and comes back after lunch is a clock.
+    #[test]
+    fn the_streak_survives_a_morning_with_nothing_done_in_it() {
+        let yesterday = [done_on("a", 2026, 8, 9), done_on("b", 2026, 8, 8)];
+        assert_eq!(stats(&yesterday, today(), Period::Week).streak, 2);
+
+        let with_today = [
+            done_on("a", 2026, 8, 10),
+            done_on("b", 2026, 8, 9),
+            // The gap: the 7th is not reached past the missing 8th.
+            done_on("c", 2026, 8, 7),
+        ];
+        assert_eq!(stats(&with_today, today(), Period::Week).streak, 2);
+
+        // And two days of silence is no streak at all.
+        assert_eq!(
+            stats(&[done_on("a", 2026, 8, 8)], today(), Period::Week).streak,
+            0
+        );
+    }
+
+    /// `## Work` in two files is two places. Merging them would pull one file's
+    /// tasks under the other's heading, which is the same lie the agenda refuses.
+    #[test]
+    fn sections_become_lists_once_there_is_more_than_one_file() {
+        let mut tasks = [
+            capture("a", today()),
+            capture("b", today()),
+            capture("c", today()),
+        ];
+        for task in &mut tasks {
+            task.section = Some("Work".into());
+        }
+        assert_eq!(
+            stats(&tasks, today(), Period::Week).sections,
+            [("## Work".to_string(), 3)]
+        );
+
+        tasks[0].file = Some("work.md".into());
+        tasks[1].file = Some("work.md".into());
+        tasks[2].file = Some("home.md".into());
+        assert_eq!(
+            stats(&tasks, today(), Period::Week).sections,
+            [("work.md".to_string(), 2), ("home.md".to_string(), 1)]
+        );
     }
 
     /// Undated tasks group by heading, and with several lists open the heading

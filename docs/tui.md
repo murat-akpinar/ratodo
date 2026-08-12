@@ -26,6 +26,21 @@ So there are exactly two modes:
 You can never be in a mode you did not explicitly open, and `esc` always gets you
 back. There is no command mode, no visual mode, no pending-operator state.
 
+**Two screens is not a third mode.** `?` covers the list and [`s`](#stats--s)
+replaces it, and both are closed by the key that opened them or by `esc`. The
+keymap does not change under either — the list's keys simply do not act while a
+screen you opened on purpose is up, which is the same promise as "you can never
+be in a mode you did not open" read from the other side:
+
+```
+  MAIN ─┬─ a ──→  NEW TASK    esc / ⏎
+        ├─ ⏎ ──→  EDIT TASK   esc / ⏎
+        ├─ s ──→  STATS ──┬─ 1 week
+        │                 ├─ 2 month   s / esc
+        │                 └─ 3 year
+        └─ ? ──→  KEYS       esc / ?
+```
+
 `ctrl-c` deserves its own line, because it means two different things in the two
 modes: in list mode it quits, in input mode it **cancels the input and returns to
 the list** — it does not quit. Someone half-way through typing a task who reaches
@@ -672,34 +687,101 @@ the file is yours — you should be told where it is on day one.
 ## Help — `?`
 
 ```
-┌ keys ──────────────────────────────────┐
+╭ keys ──────────────────────────────────╮
 │  j k  ↓ ↑        move                  │
 │  g G             top / bottom          │
 │  ctrl-d ctrl-u   half page             │
 │  spc             toggle done           │
-│  a o  ⏎          add / edit            │
+│  a o  ⏎  y       add / edit / copy     │
 │  X  u            delete / undo         │
 │  d  p            cancel / put off      │
 │  h l  z          fold this group       │
+│  s               stats                 │
 │  e  r            $EDITOR / re-read     │
 │  q  ctrl-c       quit                  │
-└────────── esc or ? to close ───────────┘
+╰────────── esc or ? to close ───────────╯
 ```
 
 This is the one overlay in the product, and it is the only place a popup is the
 right answer — you asked for it, and it covers nothing you were mid-way through
 reading.
 
-The way out is on the bottom border, where it costs no row. Ten keys plus two of
-border is twelve, and twelve is what fits a fourteen-row pane: the last line of a
-help screen must never be the one that falls off, least of all when it is quit.
-Grouping the keys into blocks with blank lines between them would cost four rows
-and exactly that.
+The way out is on the bottom border, where it costs no row. Eleven keys plus two
+of border is thirteen, and a fourteen-row pane is what has to hold it: the last
+line of a help screen must never be the one that falls off, least of all when it
+is quit. That leaves **one row spare**, which is why `s` got a line of its own
+rather than doubling up with `e  r`. Grouping the keys into blocks with blank
+lines between them would cost four rows and exactly that.
 
 Only keys that are built are listed — which is why `:` and `/` are **not** here
 any more. They do nothing, pressing either answers in the status line, and that
 is where they teach anything at all; the row they were costing is what keeps
 `d  p` inside the same twelve.
+
+## Stats — `s`
+
+The second screen, and the answer to "there is only one screen". Every number on
+it is already in the file: `✓2026-08-11` completion stamps are what it reads.
+
+```
+╭ ratodo / stats — WEEK ───────────────────────────────────────────────────────╮
+│                                                                              │
+│  42 tasks      31 done      8 open      3 overdue                            │
+│  ██████████████████████████████████████████░░░░░░░░░░░░░░░░  74%             │
+│                                                                              │
+│  DONE THIS WEEK                                                              │
+│                                                                              │
+│    MON       TUE       WED       THU       FRI       SAT       SUN           │
+│    ████      ██████    ████      ████████  ██████    ███       ░             │
+│    4         6         4         8         6         3         0             │
+│                                                                              │
+│  PRIORITY                             SECTIONS                               │
+│                                                                              │
+│  !high  ████████ 8                      ## tasks     ███████████ 14          │
+│  !med   █████████████ 13                ## Someday   █████ 6                 │
+│  !low   █████████████████████ 21        (none)       ███ 3                   │
+│                                                                              │
+│  best day   THU      avg / day   4.4      streak   6 days                    │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [1] week  [2] month  [3] year   [r] reload   [esc] back
+```
+
+- **A screen, not an overlay.** `s` opens it, `s` or `esc` closes it, and it
+  replaces the list rather than covering it — nothing on it is glanced at
+  mid-task. While it is up the list's keys do not act: `spc` ticking a task
+  nobody can see is the failure that rule exists to stop.
+- **`1` `2` `3` are week, month and year**, and the heading says which. A week is
+  seven days, a month is its weeks and a year is its twelve months — never more
+  than twelve bars, because a histogram that needs a scrollbar is not one. It is
+  always *this* week, month or year, never "the last thirty days": that is a
+  different question and not one a calendar can be asked at a glance.
+- **No boxes and no rules between the blocks, deliberately.** The list is a grid
+  because its rows line up and are read across; this is five paragraphs read one
+  at a time, and a frame round each would be furniture with nothing to hold. A
+  statistics screen is exactly where a tool starts trying to look like Grafana,
+  and the restraint is spent here rather than argued about later.
+- **Only the top bar has a trough.** How far through the list you are is a
+  fraction and a fraction needs its denominator drawn; everywhere else a bar is a
+  length read against the length beside it, and a row of `░` behind each one
+  turns that into a grid. A count of nothing still gets one cell, and a count of
+  one is never rounded away to none.
+- **One caveat, on the screen and not in a document:** a task ticked before the
+  completion stamp existed has no `done_on`, so it counts in `31 done` and in
+  nothing with a day attached. When there are any, the screen says how many
+  rather than quietly under-reporting the streak.
+- **Sections, not projects.** `## Someday` is the file's own word for the same
+  idea. With several lists open the block shows lists instead — a heading can
+  repeat across files and merging them would be a lie.
+- **A streak survives a morning.** Today having nothing on it yet does not break
+  one; a streak that resets every morning and comes back after lunch is a clock.
+- **What it does in a short pane**, in this order and never a scrollbar: the
+  two-column block goes first, then the histogram's day labels, then the
+  histogram itself. The header and the summary line are what is left standing.
+- **It gets no file of its own.** `stats(&[Task], today, period) -> Stats` has
+  `agenda`'s exact signature and `agenda`'s exact purity, so it lives in
+  `agenda.rs` beside it and
+  [architecture.md](architecture.md#module-layout)'s eleven files do not move.
 
 ## Keys
 
@@ -720,6 +802,7 @@ is where they teach anything at all; the row they were costing is what keeps
 | `z` | the same, as one toggle | `z` is the vim fold prefix |
 | `e` | open `$EDITOR` | The escape hatch — a settled decision, see [product.md](product.md#product-decisions) |
 | `r` | re-read the file | Rarely needed; inotify does it |
+| `s` | stats | Opens the [stats screen](#stats--s) and closes it again. `1` `2` `3` change the period while it is up and do nothing on the list |
 | `?` | key help | |
 | `q` / `ctrl-c` | quit | |
 

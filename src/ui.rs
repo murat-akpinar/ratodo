@@ -8,7 +8,7 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 
-use crate::agenda::{Counts, Group, Kind};
+use crate::agenda::{Counts, Group, Kind, Period, Stats};
 use crate::model::{Priority, State, Task};
 use crate::text;
 use crate::theme::Theme;
@@ -49,6 +49,13 @@ pub enum Action {
     /// Opens the key help, and closes it again — the only overlay in the
     /// product, and the only place a popup is the right answer.
     Help,
+    /// `s` — opens the stats screen, and closes it again. A **screen** and not
+    /// an overlay: it replaces the list rather than covering it, because
+    /// nothing on it is glanced at mid-task — docs/tui.md#stats.
+    Stats,
+    /// `1` `2` `3` on the stats screen. They do nothing on the list, which is
+    /// where the loop reads them and drops them.
+    Over(Period),
     /// `esc`: closes the overlay, and does nothing at all otherwise. It must
     /// never quit — somebody pressing it out of habit keeps their pane.
     Close,
@@ -108,6 +115,12 @@ pub fn action(key: KeyEvent) -> Action {
         KeyCode::Char('y') => Action::Duplicate,
         KeyCode::Char('e') => Action::Edit,
         KeyCode::Char('r') => Action::Reload,
+        // The second screen. `s` opens it and `s` closes it again, the way `?`
+        // works — one key, one place, and no way to be lost in it.
+        KeyCode::Char('s') => Action::Stats,
+        KeyCode::Char('1') => Action::Over(Period::Week),
+        KeyCode::Char('2') => Action::Over(Period::Month),
+        KeyCode::Char('3') => Action::Over(Period::Year),
         KeyCode::Char('?') => Action::Help,
         // Bound to an answer rather than to nothing. A key that appears broken
         // is worse than one that explains itself.
@@ -1086,6 +1099,16 @@ impl Glyphs {
         }
     }
 
+    /// Filled and empty, for the bars on the stats screen. Solid blocks rather
+    /// than the title bar's `▰▱`: that one is eight cells of *how far through*,
+    /// these are a length somebody reads against the length beside it.
+    fn block(self) -> (&'static str, &'static str) {
+        match self {
+            Glyphs::Unicode => ("█", "░"),
+            Glyphs::Ascii => ("#", "."),
+        }
+    }
+
     /// Filled and empty, for the progress bar.
     fn bar(self) -> (&'static str, &'static str) {
         match self {
@@ -1736,7 +1759,7 @@ fn hints(width: usize, glyphs: Glyphs) -> String {
     // and not.
     const SEP: &str = " ";
     let tail = format!("{SEP}[?] keys{SEP}[q] quit");
-    let keys: [(&str, &str); 7] = [
+    let keys: [(&str, &str); 8] = [
         ("j k", "move"),
         ("spc", "done"),
         ("a", "add"),
@@ -1748,6 +1771,10 @@ fn hints(width: usize, glyphs: Glyphs) -> String {
         // terminals open at, and the one width the newest key was invisible at.
         ("p", "later"),
         ("y", "copy"),
+        // On the end, and the existing greedy fill decides the rest: this bar is
+        // ordered by how often a key is reached for, and a second screen is not
+        // reached for often. No new logic at all — docs/tui.md#the-bottom-line.
+        ("s", "stats"),
     ];
 
     let mut out = String::new();
@@ -2052,13 +2079,28 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
     (vec![field, rule, preview], at.min(width.saturating_sub(1)))
 }
 
+/// What is on the screen instead of, or on top of, the list.
+///
+/// One parameter rather than a flag per screen: `draw` already takes seven
+/// arguments, and the third and fourth screens would each have added a `bool`
+/// that is only ever true when every other one is false.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum View<'a> {
+    List,
+    /// The one overlay in the product — it covers the list rather than
+    /// replacing it, because it is read *about* what is underneath.
+    Help,
+    /// A screen and not an overlay: nothing on it is glanced at mid-task.
+    Stats(&'a Stats, Period),
+}
+
 pub fn draw(
     frame: &mut Frame,
     screen: &mut Screen,
     counts: Counts,
     render: Render<'_>,
     notice: &Notice,
-    helping: bool,
+    view: View<'_>,
     input: Option<&Input>,
 ) {
     let whole = frame.area();
@@ -2085,6 +2127,29 @@ pub fn draw(
         )
     });
     let size = Size::of(area.width);
+
+    // A screen rather than an overlay, so it takes the pane and the list is not
+    // drawn at all — and the bottom line names its own keys, because none of the
+    // list's do anything while it is up.
+    if let View::Stats(stats, period) = view {
+        stats_screen(frame, area, stats, period, render);
+        if let Some(bottom) = bottom {
+            let keys = match size {
+                Size::Wide => " [1] week  [2] month  [3] year   [r] reload   [esc] back",
+                _ => " [1] [2] [3]   [esc] back",
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    keys,
+                    Style::default().fg(render.colours.dim),
+                )))
+                .style(Style::default().bg(render.colours.background)),
+                bottom,
+            );
+        }
+        return;
+    }
+
     // The band owns the counts when it is drawn, so the title bar spends its
     // right-hand side on the date instead — the first thing a todo list should
     // say and the one thing this screen never said. When the band goes, the
@@ -2242,7 +2307,7 @@ pub fn draw(
         }
     }
 
-    if helping {
+    if let View::Help = view {
         help(frame, area, render);
     }
     if let Some(input) = input {
@@ -2505,6 +2570,278 @@ fn footer(frame: &mut Frame, area: Rect, task: Option<&Task>, render: Render<'_>
     );
 }
 
+/// A bar as long as `n` is against `peak`, and **no trough behind it**: the
+/// empty cells are drawn only where the whole length is the point, which is the
+/// one bar at the top of the screen. Everywhere else a row of `░` behind every
+/// bar turns a set of lengths the eye compares into a grid it has to read.
+///
+/// A count of nothing still gets one cell, so a day with no work on it is a
+/// mark on the row rather than a hole in it — and a bar of one is never rounded
+/// away to nothing, which would make `1` and `0` look the same.
+fn bar_of(n: usize, peak: usize, width: usize, glyphs: Glyphs) -> String {
+    let (full, empty) = glyphs.block();
+    if peak == 0 || width == 0 {
+        return String::new();
+    }
+    match n {
+        0 => empty.to_string(),
+        n => full.repeat((n * width).div_ceil(peak).clamp(1, width)),
+    }
+}
+
+/// The one bar that keeps its trough: how far through the whole list you are is
+/// a fraction, and a fraction needs its denominator drawn.
+fn gauge(n: usize, of: usize, width: usize, glyphs: Glyphs) -> String {
+    let (full, empty) = glyphs.block();
+    if of == 0 || width == 0 {
+        return String::new();
+    }
+    let filled = (n * width / of).min(width);
+    format!("{}{}", full.repeat(filled), empty.repeat(width - filled))
+}
+
+/// `s` — the stats screen. Read-only arithmetic over what the file already
+/// says, and the answer to "there is only one screen" — docs/tui.md#stats.
+///
+/// **No boxes and no rules between the blocks, deliberately.** The list is a
+/// grid because its rows line up and are read across; this is five paragraphs
+/// read one at a time, and a frame round each would be furniture with nothing to
+/// hold. A statistics screen is exactly where a tool starts trying to look like
+/// Grafana, and the restraint is spent here rather than argued about later.
+fn stats_screen(frame: &mut Frame, area: Rect, stats: &Stats, period: Period, render: Render<'_>) {
+    let (dash, dot) = render.glyphs.punctuation();
+    let block = (Size::of(area.width) > Size::Bare).then(|| {
+        Block::bordered()
+            .border_set(render.glyphs.border())
+            .border_style(Style::default().fg(render.colours.border))
+            .title(format!(" ratodo / stats {dash} {} ", period.name()))
+    });
+    let inner = block.as_ref().map_or(area, |b| b.inner(area));
+    if let Some(block) = block {
+        frame.render_widget(block, area);
+    }
+
+    let width = inner.width as usize;
+    let dim = Style::default().fg(render.colours.dim);
+    let accent = Style::default().fg(render.colours.accent);
+    let done = Style::default().fg(render.colours.done);
+
+    // Each block is drawn whole or not at all, and they go in the order
+    // docs/tui.md#stats sets out: the two-column block first, then the daily
+    // labels, then the histogram. Never a scrollbar — this screen is glanceable
+    // or it is nothing.
+    let mut blocks: Vec<Vec<Line<'static>>> = Vec::new();
+
+    // The header: four numbers and the bar under them. Laid out as entries with
+    // a gap rather than a format string with counted spaces, so the row narrows
+    // by losing a whole word instead of by being cut mid-number.
+    let total = stats.total.max(1);
+    let mut header = "  ".to_string();
+    for (n, label) in [
+        (stats.total, "tasks"),
+        (stats.done, "done"),
+        (stats.open, "open"),
+        (stats.overdue, "overdue"),
+    ] {
+        let entry = format!("{n} {label}");
+        if columns(&header) + columns(&entry) + 2 > width {
+            break;
+        }
+        header.push_str(&entry);
+        header.push_str("      ");
+    }
+    blocks.push(vec![
+        Line::default(),
+        Line::from(Span::styled(header, accent)),
+        Line::from(vec![
+            Span::styled(
+                format!(
+                    "  {}",
+                    gauge(stats.done, total, width.saturating_sub(10), render.glyphs)
+                ),
+                done,
+            ),
+            Span::styled(format!("  {}%", stats.done * 100 / total), dim),
+        ]),
+    ]);
+
+    // The histogram: labels, bars, counts.
+    let cells = stats.buckets.len().max(1);
+    let cell = (width.saturating_sub(4) / cells).max(1);
+    let peak = stats.buckets.iter().map(|(_, n)| *n).max().unwrap_or(0);
+    let across = |pick: &dyn Fn(&(String, usize)) -> String| {
+        let mut out = "    ".to_string();
+        for bucket in &stats.buckets {
+            let text = pick(bucket);
+            out.push_str(&format!(
+                "{text}{}",
+                " ".repeat(cell.saturating_sub(columns(&text)))
+            ));
+        }
+        out
+    };
+    let labels = across(&|(label, _)| label.clone());
+    let bars = across(&|(_, n)| bar_of(*n, peak, cell.saturating_sub(2), render.glyphs));
+    let numbers = across(&|(_, n)| n.to_string());
+
+    blocks.push(vec![
+        Line::default(),
+        Line::from(Span::styled(
+            format!("  DONE THIS {}", period.name()),
+            Style::default().fg(render.colours.foreground).bold(),
+        )),
+        Line::default(),
+        Line::from(Span::styled(labels, dim)),
+        Line::from(Span::styled(bars, done)),
+        Line::from(Span::styled(numbers, dim)),
+    ]);
+
+    // Priority on the left, sections on the right. Two columns of the same
+    // block, so they drop together — half of a pair reads as a rendering fault.
+    let half = width / 2;
+    let rows = stats.priority.len().max(stats.sections.len());
+    let prio_peak = stats.priority.iter().map(|(_, n)| *n).max().unwrap_or(0);
+    let section_peak = stats.sections.iter().map(|(_, n)| *n).max().unwrap_or(0);
+    let mut two = vec![
+        Line::default(),
+        Line::from(vec![
+            Span::styled(
+                format!("  PRIORITY{}", " ".repeat(half.saturating_sub(10))),
+                Style::default().fg(render.colours.foreground).bold(),
+            ),
+            Span::styled(
+                "SECTIONS",
+                Style::default().fg(render.colours.foreground).bold(),
+            ),
+        ]),
+        Line::default(),
+    ];
+    for n in 0..rows {
+        let side = |entry: Option<(&str, usize)>, peak: usize, label: usize| match entry {
+            None => " ".repeat(half),
+            Some((name, count)) => {
+                let name = shorten(name, label, render.glyphs);
+                // Capped, and this is the one place a bar is allowed to be:
+                // the eye reads these against each other, not against the pane.
+                let bar = bar_of(
+                    count,
+                    peak,
+                    half.saturating_sub(label + 8).min(16),
+                    render.glyphs,
+                );
+                let text = format!(
+                    "  {name}{} {bar} {count}",
+                    " ".repeat(label.saturating_sub(columns(&name)))
+                );
+                format!("{text}{}", " ".repeat(half.saturating_sub(columns(&text))))
+            }
+        };
+        two.push(Line::from(vec![
+            Span::styled(
+                side(stats.priority.get(n).map(|(p, c)| (*p, *c)), prio_peak, 6),
+                dim,
+            ),
+            Span::styled(
+                side(
+                    stats.sections.get(n).map(|(s, c)| (s.as_str(), *c)),
+                    section_peak,
+                    // A third of the column, up to twelve. A fixed twelve at
+                    // forty-four leaves two columns for the bar, which is not a
+                    // bar — the name has to give some back at that width.
+                    (half / 3).min(12),
+                ),
+                dim,
+            ),
+        ]));
+    }
+    blocks.push(two);
+
+    // The three summary numbers, and the one caveat that belongs on a screen
+    // rather than in a document.
+    let mut tail = vec![
+        Line::default(),
+        Line::from(Span::styled(
+            format!(
+                "  best {}   {}      avg / day   {}.{}      streak   {}",
+                match period {
+                    Period::Week => "day",
+                    Period::Month => "week",
+                    Period::Year => "month",
+                },
+                stats
+                    .best
+                    .as_ref()
+                    .map(|(label, _)| label.clone())
+                    .unwrap_or_else(|| dash.to_string()),
+                stats.per_day_x10 / 10,
+                stats.per_day_x10 % 10,
+                match stats.streak {
+                    1 => "1 day".to_string(),
+                    n => format!("{n} days"),
+                }
+            ),
+            dim,
+        )),
+    ];
+    if stats.unstamped > 0 {
+        tail.push(Line::default());
+        tail.push(Line::from(Span::styled(
+            format!(
+                "  {} finished before ratodo stamped the day {} in the totals, in no bar",
+                stats.unstamped, dot
+            ),
+            Style::default().fg(render.colours.overdue),
+        )));
+    }
+    blocks.push(tail);
+
+    // What the pane can pay for, dropped in the documented order rather than
+    // scrolled — docs/tui.md#stats. `blocks` is header, histogram, two-column,
+    // tail. The two-column block goes first, then the histogram gives up its day
+    // labels, then the histogram itself. Every other screen in this product has
+    // a documented answer to "what happens in ten rows"; this is that answer,
+    // and it is not a scrollbar.
+    const LABELS: usize = 3;
+    let room = inner.height as usize;
+    let mut keep = [true, true, true, true];
+    let mut labels = true;
+    let spent = |keep: [bool; 4], labels: bool, blocks: &[Vec<Line<'static>>]| -> usize {
+        blocks
+            .iter()
+            .zip(keep)
+            .filter(|(_, k)| *k)
+            .map(|(b, _)| b.len())
+            .sum::<usize>()
+            - usize::from(!labels && keep[1])
+    };
+    for step in 0..3 {
+        if spent(keep, labels, &blocks) <= room {
+            break;
+        }
+        match step {
+            0 => keep[2] = false,
+            1 => labels = false,
+            _ => keep[1] = false,
+        }
+    }
+    if !labels {
+        blocks[1].remove(LABELS);
+    }
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for (block, k) in blocks.into_iter().zip(keep) {
+        if k {
+            lines.extend(block);
+        }
+    }
+    lines.truncate(room);
+
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(render.colours.background)),
+        inner,
+    );
+}
+
 /// The input, in a box over the middle of the list.
 ///
 /// It lived on the bottom line until it did not: in a pane in the corner of a
@@ -2589,7 +2926,7 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
     // lists keys that do something, and those two do not — pressing either
     // answers in the status line, which is the moment it teaches anything. The
     // row they cost is what keeps the box inside a fourteen-row pane.
-    let keys: [(String, &str); 10] = [
+    let keys: [(String, &str); 11] = [
         (format!("j k  {}", render.glyphs.arrows()), "move"),
         ("g G".to_string(), "top / bottom"),
         ("ctrl-d ctrl-u".to_string(), "half page"),
@@ -2604,6 +2941,10 @@ fn help(frame: &mut Frame, area: Rect, render: Render<'_>) {
         ("X  u".to_string(), "delete / undo"),
         ("d  p".to_string(), "cancel / put off"),
         ("h l  z".to_string(), "fold this group"),
+        // The eleventh, and it gets a row of its own rather than doubling up:
+        // the comment two rows down gives the ceiling as twelve keys plus the
+        // border on a fourteen-row pane, so there is one row still spare.
+        ("s".to_string(), "stats"),
         // Two keys to a row, so that the box still fits a fourteen-row pane.
         // At twelve rows of keys the border takes `q  ctrl-c` off the bottom,
         // and a help screen that cuts off at quit is worse than none.
@@ -2930,6 +3271,32 @@ mod tests {
         );
     }
 
+    /// One key opens the second screen and the same key closes it, the way `?`
+    /// works. The three period keys are answered here whatever is on screen —
+    /// the loop is where they stop meaning anything on the list, because that is
+    /// where it knows which screen is up.
+    #[test]
+    fn the_keys_of_the_second_screen() {
+        assert_eq!(action(press(KeyCode::Char('s'))), Action::Stats);
+        assert_eq!(
+            action(press(KeyCode::Char('1'))),
+            Action::Over(Period::Week)
+        );
+        assert_eq!(
+            action(press(KeyCode::Char('2'))),
+            Action::Over(Period::Month)
+        );
+        assert_eq!(
+            action(press(KeyCode::Char('3'))),
+            Action::Over(Period::Year)
+        );
+        // And `esc` closes it, which is the same key that closes the overlay.
+        assert_eq!(action(press(KeyCode::Esc)), Action::Close);
+        // Not a fourth period, and `S` is not a second door.
+        assert_eq!(action(press(KeyCode::Char('4'))), Action::Ignore);
+        assert_eq!(action(press(KeyCode::Char('S'))), Action::Ignore);
+    }
+
     /// The modifier is the whole of the difference. A bare `c` quitting would
     /// close the pane on a typo, and `ctrl-q` is flow control on some terminals
     /// rather than a keystroke we should claim.
@@ -2993,7 +3360,10 @@ mod tests {
                         counts,
                         render(crate::theme::MOCHA),
                         &Notice::Hints,
-                        helping,
+                        match helping {
+                            true => View::Help,
+                            false => View::List,
+                        },
                         None,
                     )
                 })
@@ -3040,7 +3410,7 @@ mod tests {
                     Counts::default(),
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
-                    true,
+                    View::Help,
                     None,
                 )
             })
@@ -3066,10 +3436,10 @@ mod tests {
                 "│   │  X  u           delete / undo        │   │",
                 "│   │  d  p           cancel / put off     │   │",
                 "│   │  h l  z         fold this group      │   │",
+                "│   │  s              stats                │   │",
                 "│   │  e  r           $EDITOR / re-read    │   │",
                 "│   │  q  ctrl-c      quit                 │   │",
-                "│   ╰───────── esc or ? to close ──────────╯   │",
-                "╰──────────────────────────────────────────────╯",
+                "╰───╰───────── esc or ? to close ──────────╯───╯",
                 " [j k] [spc] [a] [d] [p] [?] [q]                ",
             ]
         );
@@ -3083,7 +3453,9 @@ mod tests {
         let tasks = tasks(&["a @2026-08-01"]);
         let groups = agenda(&tasks, today());
 
-        for (height, top) in [(15u16, 1usize), (17, 2), (21, 4)] {
+        // Eleven keys plus two of border is thirteen rows, so a fifteen-row
+        // pane puts it at the top with nothing to spare.
+        for (height, top) in [(15u16, 0usize), (17, 1), (21, 3)] {
             let mut screen = Screen::new(rows(&groups));
             let mut terminal = Terminal::new(TestBackend::new(48, height)).unwrap();
             terminal
@@ -3094,7 +3466,7 @@ mod tests {
                         Counts::default(),
                         render(crate::theme::MOCHA),
                         &Notice::Hints,
-                        true,
+                        View::Help,
                         None,
                     )
                 })
@@ -3128,7 +3500,7 @@ mod tests {
                     Counts::default(),
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
-                    true,
+                    View::Help,
                     None,
                 )
             })
@@ -3445,7 +3817,7 @@ mod tests {
                     counts,
                     render(crate::theme::MOCHA),
                     notice,
-                    false,
+                    View::List,
                     None,
                 )
             })
@@ -3604,7 +3976,17 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render, &Notice::Hints, false, None))
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    counts,
+                    render,
+                    &Notice::Hints,
+                    View::List,
+                    None,
+                )
+            })
             .unwrap();
         let text: String = terminal
             .backend()
@@ -3616,6 +3998,207 @@ mod tests {
 
         assert!(text.contains("OVERDUE"), "the band did not draw: {text}");
         assert!(text.contains("- [ ] late @2026-08-08 #ops"), "{text}");
+        assert!(
+            text.is_ascii(),
+            "something non-ASCII reached the screen: {text}"
+        );
+    }
+
+    fn stats_of(width: u16, height: u16, tasks: &[Task], period: Period) -> Vec<String> {
+        let groups = agenda(tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let stats = crate::agenda::stats(tasks, today(), period);
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    Counts::of(tasks, today()),
+                    render(crate::theme::MOCHA),
+                    &Notice::Hints,
+                    View::Stats(&stats, period),
+                    None,
+                )
+            })
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(width as usize)
+            .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
+            .collect()
+    }
+
+    /// The whole screen, exactly. A **screen and not an overlay**: the list is
+    /// not under it, because nothing on it is glanced at mid-task.
+    #[test]
+    fn the_stats_screen_exactly() {
+        let screen = stats_of(66, 22, &a_week_of_work(), Period::Week);
+        assert_eq!(
+            screen,
+            [
+                "╭ ratodo / stats — WEEK ─────────────────────────────────────────╮",
+                "│                                                                │",
+                "│  5 tasks      3 done      2 open      1 overdue                │",
+                "│  ████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░  60%   │",
+                "│                                                                │",
+                "│  DONE THIS WEEK                                                │",
+                "│                                                                │",
+                "│    MON     TUE     WED     THU     FRI     SAT     SUN         │",
+                "│    ███     ░       ██████  ░       ░       ░       ░           │",
+                "│    1       0       2       0       0       0       0           │",
+                "│                                                                │",
+                "│  PRIORITY                      SECTIONS                        │",
+                "│                                                                │",
+                "│  !high   0                       (none)     ██████████████ 5   │",
+                "│  !med    0                                                     │",
+                "│  !low    0                                                     │",
+                "│                                                                │",
+                "│  best day   WED      avg / day   1.0      streak   1 day       │",
+                "│                                                                │",
+                "│                                                                │",
+                "╰────────────────────────────────────────────────────────────────╯",
+                " [1] week  [2] month  [3] year   [r] reload   [esc] back          ",
+            ]
+        );
+    }
+
+    /// `1` `2` `3` change what is being counted, and the heading says which — a
+    /// screen of numbers that does not say what they are over is a screen of
+    /// numbers.
+    #[test]
+    fn the_three_keys_change_the_period_and_the_screen_says_which() {
+        for (period, name, first) in [
+            (Period::Week, "WEEK", "MON"),
+            (Period::Month, "MONTH", "W1"),
+            (Period::Year, "YEAR", "JAN"),
+        ] {
+            let screen = stats_of(80, 22, &a_week_of_work(), period);
+            assert!(screen[0].contains(name), "{period:?}: {screen:?}");
+            assert!(
+                screen
+                    .iter()
+                    .any(|r| r.contains(&format!("DONE THIS {name}"))),
+                "{period:?}: {screen:?}"
+            );
+            assert!(
+                screen
+                    .iter()
+                    .any(|r| r.trim_matches(['│', ' ']).starts_with(first)),
+                "{period:?}: {screen:?}"
+            );
+        }
+    }
+
+    /// What the screen does in a short pane, which is the question every other
+    /// screen in this product already had an answer to. The order is the one in
+    /// docs/tui.md#stats: the two-column block, then the day labels, then the
+    /// histogram — and never a scrollbar.
+    #[test]
+    fn the_stats_screen_drops_its_blocks_in_the_documented_order() {
+        let tasks = a_week_of_work();
+        let has = |height: u16, needle: &str| {
+            stats_of(80, height, &tasks, Period::Week)
+                .iter()
+                .any(|r| r.contains(needle))
+        };
+
+        assert!(has(22, "PRIORITY") && has(22, "MON") && has(22, "DONE THIS"));
+        assert!(!has(14, "PRIORITY"), "the two-column block goes first");
+        assert!(has(14, "MON") && has(14, "DONE THIS"));
+        assert!(!has(13, "MON"), "then the day labels");
+        assert!(has(13, "DONE THIS"));
+        assert!(!has(12, "DONE THIS"), "then the histogram");
+        // And the header and the summary line are what is left standing.
+        assert!(has(12, "tasks") && has(12, "streak"));
+    }
+
+    /// The caveat that belongs on the screen rather than in a document: a task
+    /// ticked before the stamp existed is in the totals and in no bar, and a
+    /// screen that quietly under-reports a streak is worse than one that admits
+    /// what it cannot see.
+    #[test]
+    fn a_completion_with_no_stamp_is_named_on_the_screen() {
+        let mut tasks = a_week_of_work();
+        assert!(
+            !stats_of(80, 22, &tasks, Period::Week)
+                .iter()
+                .any(|r| r.contains("before ratodo stamped")),
+            "nothing to admit, so nothing is said"
+        );
+
+        let mut old = capture("finished long ago", today());
+        old.set_state(State::Done, today());
+        old.done_on = None;
+        tasks.push(old);
+        assert!(
+            stats_of(80, 24, &tasks, Period::Week)
+                .iter()
+                .any(|r| r.contains("1 finished before ratodo stamped the day")),
+            "{:?}",
+            stats_of(80, 24, &tasks, Period::Week)
+        );
+    }
+
+    /// Bars are a length the eye compares against the length beside it, so the
+    /// only one with a trough drawn behind it is the one that is a fraction.
+    #[test]
+    fn a_bar_is_a_length_and_only_the_gauge_has_a_trough() {
+        assert_eq!(bar_of(4, 4, 8, Glyphs::Unicode), "████████");
+        assert_eq!(bar_of(2, 4, 8, Glyphs::Unicode), "████");
+        // Never rounded away: one is not none.
+        assert_eq!(bar_of(1, 100, 8, Glyphs::Unicode), "█");
+        // And none is a mark on the row rather than a hole in it.
+        assert_eq!(bar_of(0, 4, 8, Glyphs::Unicode), "░");
+        assert_eq!(bar_of(0, 0, 8, Glyphs::Unicode), "");
+
+        assert_eq!(gauge(1, 4, 8, Glyphs::Unicode), "██░░░░░░");
+        assert_eq!(gauge(0, 4, 8, Glyphs::Unicode), "░░░░░░░░");
+        assert_eq!(gauge(4, 4, 8, Glyphs::Unicode), "████████");
+        assert_eq!(gauge(1, 0, 8, Glyphs::Unicode), "");
+
+        assert_eq!(bar_of(2, 4, 8, Glyphs::Ascii), "####");
+        assert_eq!(gauge(2, 4, 8, Glyphs::Ascii), "####....");
+    }
+
+    /// The second screen is furniture too, and furniture is where the fallback
+    /// has escaped before.
+    #[test]
+    fn the_stats_screen_is_ascii_under_a_c_locale() {
+        let tasks = a_week_of_work();
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let stats = crate::agenda::stats(&tasks, today(), Period::Week);
+        let render = Render {
+            glyphs: Glyphs::Ascii,
+            ..render(crate::theme::MOCHA)
+        };
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 22)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    Counts::of(&tasks, today()),
+                    render,
+                    &Notice::Hints,
+                    View::Stats(&stats, Period::Week),
+                    None,
+                )
+            })
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+
+        assert!(text.contains("DONE THIS WEEK"), "{text}");
         assert!(
             text.is_ascii(),
             "something non-ASCII reached the screen: {text}"
@@ -3766,7 +4349,7 @@ mod tests {
                     Counts::of(&tasks, today()),
                     render,
                     &Notice::Hints,
-                    false,
+                    View::List,
                     None,
                 )
             })
@@ -3813,7 +4396,7 @@ mod tests {
                     Counts::of(&tasks, today()),
                     render,
                     &Notice::Hints,
-                    true,
+                    View::Help,
                     Some(&input),
                 )
             })
@@ -4565,7 +5148,17 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(62, 8)).unwrap();
         terminal
-            .draw(|f| draw(f, &mut screen, counts, render, &Notice::Hints, false, None))
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    counts,
+                    render,
+                    &Notice::Hints,
+                    View::List,
+                    None,
+                )
+            })
             .unwrap();
         let text: String = terminal
             .backend()
@@ -4683,7 +5276,7 @@ mod tests {
                     counts,
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
-                    false,
+                    View::List,
                     None,
                 )
             })
@@ -4717,7 +5310,7 @@ mod tests {
                     counts,
                     render(colours),
                     &Notice::Hints,
-                    false,
+                    View::List,
                     None,
                 )
             })
@@ -4799,7 +5392,7 @@ mod tests {
                     counts,
                     render(plain),
                     &Notice::Hints,
-                    false,
+                    View::List,
                     None,
                 )
             })
@@ -5338,7 +5931,7 @@ mod tests {
                     counts,
                     render,
                     &Notice::Hints,
-                    false,
+                    View::List,
                     Some(input),
                 )
             })
@@ -6047,7 +6640,7 @@ mod tests {
                         counts,
                         render(crate::theme::MOCHA),
                         &Notice::Hints,
-                        false,
+                        View::List,
                         Some(&input),
                     )
                 })
@@ -6168,7 +6761,7 @@ mod tests {
                     counts,
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
-                    false,
+                    View::List,
                     None,
                 )
             })
@@ -6218,7 +6811,7 @@ mod tests {
                     counts,
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
-                    false,
+                    View::List,
                     None,
                 )
             })
@@ -6445,7 +7038,7 @@ mod tests {
                         ..render(crate::theme::MOCHA)
                     },
                     &Notice::Hints,
-                    false,
+                    View::List,
                     None,
                 )
             })
@@ -6481,7 +7074,7 @@ mod tests {
                         ..render(crate::theme::MOCHA)
                     },
                     &Notice::Hints,
-                    false,
+                    View::List,
                     None,
                 )
             })
@@ -6518,7 +7111,7 @@ mod tests {
                     counts,
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
-                    false,
+                    View::List,
                     None,
                 )
             })

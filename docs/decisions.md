@@ -316,6 +316,44 @@ Three lists: what is settled, what was rejected, and what is still open.
   also a stretch where they share an `.ics` UID. See
   [tui.md](tui.md#copying--y).
 
+### `s` — a second screen, and the first one this product has had (2026-08-12)
+
+**Nothing is reversed by this.** A new screen is a new promise, so it gets an
+entry either way.
+
+`ratodo` had exactly one screen and one overlay, and "there is only one screen"
+was the most common thing said about it. The answer is not a sidebar and not a
+split pane — both are refused in [design.md](design.md#rules) and both were
+drawn and rejected in [redesign.md](redesign.md) — it is a **second screen one
+key away**, closed by the key that opened it.
+
+- **`stats(&[Task], today, period) -> Stats` is pure**, with `today` a parameter.
+  The same shape as `agenda` and testable for the same reason, and it lives in
+  `agenda.rs` beside it: it has that function's exact signature and exact
+  purity, so a twelfth file would be the first brick of the `mod.rs` pyramid
+  [architecture.md](architecture.md#module-layout) forbids.
+- **Nothing is stored and nothing is added to the format.** Every number is
+  arithmetic over `✓` stamps the file already carries. That is the principle the
+  whole redesign hangs off — the tool must not know something the file does not.
+- **No new dependency.** The bars are `█` and `░` by hand; ratatui's `BarChart`
+  and `Gauge` would have been a widget's opinion about a layout this screen has
+  its own opinion about.
+- **A screen, not an overlay.** It replaces the list rather than covering it,
+  because nothing on it is glanced at mid-task — and while it is up the list's
+  keys do not act, or `spc` would tick a task nobody can see.
+- **No boxes and no rules between the blocks**, which is the restraint being
+  spent here on purpose rather than argued about later. A statistics screen is
+  exactly where a tool starts trying to look like Grafana.
+
+**What it costs on the two bars it has to appear on**, measured rather than
+assumed. In `?` it is the eleventh key and gets a row of its own — eleven plus
+two of border is thirteen, and a fourteen-row pane holds it with one row spare.
+On the hint bar it goes on the **end** of the greedy fill, which is ordered by
+how often a key is reached for; the consequence is that `[s] stats` needs about
+106 columns before it appears there at all, so `?` is where the key is actually
+found. That is the trade the ordering rule implies and it is written down rather
+than discovered later.
+
 ## Rejected
 
 These are not "we'll look at it later" — they were looked at and the answer was

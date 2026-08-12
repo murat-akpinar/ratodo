@@ -970,6 +970,10 @@ fn run(
     let today = render.today;
     let mut notice = ui::Notice::Hints;
     let mut helping = false;
+    // `None` while the list is up. The period is remembered across a close, so
+    // `s` twice does not put you back on the week you had just left.
+    let mut showing: Option<agenda::Period> = None;
+    let mut period = agenda::Period::default();
     // The other mode. `Some` for exactly as long as a line is being typed, and
     // only ever put there by `a`, `o` or `⏎`.
     let mut input: Option<ui::Input> = None;
@@ -979,6 +983,16 @@ fn run(
 
     loop {
         if redraw {
+            // Computed at draw time rather than held: every number in it is
+            // derived from the file, so a stored copy is one more thing that can
+            // be stale — docs/redesign.md, nothing the tool knows that the file
+            // does not.
+            let stats = showing.map(|period| agenda::stats(&all_tasks(&live.files), today, period));
+            let view = match (&stats, helping) {
+                (Some(stats), _) => ui::View::Stats(stats, period),
+                (None, true) => ui::View::Help,
+                (None, false) => ui::View::List,
+            };
             terminal.draw(|frame| {
                 ui::draw(
                     frame,
@@ -986,7 +1000,7 @@ fn run(
                     live.counts,
                     render,
                     &notice,
-                    helping,
+                    view,
                     input.as_ref(),
                 )
             })?;
@@ -1037,7 +1051,22 @@ fn run(
                 } else {
                     // What the key means lives in `ui`, where it can be tested;
                     // this loop only knows how to read one and how to obey.
-                    match ui::action(key) {
+                    let what = ui::action(key);
+                    // The stats screen replaces the list, so the list's keys are
+                    // not on the screen and must not act behind it. `spc`
+                    // ticking a task nobody can see is the failure this stops;
+                    // the four that still mean something are the ones the screen
+                    // itself names — docs/tui.md#stats.
+                    let blocked = showing.is_some()
+                        && !matches!(
+                            what,
+                            ui::Action::Quit
+                                | ui::Action::Stats
+                                | ui::Action::Over(_)
+                                | ui::Action::Close
+                                | ui::Action::Reload
+                        );
+                    match if blocked { ui::Action::Ignore } else { what } {
                         ui::Action::Quit => return Ok(ExitCode::SUCCESS),
                         ui::Action::Move(n) => {
                             live.screen.move_by(n);
@@ -1092,9 +1121,28 @@ fn run(
                             notice = ui::Notice::Said("reloaded".to_string());
                         }
                         ui::Action::Help => helping = !helping,
+                        ui::Action::Stats => {
+                            showing = match showing {
+                                Some(_) => None,
+                                None => Some(period),
+                            };
+                            helping = false;
+                        }
+                        // Only while the screen they belong to is up. On the
+                        // list they are three keys bound to nothing, which is
+                        // what they were before this screen existed.
+                        ui::Action::Over(want) => {
+                            if showing.is_some() {
+                                period = want;
+                                showing = Some(want);
+                            }
+                        }
                         // `esc` puts the overlay down and otherwise does nothing
                         // at all. It must never quit.
-                        ui::Action::Close => helping = false,
+                        ui::Action::Close => {
+                            helping = false;
+                            showing = None;
+                        }
                         ui::Action::Say(what) => notice = ui::Notice::Said(what.to_string()),
                         ui::Action::Ignore => {}
                     }
