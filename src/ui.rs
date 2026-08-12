@@ -995,6 +995,13 @@ impl Form {
             self.input = Input::new(typing, self.input.purpose.clone());
         } else {
             self.typing = typing;
+            // The question field holds the sentence and nothing else, and this
+            // is where a word typed into it goes home. It cannot happen on the
+            // keystroke — half of `@thu` is not a date, and a field that
+            // rewrote itself under the caret would be one nobody can type in —
+            // so it happens the moment the field gives up the keyboard, which
+            // is what docs/tui.md#the-form--a promises.
+            self.input = Input::new(title_of(&text, today), self.input.purpose.clone());
         }
     }
 
@@ -2252,11 +2259,16 @@ fn task_line(
 ///
 /// A group with no name gets no count either. `· 2` on its own says nothing that
 /// counting the rows under it does not.
-fn heading(title: &str, count: usize, glyphs: Glyphs) -> String {
+fn heading(title: &str, count: Option<usize>, glyphs: Glyphs) -> String {
     let name = text::plain(title);
     if name.is_empty() {
         return name;
     }
+    let Some(count) = count else {
+        // The stats screen's panels: a heading naming what is under it, with
+        // nothing to count — the numbers on those rows are the block itself.
+        return name;
+    };
     let (_, dot) = glyphs.punctuation();
     format!("{name} {dot} {count}")
 }
@@ -2282,7 +2294,7 @@ fn header_line(
     cols: Columns,
     render: Render<'_>,
 ) -> Line<'static> {
-    let name = heading(title, count, render.glyphs);
+    let name = heading(title, Some(count), render.glyphs);
     // A collapsed group says which key opens it. One that does not is a dead
     // end — docs/tui.md.
     let tail = if folded { " l" } else { "" };
@@ -2332,7 +2344,7 @@ const BOX_MARGIN: usize = 2;
 fn group_edge(
     top: bool,
     title: &str,
-    count: usize,
+    count: Option<usize>,
     width: usize,
     cols: Columns,
     render: Render<'_>,
@@ -2942,13 +2954,13 @@ pub fn draw(
                 } => {
                     inside = boxes && !folded;
                     ListItem::new(match inside {
-                        true => group_edge(true, title, *count, box_width, cols, render),
+                        true => group_edge(true, title, Some(*count), box_width, cols, render),
                         false => header_line(title, *count, *folded, width, cols, render),
                     })
                 }
                 Row::GroupEnd => {
                     inside = false;
-                    ListItem::new(group_edge(false, "", 0, box_width, cols, render))
+                    ListItem::new(group_edge(false, "", None, box_width, cols, render))
                 }
             })
             .collect();
@@ -3315,6 +3327,7 @@ fn stats_screen(frame: &mut Frame, area: Rect, stats: &Stats, period: Period, re
             .border_style(Style::default().fg(render.colours.border))
             .title(format!(" ratodo / stats {dash} {} ", period.name()))
     });
+    let boxes = block.is_some();
     let inner = block.as_ref().map_or(area, |b| b.inner(area));
     if let Some(block) = block {
         frame.render_widget(block, area);
@@ -3326,16 +3339,76 @@ fn stats_screen(frame: &mut Frame, area: Rect, stats: &Stats, period: Period, re
     let done = Style::default().fg(render.colours.done);
 
     // Each block is drawn whole or not at all, and they go in the order
-    // docs/tui.md#stats sets out: the two-column block first, then the daily
-    // labels, then the histogram. Never a scrollbar — this screen is glanceable
+    // docs/tui.md#stats sets out. Never a scrollbar — this screen is glanceable
     // or it is nothing.
     let mut blocks: Vec<Vec<Line<'static>>> = Vec::new();
+
+    // Every block is a box with its name on the edge, the same box the agenda
+    // draws a group in. It used to be five paragraphs with nothing round them,
+    // argued for as restraint; on a real screen it read as one loose column of
+    // text in a product where everything else is a container, and a heading
+    // with nothing under it holding it is not a category. Reversed in
+    // docs/decisions.md.
+    //
+    // Below 34 columns the frame is gone and the box goes with it, exactly as
+    // it does on the list: two columns of border out of thirty-three is a tenth
+    // of the pane spent on furniture.
+    let box_width = width.saturating_sub(2 * BOX_MARGIN);
+    // What a row inside a panel actually has: the box's side, its inset and the
+    // margin it holds back when there is a box, and the indent alone when the
+    // frame has gone and taken the box with it.
+    let row_room = match boxes {
+        true => box_width.saturating_sub(3),
+        false => width.saturating_sub(BOX_MARGIN),
+    };
+    let panel = |title: &str, body: Vec<Line<'static>>| -> Vec<Line<'static>> {
+        let indent = |line: Line<'static>| -> Line<'static> {
+            let mut spans = vec![Span::raw(" ".repeat(BOX_MARGIN))];
+            spans.extend(line.spans);
+            Line::from(spans)
+        };
+        if boxes {
+            // The boxes touch, exactly as the agenda's groups do: a bottom edge
+            // and the next top edge are the separation, and a blank row between
+            // two closed containers is a row spent saying what the edges said.
+            let mut out = vec![indent(group_edge(
+                true,
+                title,
+                None,
+                box_width,
+                Columns::default(),
+                render,
+            ))];
+            out.extend(
+                body.into_iter()
+                    .map(|row| indent(boxed(row, box_width, render))),
+            );
+            out.push(indent(group_edge(
+                false,
+                "",
+                None,
+                box_width,
+                Columns::default(),
+                render,
+            )));
+            return out;
+        }
+        let mut out = vec![
+            Line::default(),
+            Line::from(Span::styled(
+                format!("{}{title}", " ".repeat(BOX_MARGIN)),
+                Style::default().fg(render.colours.foreground).bold(),
+            )),
+        ];
+        out.extend(body.into_iter().map(indent));
+        out
+    };
 
     // The header: four numbers and the bar under them. Laid out as entries with
     // a gap rather than a format string with counted spaces, so the row narrows
     // by losing a whole word instead of by being cut mid-number.
     let total = stats.total.max(1);
-    let mut header = "  ".to_string();
+    let mut header = String::new();
     for (n, label) in [
         (stats.total, "tasks"),
         (stats.done, "done"),
@@ -3343,33 +3416,34 @@ fn stats_screen(frame: &mut Frame, area: Rect, stats: &Stats, period: Period, re
         (stats.overdue, "overdue"),
     ] {
         let entry = format!("{n} {label}");
-        if columns(&header) + columns(&entry) + 2 > width {
+        if columns(&header) + columns(&entry) + 2 > row_room {
             break;
         }
         header.push_str(&entry);
         header.push_str("      ");
     }
-    blocks.push(vec![
-        Line::default(),
-        Line::from(Span::styled(header, accent)),
-        Line::from(vec![
-            Span::styled(
-                format!(
-                    "  {}",
-                    gauge(stats.done, total, width.saturating_sub(10), render.glyphs)
+    blocks.push(panel(
+        "TOTALS",
+        vec![
+            Line::from(Span::styled(header, accent)),
+            Line::from(vec![
+                Span::styled(
+                    gauge(stats.done, total, row_room.saturating_sub(8), render.glyphs),
+                    done,
                 ),
-                done,
-            ),
-            Span::styled(format!("  {}%", stats.done * 100 / total), dim),
-        ]),
-    ]);
+                Span::styled(format!("  {}%", stats.done * 100 / total), dim),
+            ]),
+        ],
+    ));
 
     // The histogram: labels, bars, counts.
     let cells = stats.buckets.len().max(1);
-    let cell = (width.saturating_sub(4) / cells).max(1);
+    // Less the two of indent the row opens with: a cell wider than what is left
+    // pushes the right edge into the margin and the box stops closing.
+    let cell = (row_room.saturating_sub(2) / cells).max(1);
     let peak = stats.buckets.iter().map(|(_, n)| *n).max().unwrap_or(0);
     let across = |pick: &dyn Fn(&(String, usize)) -> String| {
-        let mut out = "    ".to_string();
+        let mut out = "  ".to_string();
         for bucket in &stats.buckets {
             let text = pick(bucket);
             out.push_str(&format!(
@@ -3383,122 +3457,110 @@ fn stats_screen(frame: &mut Frame, area: Rect, stats: &Stats, period: Period, re
     let bars = across(&|(_, n)| bar_of(*n, peak, cell.saturating_sub(2), render.glyphs));
     let numbers = across(&|(_, n)| n.to_string());
 
-    blocks.push(vec![
-        Line::default(),
-        Line::from(Span::styled(
-            format!("  DONE THIS {}", period.name()),
-            Style::default().fg(render.colours.foreground).bold(),
-        )),
-        Line::default(),
-        Line::from(Span::styled(labels, dim)),
-        Line::from(Span::styled(bars, done)),
-        Line::from(Span::styled(numbers, dim)),
-    ]);
+    blocks.push(panel(
+        &format!("DONE THIS {}", period.name()),
+        vec![
+            Line::from(Span::styled(labels, dim)),
+            Line::from(Span::styled(bars, done)),
+            Line::from(Span::styled(numbers, dim)),
+        ],
+    ));
 
-    // Priority on the left, sections on the right. Two columns of the same
-    // block, so they drop together — half of a pair reads as a rendering fault.
-    let half = width / 2;
-    let rows = stats.priority.len().max(stats.sections.len());
-    let prio_peak = stats.priority.iter().map(|(_, n)| *n).max().unwrap_or(0);
-    let section_peak = stats.sections.iter().map(|(_, n)| *n).max().unwrap_or(0);
-    let mut two = vec![
-        Line::default(),
-        Line::from(vec![
-            Span::styled(
-                format!("  PRIORITY{}", " ".repeat(half.saturating_sub(10))),
-                Style::default().fg(render.colours.foreground).bold(),
-            ),
-            // The word over the block says what is in it. With several lists
-            // open these are file names, and `SECTIONS` over `work.md` is the
-            // heading disagreeing with the column under it.
-            Span::styled(
-                match stats.by_list {
-                    true => "LISTS",
-                    false => "SECTIONS",
-                },
-                Style::default().fg(render.colours.foreground).bold(),
-            ),
-        ]),
-        Line::default(),
-    ];
-    for n in 0..rows {
-        let side = |entry: Option<(&str, usize)>, peak: usize, label: usize| match entry {
-            None => " ".repeat(half),
-            Some((name, count)) => {
-                let name = shorten(name, label, render.glyphs);
+    // A box each, stacked, rather than two columns of one block. Two headings
+    // side by side over two ragged half-width columns was the loosest thing on
+    // the screen: neither column had an edge, so neither heading had anything
+    // it visibly owned. A box is what owns its rows here as everywhere else,
+    // and the room it costs is room this screen had spare.
+    let counted = |entries: Vec<(String, usize)>, label: usize| -> Vec<Line<'static>> {
+        let peak = entries.iter().map(|(_, n)| *n).max().unwrap_or(0);
+        entries
+            .into_iter()
+            .map(|(name, count)| {
+                let name = shorten(&name, label, render.glyphs);
                 // Capped, and this is the one place a bar is allowed to be:
                 // the eye reads these against each other, not against the pane.
                 let bar = bar_of(
                     count,
                     peak,
-                    half.saturating_sub(label + 8).min(16),
+                    row_room.saturating_sub(label + 6).min(24),
                     render.glyphs,
                 );
-                let text = format!(
-                    "  {name}{} {bar} {count}",
-                    " ".repeat(label.saturating_sub(columns(&name)))
-                );
-                format!("{text}{}", " ".repeat(half.saturating_sub(columns(&text))))
-            }
-        };
-        two.push(Line::from(vec![
-            Span::styled(
-                side(stats.priority.get(n).map(|(p, c)| (*p, *c)), prio_peak, 6),
-                dim,
-            ),
-            Span::styled(
-                side(
-                    stats.sections.get(n).map(|(s, c)| (s.as_str(), *c)),
-                    section_peak,
-                    // A third of the column, up to twelve. A fixed twelve at
-                    // forty-four leaves two columns for the bar, which is not a
-                    // bar — the name has to give some back at that width.
-                    (half / 3).min(12),
-                ),
-                dim,
-            ),
-        ]));
-    }
-    blocks.push(two);
+                Line::from(Span::styled(
+                    format!(
+                        "{name}{} {bar} {count}",
+                        " ".repeat(label.saturating_sub(columns(&name)))
+                    ),
+                    dim,
+                ))
+            })
+            .collect()
+    };
+    blocks.push(panel(
+        "PRIORITY",
+        counted(
+            stats
+                .priority
+                .iter()
+                .map(|(p, n)| ((*p).to_string(), *n))
+                .collect(),
+            6,
+        ),
+    ));
+    blocks.push(panel(
+        // The word over the block says what is in it. With several lists open
+        // these are file names, and `SECTIONS` over `work.md` is the heading
+        // disagreeing with the rows under it.
+        match stats.by_list {
+            true => "LISTS",
+            false => "SECTIONS",
+        },
+        counted(
+            stats.sections.clone(),
+            // A third of the box, up to twelve. A fixed twelve at forty-four
+            // leaves two columns for the bar, which is not a bar — the name has
+            // to give some back at that width.
+            (row_room / 3).min(12),
+        ),
+    ));
 
     // The three summary numbers, and the one caveat that belongs on a screen
-    // rather than in a document.
-    let mut tail = vec![
-        Line::default(),
-        Line::from(Span::styled(
-            format!(
-                "  best {}   {}      avg / day   {}.{}      streak   {}",
-                match period {
-                    Period::Week => "day",
-                    Period::Month => "week",
-                    Period::Year => "month",
-                },
-                stats
-                    .best
-                    .as_ref()
-                    .map(|(label, _)| label.clone())
-                    .unwrap_or_else(|| dash.to_string()),
-                stats.per_day_x10 / 10,
-                stats.per_day_x10 % 10,
-                match stats.streak {
-                    1 => "1 day".to_string(),
-                    n => format!("{n} days"),
-                }
-            ),
-            dim,
+    // rather than in a document. Both are sentences rather than laid-out
+    // columns, so both are cut to the box instead of running through its side —
+    // `boxed` pads a short row and has nothing to say about a long one.
+    let fits =
+        |text: String| -> String { shorten(&text, box_width.saturating_sub(3), render.glyphs) };
+    let mut tail = vec![Line::from(Span::styled(
+        fits(format!(
+            "best {}   {}      avg / day   {}.{}      streak   {}",
+            match period {
+                Period::Week => "day",
+                Period::Month => "week",
+                Period::Year => "month",
+            },
+            stats
+                .best
+                .as_ref()
+                .map(|(label, _)| label.clone())
+                .unwrap_or_else(|| dash.to_string()),
+            stats.per_day_x10 / 10,
+            stats.per_day_x10 % 10,
+            match stats.streak {
+                1 => "1 day".to_string(),
+                n => format!("{n} days"),
+            }
         )),
-    ];
+        dim,
+    ))];
     if stats.unstamped > 0 {
-        tail.push(Line::default());
         tail.push(Line::from(Span::styled(
-            format!(
-                "  {} finished before ratodo stamped the day {} in the totals, in no bar",
+            fits(format!(
+                "{} finished before ratodo stamped the day {} in the totals, in no bar",
                 stats.unstamped, dot
-            ),
+            )),
             Style::default().fg(render.colours.overdue),
         )));
     }
-    blocks.push(tail);
+    blocks.push(panel("PACE", tail));
 
     // What the pane can pay for, dropped in the documented order rather than
     // scrolled — docs/tui.md#stats. `blocks` is header, histogram, two-column,
@@ -3506,11 +3568,14 @@ fn stats_screen(frame: &mut Frame, area: Rect, stats: &Stats, period: Period, re
     // labels, then the histogram itself. Every other screen in this product has
     // a documented answer to "what happens in ten rows"; this is that answer,
     // and it is not a scrollbar.
-    const LABELS: usize = 3;
-    let room = inner.height as usize;
-    let mut keep = [true, true, true, true];
+    // The day labels are the first row inside the histogram's box.
+    let labels_at = usize::from(boxes);
+    // One row under the frame before the first box, and only one: the screen
+    // opens with air, it does not float in it.
+    let room = (inner.height as usize).saturating_sub(1);
+    let mut keep = [true; 5];
     let mut labels = true;
-    let spent = |keep: [bool; 4], labels: bool, blocks: &[Vec<Line<'static>>]| -> usize {
+    let spent = |keep: [bool; 5], labels: bool, blocks: &[Vec<Line<'static>>]| -> usize {
         blocks
             .iter()
             .zip(keep)
@@ -3519,27 +3584,30 @@ fn stats_screen(frame: &mut Frame, area: Rect, stats: &Stats, period: Period, re
             .sum::<usize>()
             - usize::from(!labels && keep[1])
     };
-    for step in 0..3 {
+    for step in 0..4 {
         if spent(keep, labels, &blocks) <= room {
             break;
         }
         match step {
-            0 => keep[2] = false,
-            1 => labels = false,
+            0 => keep[3] = false,
+            1 => keep[2] = false,
+            2 => labels = false,
             _ => keep[1] = false,
         }
     }
     if !labels {
-        blocks[1].remove(LABELS);
+        blocks[1].remove(labels_at);
     }
 
-    let mut lines: Vec<Line<'static>> = Vec::new();
+    // Whole blocks only, and never a box left open: a line cut off at the
+    // bottom of the pane would take a bottom edge with it, and half a box is
+    // the rendering fault this screen's boxes exist to stop.
+    let mut lines: Vec<Line<'static>> = vec![Line::default()];
     for (block, k) in blocks.into_iter().zip(keep) {
-        if k {
+        if k && lines.len() + block.len() <= room + 1 {
             lines.extend(block);
         }
     }
-    lines.truncate(room);
 
     frame.render_widget(
         Paragraph::new(lines).style(Style::default().bg(render.colours.background)),
@@ -5113,23 +5181,23 @@ mod tests {
             [
                 "╭ ratodo / stats — WEEK ─────────────────────────────────────────╮",
                 "│                                                                │",
-                "│  5 tasks      3 done      2 open      1 overdue                │",
-                "│  ████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░  60%   │",
-                "│                                                                │",
-                "│  DONE THIS WEEK                                                │",
-                "│                                                                │",
-                "│    MON     TUE     WED     THU     FRI     SAT     SUN         │",
-                "│    ███     ░       ██████  ░       ░       ░       ░           │",
-                "│    1       0       2       0       0       0       0           │",
-                "│                                                                │",
-                "│  PRIORITY                      SECTIONS                        │",
-                "│                                                                │",
-                "│  !high   0                       (none)     ██████████████ 5   │",
-                "│  !med    0                                                     │",
-                "│  !low    0                                                     │",
-                "│                                                                │",
-                "│  best day   WED      avg / day   1.0      streak   1 day       │",
-                "│                                                                │",
+                "│  ╭─ TOTALS ─────────────────────────────────────────────────╮  │",
+                "│  │ 5 tasks      3 done      2 open      1 overdue           │  │",
+                "│  │ █████████████████████████████░░░░░░░░░░░░░░░░░░░░  60%   │  │",
+                "│  ╰──────────────────────────────────────────────────────────╯  │",
+                "│  ╭─ DONE THIS WEEK ─────────────────────────────────────────╮  │",
+                "│  │   MON    TUE    WED    THU    FRI    SAT    SUN          │  │",
+                "│  │   ███    ░      █████  ░      ░      ░      ░            │  │",
+                "│  │   1      0      2      0      0      0      0            │  │",
+                "│  ╰──────────────────────────────────────────────────────────╯  │",
+                "│  ╭─ PRIORITY ───────────────────────────────────────────────╮  │",
+                "│  │ !high   0                                                │  │",
+                "│  │ !med    0                                                │  │",
+                "│  │ !low    0                                                │  │",
+                "│  ╰──────────────────────────────────────────────────────────╯  │",
+                "│  ╭─ PACE ───────────────────────────────────────────────────╮  │",
+                "│  │ best day   WED      avg / day   1.0      streak   1 day  │  │",
+                "│  ╰──────────────────────────────────────────────────────────╯  │",
                 "│                                                                │",
                 "╰────────────────────────────────────────────────────────────────╯",
                 " [1] week  [2] month  [3] year   [r] reload   [esc] back          ",
@@ -5166,8 +5234,8 @@ mod tests {
 
     /// What the screen does in a short pane, which is the question every other
     /// screen in this product already had an answer to. The order is the one in
-    /// docs/tui.md#stats: the two-column block, then the day labels, then the
-    /// histogram — and never a scrollbar.
+    /// docs/tui.md#stats: the sections box, the priority box, the day labels,
+    /// then the histogram — and never a scrollbar.
     #[test]
     fn the_stats_screen_drops_its_blocks_in_the_documented_order() {
         let tasks = a_week_of_work();
@@ -5177,14 +5245,54 @@ mod tests {
                 .any(|r| r.contains(needle))
         };
 
-        assert!(has(22, "PRIORITY") && has(22, "MON") && has(22, "DONE THIS"));
-        assert!(!has(14, "PRIORITY"), "the two-column block goes first");
-        assert!(has(14, "MON") && has(14, "DONE THIS"));
-        assert!(!has(13, "MON"), "then the day labels");
-        assert!(has(13, "DONE THIS"));
-        assert!(!has(12, "DONE THIS"), "then the histogram");
-        // And the header and the summary line are what is left standing.
-        assert!(has(12, "tasks") && has(12, "streak"));
+        assert!(has(24, "SECTIONS") && has(24, "PRIORITY") && has(24, "MON"));
+        assert!(!has(23, "SECTIONS"), "the sections box goes first");
+        assert!(has(21, "PRIORITY"));
+        assert!(!has(20, "PRIORITY"), "then the priority box");
+        assert!(has(16, "MON") && has(16, "DONE THIS"));
+        assert!(!has(15, "MON"), "then the day labels");
+        assert!(has(15, "DONE THIS"));
+        assert!(!has(14, "DONE THIS"), "then the histogram");
+        // And the totals and the pace line are what is left standing.
+        assert!(has(14, "tasks") && has(14, "streak"));
+    }
+
+    /// Every box on this screen closes, at every width and every height — a
+    /// block whose row is one column wider than the box it is in pushes the
+    /// right edge into the margin, and the screen has three kinds of row that
+    /// are built by different arithmetic. Swept, because each of them has been
+    /// wrong once.
+    #[test]
+    fn every_box_on_the_stats_screen_closes_at_every_width() {
+        let mut tasks = a_week_of_work();
+        let mut old = capture("finished long ago", today());
+        old.set_state(State::Done, today());
+        old.done_on = None;
+        tasks.push(old);
+
+        for width in [100u16, 80, 66, 44, 40, 34] {
+            for height in [30u16, 24, 20, 16, 12] {
+                for period in [Period::Week, Period::Month, Period::Year] {
+                    let screen = stats_of(width, height, &tasks, period);
+                    for row in &screen {
+                        assert_eq!(
+                            columns(row),
+                            width as usize,
+                            "{width}x{height} {period:?}: {row:?}"
+                        );
+                        // A box row is `│  │ … │  │`: opened, and closed with
+                        // the margin still to the right of it.
+                        if row.starts_with("│  ╭") || row.starts_with("│  ╰") {
+                            let cut = row.trim_end();
+                            assert!(
+                                cut.ends_with("╮  │") || cut.ends_with("╯  │"),
+                                "{width}x{height} {period:?}: {row:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// The caveat that belongs on the screen rather than in a document: a task
@@ -5377,6 +5485,27 @@ mod tests {
         // And what the field is holding was re-seeded from the line the picker
         // just wrote, rather than being a keystroke out of date.
         assert_eq!(form.typed_text(), "2026-08-13");
+    }
+
+    /// A word with a box of its own is on the screen once. It cannot leave the
+    /// sentence on the keystroke — half of `@thu` is not a date — so it leaves
+    /// when the field gives up the keyboard, and comes back to a sentence that
+    /// is only the title.
+    #[test]
+    fn a_word_typed_into_the_sentence_leaves_it_when_the_field_does() {
+        let mut form = Form::adding(today(), &[]);
+        for c in "call the accountant @thu #home".chars() {
+            form.press(press(KeyCode::Char(c)));
+        }
+        // Still being typed, so it is still there: a field that rewrote itself
+        // under the caret is one nobody can type in.
+        assert!(form.input.text.contains("@thu"), "{:?}", form.input.text);
+
+        tab(&mut form, 1);
+        assert_eq!(form.input.text, "call the accountant");
+        // The line kept every word — the sentence gave them up, the model did
+        // not — and the date it opened with stepped aside for the typed one.
+        assert_eq!(form.text(), "call the accountant @thu #home");
     }
 
     /// A radio writes into the line and nothing else. What is around the token

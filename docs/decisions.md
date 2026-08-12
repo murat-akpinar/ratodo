@@ -606,6 +606,49 @@ are the tool's own word rather than the user's, and the screen says so the same
 way twice. A heading out of the user's file keeps its `##` *and* its own casing,
 which is what still tells the two apart.
 
+### The stats screen has no boxes, deliberately → every block is a box (2026-08-12)
+
+**Was:** *"No boxes and no rules between the blocks. The list is a grid because
+its rows line up and are read across; this is five paragraphs read one at a
+time, and a frame round each would be furniture with nothing to hold. A
+statistics screen is exactly where a tool starts trying to look like Grafana,
+and the restraint is spent here rather than argued about later."*
+
+**Now:** five boxes — `TOTALS`, `DONE THIS WEEK`, `PRIORITY`, `SECTIONS`/`LISTS`
+and `PACE` — the same box the agenda draws a group in, touching each other the
+way the agenda's groups do.
+
+**Why the argument was wrong, having been looked at:** it defended against
+decoration and the screen did not have a decoration problem, it had a
+*containment* problem. The maintainer's word for it was **başı boş** — loose,
+uncontained, as though nothing had been categorised. Every other surface in this
+product is a container; a heading with nothing holding what is under it was the
+one place where a word was expected to do a box's job, and two headings side by
+side over two ragged half-width columns was the worst of it — neither column had
+an edge, so neither heading visibly owned anything.
+
+A box here is not the Grafana move the old rule was worried about. It is the
+same stroke, the same corners and the same rule the list already draws, which is
+the opposite of a new visual idea: the screen now reads as the same program.
+
+**What it cost, and what paid for it:**
+
+- **Two headings for one.** `PRIORITY` and `SECTIONS` were a two-column block
+  and are now a box each, stacked. Stacking costs rows, and rows are what this
+  screen had spare — the bottom third of it was empty at any normal height.
+- **`TOTALS` and `PACE` got names.** They were the two blocks with no word over
+  them, which is exactly the reader having to work out what a row of numbers is.
+- **Eight rows at the top end, and a new drop order at the bottom.** `SECTIONS`
+  goes first, then `PRIORITY`, then the day labels, then the histogram, with
+  `TOTALS` and `PACE` left standing — and blocks go **whole**, because a box cut
+  off at the bottom of a pane loses its own bottom edge.
+- **Nothing below 34 columns.** The frame goes there and the boxes go with it,
+  exactly as they do on the list.
+
+**What did not change:** no new theme role, no new dependency, no new data. The
+edges are `border` and the headings are `accent`, which is what the agenda's
+group boxes already were.
+
 ### The arrows open the date picker and step it → the first press only opens it (2026-08-12)
 
 **Was:** `↑` on the form's date field built the picker and immediately stepped

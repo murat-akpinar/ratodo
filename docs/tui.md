@@ -865,22 +865,28 @@ it is already in the file: `✓2026-08-11` completion stamps are what it reads.
 ```
 ╭ ratodo / stats — WEEK ───────────────────────────────────────────────────────╮
 │                                                                              │
-│  42 tasks      31 done      8 open      3 overdue                            │
-│  ██████████████████████████████████████████░░░░░░░░░░░░░░░░  74%             │
-│                                                                              │
-│  DONE THIS WEEK                                                              │
-│                                                                              │
-│    MON       TUE       WED       THU       FRI       SAT       SUN           │
-│    ████      ██████    ████      ████████  ██████    ███       ░             │
-│    4         6         4         8         6         3         0             │
-│                                                                              │
-│  PRIORITY                             SECTIONS                               │
-│                                                                              │
-│  !high  ████████ 8                      ## tasks     ███████████ 14          │
-│  !med   █████████████ 13                ## Someday   █████ 6                 │
-│  !low   █████████████████████ 21        (none)       ███ 3                   │
-│                                                                              │
-│  best day   THU      avg / day   4.4      streak   6 days                    │
+│  ╭─ TOTALS ───────────────────────────────────────────────────────────────╮  │
+│  │ 42 tasks      31 done      8 open      3 overdue                       │  │
+│  │ ████████████████████████████████████░░░░░░░░░░░░  74%                  │  │
+│  ╰────────────────────────────────────────────────────────────────────────╯  │
+│  ╭─ DONE THIS WEEK ───────────────────────────────────────────────────────╮  │
+│  │   MON       TUE       WED       THU       FRI       SAT       SUN      │  │
+│  │   ████      ██████    ████      ████████  ██████    ███       ░        │  │
+│  │   4         6         4         8         6         3         0        │  │
+│  ╰────────────────────────────────────────────────────────────────────────╯  │
+│  ╭─ PRIORITY ─────────────────────────────────────────────────────────────╮  │
+│  │ !high  ████████ 8                                                      │  │
+│  │ !med   █████████████ 13                                                │  │
+│  │ !low   ████████████████████████ 21                                     │  │
+│  ╰────────────────────────────────────────────────────────────────────────╯  │
+│  ╭─ SECTIONS ─────────────────────────────────────────────────────────────╮  │
+│  │ ## tasks     ████████████████████████ 14                               │  │
+│  │ ## Someday   ██████████ 6                                              │  │
+│  │ (none)       █████ 3                                                   │  │
+│  ╰────────────────────────────────────────────────────────────────────────╯  │
+│  ╭─ PACE ─────────────────────────────────────────────────────────────────╮  │
+│  │ best day   THU      avg / day   4.4      streak   6 days               │  │
+│  ╰────────────────────────────────────────────────────────────────────────╯  │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  [1] week  [2] month  [3] year   [r] reload   [esc] back
@@ -895,12 +901,19 @@ it is already in the file: `✓2026-08-11` completion stamps are what it reads.
   than twelve bars, because a histogram that needs a scrollbar is not one. It is
   always *this* week, month or year, never "the last thirty days": that is a
   different question and not one a calendar can be asked at a glance.
-- **No boxes and no rules between the blocks, deliberately.** The list is a grid
-  because its rows line up and are read across; this is five paragraphs read one
-  at a time, and a frame round each would be furniture with nothing to hold. A
-  statistics screen is exactly where a tool starts trying to look like Grafana,
-  and the restraint is spent here rather than argued about later.
-- **The right-hand block is `SECTIONS` or `LISTS`, and the word follows what is
+- **Every block is a box, the same box the agenda draws a group in, and they
+  touch.** This was five paragraphs with nothing round them, argued for as
+  restraint against looking like Grafana; on a real screen it read as one loose
+  column of text in a product where everything else is a container, and a
+  heading with nothing holding what is under it is not a category. The boxes
+  are the categorisation — [decisions.md](decisions.md#reversed). A blank row
+  between two closed containers is a row spent saying what the edges said, so
+  there is none, exactly as on the list. Below 34 columns the frame goes and the
+  boxes go with it, also exactly as on the list.
+- **`TOTALS` and `PACE` are named too.** A row of numbers with no word over it
+  is the thing the reader has to work out, and the two summary blocks were the
+  ones with nothing to be called.
+- **The block is `SECTIONS` or `LISTS`, and the word follows what is
   under it.** With one list open those rows are the file's own `## ` headings;
   with several they are the files, because `## Work` in two files is two places
   and adding them together would be a lie about a heading nobody shares. A
@@ -916,13 +929,16 @@ it is already in the file: `✓2026-08-11` completion stamps are what it reads.
   nothing with a day attached. When there are any, the screen says how many
   rather than quietly under-reporting the streak.
 - **Sections, not projects.** `## Someday` is the file's own word for the same
-  idea. With several lists open the block shows lists instead — a heading can
-  repeat across files and merging them would be a lie.
+  idea. With several lists open the box shows lists instead, and its heading
+  says `LISTS` — a heading can repeat across files and merging them would be a
+  lie.
 - **A streak survives a morning.** Today having nothing on it yet does not break
   one; a streak that resets every morning and comes back after lunch is a clock.
-- **What it does in a short pane**, in this order and never a scrollbar: the
-  two-column block goes first, then the histogram's day labels, then the
-  histogram itself. The header and the summary line are what is left standing.
+- **What it does in a short pane**, in this order and never a scrollbar:
+  `SECTIONS` goes first, then `PRIORITY`, then the histogram's day labels, then
+  the histogram itself. `TOTALS` and `PACE` are what is left standing. Blocks go
+  whole — a box cut off at the bottom of the pane would lose its own bottom edge,
+  which is the rendering fault these boxes exist to stop.
 - **It gets no file of its own.** `stats(&[Task], today, period) -> Stats` has
   `agenda`'s exact signature and `agenda`'s exact purity, so it lives in
   `agenda.rs` beside it and
