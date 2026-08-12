@@ -142,13 +142,22 @@ fn check_unchanged(path: &Path, read_mtime: Option<SystemTime>) -> Result<()> {
 
 /// The full target path, flattened into one file name. A single `todo.md.bak`
 /// slot would mean the backup of one `--file` list quietly replacing another's.
+///
+/// Everything Windows forbids in a name goes, not only the separators: there
+/// `canonicalize` answers with a verbatim `\\?\C:\…` path, and a `?` or a `:`
+/// left in the slug is os error 123 on every write past the first.
+///
+/// Both separators are named rather than asked of `std::path::is_separator`,
+/// which answers for the host: a Windows path slugged on Linux would keep its
+/// backslashes, and the test below could then only run on one of the two.
 fn backup_path(dir: &Path, target: &Path) -> PathBuf {
-    let slug: String = target
+    let slug = target
         .to_string_lossy()
-        .chars()
-        .map(|c| if std::path::is_separator(c) { '-' } else { c })
-        .collect();
-    dir.join(format!("{}.bak", slug.trim_start_matches('-')))
+        .split(|c: char| r#"/\:?*"<>|"#.contains(c))
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    dir.join(format!("{slug}.bak"))
 }
 
 /// Next to the target so the rename stays on one filesystem; the pid keeps two
@@ -421,6 +430,29 @@ mod tests {
         let err = save(&path, &loaded.doc, loaded.mtime, &dir.file("bak")).unwrap_err();
         assert!(err.to_string().contains("changed on disk"), "{err}");
         assert_eq!(fs::read_to_string(&path).unwrap(), "- [ ] theirs\n");
+    }
+
+    /// Every write after the first takes a backup, so a name the filesystem
+    /// refuses is the whole tool broken rather than one lost `.bak`.
+    ///
+    /// Windows hands `canonicalize` a verbatim path — `\\?\C:\…` — and both `?`
+    /// and `:` are illegal in a file name there. Flattening only the separators
+    /// left them in, and every capture past the first died on os error 123.
+    #[test]
+    fn a_backup_name_holds_nothing_a_filesystem_refuses() {
+        let windows = backup_path(Path::new("bak"), Path::new(r"\\?\C:\Users\you\todo.md"));
+        let name = windows.file_name().unwrap().to_string_lossy();
+        assert_eq!(
+            name, "C-Users-you-todo.md.bak",
+            "still unwritable on Windows"
+        );
+
+        let unix = backup_path(Path::new("bak"), Path::new("/home/you/todo.md"));
+        assert_eq!(
+            unix.file_name().unwrap().to_string_lossy(),
+            "home-you-todo.md.bak",
+            "the name every existing backup already has"
+        );
     }
 
     #[test]
