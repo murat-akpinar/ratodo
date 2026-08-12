@@ -714,6 +714,19 @@ fn part_of(text: &str, today: NaiveDate, want: Part) -> Option<String> {
         .map(|(range, _)| text[range].to_string())
 }
 
+/// The sentence: every word `parts` did **not** claim, which is what the title
+/// has always been. Joined by single spaces, because that is what a field can
+/// show — and it is only ever written back if the user edits it, so a line
+/// nobody touched keeps its own spacing.
+fn title_of(text: &str, today: NaiveDate) -> String {
+    crate::capture::parts(text, today)
+        .into_iter()
+        .filter(|(_, part)| *part == Part::Text)
+        .map(|(range, _)| &text[range])
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Every tag in the line, space separated and with their `#`.
 fn tags_of(text: &str, today: NaiveDate) -> String {
     crate::capture::parts(text, today)
@@ -770,19 +783,34 @@ impl Field {
     }
 }
 
-/// The add screen. **The line is the model**: the text box holds the whole line
-/// exactly as the one-line box does, and every row under it is a view of that
-/// one string — each reads `capture::parts` to know what is selected and writes
-/// back by replacing the span the tokenizer claimed.
+/// The add screen. **The line is the model** — `line` — and every one of the six
+/// controls is a *view* of it, the question field included: each reads
+/// `capture::parts` to know what it is holding and writes back by replacing the
+/// span that tokenizer claimed.
 ///
 /// That is what lets the form exist at all. The labelled-field box was rejected
 /// because five fields mean either joining them back into a line, which makes
 /// the boundaries decoration, or a second parser, which eventually disagrees
 /// with the first about what is going to be written. This is neither —
 /// docs/decisions.md.
+///
+/// **The question field holds the sentence and nothing else.** `@fri`, `14:00`,
+/// `!med` and `#home` have boxes of their own, so the one place the whole line
+/// appears is the `PREVIEW`, which is the form's conclusion. Typing the syntax
+/// there still works — the word goes into the line, `parts` claims it, and it is
+/// in its own box before the keystroke is over.
 #[derive(Debug)]
 pub struct Form {
+    /// The line the file will get. Everything on the screen is derived from it.
+    line: String,
+    /// The question field: the title run, with a caret in it. An `Input` because
+    /// that is the one control here that needs one — the rest take a character
+    /// and a backspace and are five columns wide.
     pub input: Input,
+    /// The three-part date picker, while `↑` `↓` have it open. It lives on the
+    /// form rather than inside `input`, because what it edits is the *line* and
+    /// `input` is only the sentence.
+    picker: Option<DateField>,
     pub focus: Field,
     today: NaiveDate,
     /// The open lists, so `List` knows its options. One list or none means the
@@ -802,6 +830,16 @@ pub struct Form {
     /// of `base` and putting the time back after whatever the date becomes —
     /// otherwise it is left stranded as a word in the title.
     spare: String,
+    /// The date `a` opened with, for as long as it is still in the line and
+    /// nobody has argued with it.
+    ///
+    /// `capture` gives the line to the **first** `@`, and the first one here is
+    /// the one nobody typed — so a `@thu` typed into the question field takes
+    /// this one's place rather than losing to it and leaving two dates in the
+    /// line. It goes once, and only while the line still holds it untouched:
+    /// after that it is their date and not ours. The same rule the one-line box
+    /// has had since v0.6.0 — docs/tui.md#adding.
+    opened_with: Option<String>,
     /// The line **without** whatever the focused sub-field owns, taken when the
     /// focus lands on it. Every keystroke rebuilds from this rather than editing
     /// what the last one left behind.
@@ -821,9 +859,17 @@ impl Form {
         area.height >= 15 && area.width >= 40
     }
 
+    /// Opens on today's date — the date a new task has more often than every
+    /// other date put together — and it opens **in the date box**, where it can
+    /// be seen and changed, rather than sitting behind the caret in the
+    /// sentence. That is what the box had to do with one field and this does
+    /// not: docs/decisions.md#the-input-box-opens-empty--it-opens-on-today-2026-08-12.
     pub fn adding(today: NaiveDate, lists: &[String]) -> Self {
         Form {
-            input: Input::adding(today),
+            line: format!("@{today}"),
+            opened_with: Some(format!("@{today}")),
+            input: Input::new(String::new(), Purpose::Add),
+            picker: None,
             focus: Field::Title,
             today,
             lists: lists.to_vec(),
@@ -831,6 +877,28 @@ impl Form {
             spare: String::new(),
             base: String::new(),
         }
+        .seeded()
+    }
+
+    fn seeded(mut self) -> Self {
+        self.seed();
+        self
+    }
+
+    /// The line as it stands — what the file will get, and what `PREVIEW` shows.
+    pub fn text(&self) -> &str {
+        &self.line
+    }
+
+    /// Whether the three-part date picker has the keyboard.
+    pub fn picking(&self) -> bool {
+        self.picker.is_some()
+    }
+
+    /// The line as the input the write path already knows how to save, so a form
+    /// and a box reach `save_typed` the same way.
+    pub fn saving(&self) -> Input {
+        Input::new(self.line.clone(), self.input.purpose.clone())
     }
 
     /// The same form, prefilled from the line **as the file has it** — byte for
@@ -843,21 +911,22 @@ impl Form {
     /// reorder an edited line was the *write*, not the form —
     /// `Task::retype` — docs/architecture.md#round-trip-fidelity.
     pub fn editing(task: &Task, today: NaiveDate, lists: &[String]) -> Self {
-        Form {
-            input: Input::editing(task),
+        let mut form = Form {
+            line: task.body().to_string(),
+            // An edit opens on the user's own date, so there is none of ours to
+            // step aside.
+            opened_with: None,
+            input: Input::new(String::new(), Purpose::Edit(task.raw.clone())),
+            picker: None,
             focus: Field::Title,
             today,
             lists: lists.to_vec(),
             typing: String::new(),
             spare: String::new(),
             base: String::new(),
-        }
-    }
-
-    /// The line, as it stands. The whole model, and the only thing a caller
-    /// ever needs off a form that is not being drawn.
-    pub fn text(&self) -> &str {
-        &self.input.text
+        };
+        form.seed();
+        form
     }
 
     /// The tab order, with the rows that have nothing to offer left out.
@@ -867,7 +936,7 @@ impl Form {
     /// keep — docs/format.md.
     fn order(&self) -> Vec<Field> {
         let mut out = vec![Field::Title, Field::Due];
-        if part_of(&self.input.text, self.today, Part::Date).is_some() {
+        if part_of(&self.line, self.today, Part::Date).is_some() {
             out.push(Field::Time);
         }
         out.extend([Field::Priority, Field::Tags]);
@@ -890,7 +959,7 @@ impl Form {
     /// that field owns. On arrival, and again whenever something else has
     /// written into the line underneath it.
     fn seed(&mut self) {
-        let (text, today) = (self.input.text.clone(), self.today);
+        let (text, today) = (self.line.clone(), self.today);
         self.spare = String::new();
         let (typing, owns) = match self.focus {
             Field::Due => {
@@ -910,10 +979,23 @@ impl Form {
                 &[Part::Time][..],
             ),
             Field::Tags => (tags_of(&text, today), &[Part::Tag][..]),
+            // The question field is a view like the rest: what it holds is the
+            // run of words `parts` did **not** claim.
+            //
+            // Its `base` keeps that run rather than dropping it, which is the
+            // one difference: `set_parts` puts a replacement **where the first
+            // one stood**, and a title has a position in the line that a time
+            // and a tag set do not. Dropping it first would send every rewrite
+            // to the end of the line.
+            Field::Title => (title_of(&text, today), &[][..]),
             _ => (String::new(), &[][..]),
         };
-        self.typing = typing;
         self.base = set_parts(&text, today, owns, None);
+        if self.focus == Field::Title {
+            self.input = Input::new(typing, self.input.purpose.clone());
+        } else {
+            self.typing = typing;
+        }
     }
 
     /// The options on the focused row, and which one is on. Built from the line
@@ -929,7 +1011,7 @@ impl Form {
     }
 
     fn choices_for(&self, field: Field) -> Vec<(String, bool)> {
-        let text = &self.input.text;
+        let text = &self.line;
         let today = self.today;
         match field {
             Field::Priority => {
@@ -965,13 +1047,13 @@ impl Form {
 
     /// Turns the *n*th choice on, by writing it into the line.
     fn choose(&mut self, n: usize) {
-        let text = self.input.text.clone();
+        let text = self.line.clone();
         let today = self.today;
         let choices = self.choices();
         let Some((label, _)) = choices.get(n) else {
             return;
         };
-        self.input.text = match self.focus {
+        self.line = match self.focus {
             Field::Priority => match label.as_str() {
                 "none" => set_parts(&text, today, &[Part::Priority], None),
                 name => set_parts(&text, today, &[Part::Priority], Some(&format!("!{name}"))),
@@ -984,7 +1066,6 @@ impl Form {
             ),
             _ => text,
         };
-        self.input.at = self.input.text.len();
     }
 
     /// `←` and `→` on a chosen row: one step, applied at once. No `⏎` to
@@ -1003,8 +1084,44 @@ impl Form {
     /// Writes whatever is being typed in `Time` or `Tags` back into the line,
     /// rebuilding from `base` rather than editing the last keystroke's work.
     fn sync(&mut self) {
-        let (base, today, typing) = (self.base.clone(), self.today, self.typing.clone());
-        self.input.text = match self.focus {
+        let today = self.today;
+        let typing = match self.focus {
+            Field::Title => self.input.text.clone(),
+            _ => self.typing.clone(),
+        };
+        // The date we guessed steps aside for one they typed, and it steps aside
+        // out of `base` rather than out of this one line: the next keystroke
+        // rebuilds from `base`, and a date dropped only locally comes straight
+        // back on it.
+        if let Some(opening) = self.opened_with.clone()
+            && self.focus == Field::Title
+            && part_of(typing.trim(), today, Part::Date).is_some()
+            && part_of(&self.base, today, Part::Date).as_deref() == Some(&opening)
+        {
+            self.opened_with = None;
+            self.base = set_parts(&self.base.clone(), today, &[Part::Date], None);
+        }
+        let base = self.base.clone();
+        self.line = match self.focus {
+            Field::Title => {
+                let title = typing.trim();
+                match (
+                    title.is_empty(),
+                    part_of(&base, today, Part::Text).is_some(),
+                ) {
+                    (true, _) => set_parts(&base, today, &[Part::Text], None),
+                    // Replaced where the run stood, so a line arranged
+                    // `#ops rotate the keys !high` keeps its shape.
+                    (false, true) => set_parts(&base, today, &[Part::Text], Some(title)),
+                    // Nothing to replace, so this is the one position the tool
+                    // chooses for a title — **first**, which is where a written
+                    // line has it and where the row on the screen reads it.
+                    // `set_parts` would append, which is right for a field and
+                    // wrong for a sentence.
+                    (false, false) if base.trim().is_empty() => title.to_string(),
+                    (false, false) => format!("{title} {}", base.trim_start()),
+                }
+            }
             // An emptied date takes the time with it: a time with no date is
             // not a field the file can keep.
             Field::Due if typing.trim().is_empty() => base,
@@ -1021,7 +1138,6 @@ impl Form {
             Field::Tags => set_tags(&base, today, &typing),
             _ => base,
         };
-        self.input.at = self.input.text.len();
     }
 
     /// One keypress. Everything the form does to itself happens in here, so the
@@ -1030,21 +1146,30 @@ impl Form {
         let what = typing(key);
         // The date picker has the keyboard while it is open, whatever the focus
         // is — one `esc` per thing that is open, the same rule the box has.
-        if self.input.field.is_some() {
+        if let Some(picker) = self.picker.as_mut() {
             match what {
-                Typed::Left => self.input.left(),
-                Typed::Right => self.input.right(),
-                Typed::Step(by) => self.input.step(by),
-                Typed::Char(c) => self.input.insert(c),
+                Typed::Left => picker.move_to(false),
+                Typed::Right => picker.move_to(true),
+                Typed::Step(by) => picker.step(by),
+                Typed::Char(c) => {
+                    if let Some(d) = c.to_digit(10) {
+                        picker.digit(d);
+                    }
+                }
                 Typed::Field | Typed::Save => {
-                    self.input.apply_field();
-                    // The picker wrote a date into the line, so what the `Date`
-                    // field is holding is a keystroke out of date.
+                    let date = picker.date();
+                    self.picker = None;
+                    self.line = set_parts(
+                        &self.line.clone(),
+                        self.today,
+                        &[Part::Date],
+                        Some(&format!("@{date}")),
+                    );
+                    // The picker wrote into the line, so what the `Date` field
+                    // is holding is a keystroke out of date.
                     self.seed();
                 }
-                Typed::Cancel => {
-                    self.input.close_field();
-                }
+                Typed::Cancel => self.picker = None,
                 _ => {}
             }
             return Typed::Ignore;
@@ -1062,9 +1187,20 @@ impl Form {
                     || key.modifiers.contains(KeyModifiers::SHIFT);
                 self.step_focus(if back { -1 } else { 1 });
             }
-            (Typed::Char(c), Field::Title) => self.input.insert(c),
-            (Typed::Back, Field::Title) => self.input.back(),
-            (Typed::Delete, Field::Title) => self.input.delete(),
+            // The one control with a caret, because it is the one holding a
+            // sentence. Every keystroke writes the sentence back into the line.
+            (Typed::Char(c), Field::Title) => {
+                self.input.insert(c);
+                self.sync();
+            }
+            (Typed::Back, Field::Title) => {
+                self.input.back();
+                self.sync();
+            }
+            (Typed::Delete, Field::Title) => {
+                self.input.delete();
+                self.sync();
+            }
             (Typed::Left, Field::Title) => self.input.left(),
             (Typed::Right, Field::Title) => self.input.right(),
             (Typed::Home, Field::Title) => self.input.home(),
@@ -1081,8 +1217,15 @@ impl Form {
             // next-field in here, so the arrows are the door: the picker opens
             // on the date the line already means and the first press steps it.
             (Typed::Step(by), Field::Due) => {
-                self.input.toggle_field(self.today);
-                self.input.step(by);
+                // On the date the line already means, so a field that opens on
+                // the 1st of January is not something to arrow back out of.
+                let from = crate::capture::capture(&self.line, self.today)
+                    .due
+                    .map(|d| d.date)
+                    .unwrap_or(self.today);
+                let mut picker = DateField::new(from);
+                picker.step(by);
+                self.picker = Some(picker);
             }
             // Typed fields take the arrows as nothing rather than as a nudge:
             // there is no set of options behind them to step through.
@@ -2850,10 +2993,7 @@ pub fn draw(
         // The form names `tab` on its own bottom border, where the eye already
         // is, so this line says the two keys that end it and nothing else.
         Open::Form(form) => Line::from(Span::styled(
-            match (
-                form.input.field.is_some(),
-                form.input.purpose.raw().is_some(),
-            ) {
+            match (form.picking(), form.input.purpose.raw().is_some()) {
                 (true, _) => format!(" {} date   esc back", render.glyphs.enter()),
                 (false, true) => format!(" {} save   esc cancel", render.glyphs.enter()),
                 (false, false) => format!(" {} create   esc cancel", render.glyphs.enter()),
@@ -3552,11 +3692,11 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
             return form.typed_text();
         }
         match field {
-            Field::Due => part_of(&form.input.text, render.today, Part::Date)
+            Field::Due => part_of(form.text(), render.today, Part::Date)
                 .map(|word| word.trim_start_matches('@').to_string())
                 .unwrap_or_default(),
-            Field::Time => part_of(&form.input.text, render.today, Part::Time).unwrap_or_default(),
-            _ => tags_of(&form.input.text, render.today),
+            Field::Time => part_of(form.text(), render.today, Part::Time).unwrap_or_default(),
+            _ => tags_of(form.text(), render.today),
         }
     };
     for field in form.order() {
@@ -3568,8 +3708,8 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
             // has, and it takes the row over while it is up: the field and the
             // picker are two answers to one question and only one of them can
             // be the live one — docs/tui.md#the-date-field--tab.
-            Field::Due if form.input.field.is_some() => {
-                let open = form.input.field.as_ref().expect("just checked");
+            Field::Due if form.picking() => {
+                let open = form.picker.as_ref().expect("just checked");
                 let mut spans = Vec::new();
                 for (part, text) in open.cells() {
                     spans.push(Span::styled(
@@ -3627,7 +3767,7 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
         Span::raw("  "),
         Span::styled(
             shorten(
-                &crate::capture::capture(&form.input.text, render.today).line(),
+                &crate::capture::capture(form.text(), render.today).line(),
                 inner,
                 render.glyphs,
             ),
@@ -5078,11 +5218,13 @@ mod tests {
         );
     }
 
+    /// A form opened on a line that already says something, which is what an
+    /// edit does — and the shortest way to put a form in front of a fixture.
     fn form(text: &str, lists: &[&str]) -> Form {
+        let doc = crate::parse::parse(&format!("- [ ] {text}\n"));
+        let task = doc.tasks().next().expect("a task").clone();
         let names: Vec<String> = lists.iter().map(|s| s.to_string()).collect();
-        let mut form = Form::adding(today(), &names);
-        form.input = Input::new(text.to_string(), Purpose::Add);
-        form
+        Form::editing(&task, today(), &names)
     }
 
     fn tab(form: &mut Form, times: usize) {
@@ -5112,14 +5254,14 @@ mod tests {
 
         assert_eq!(on(Field::Priority), ["high"]);
         assert_eq!(
-            part_of(&form.input.text, today(), Part::Date).as_deref(),
+            part_of(form.text(), today(), Part::Date).as_deref(),
             Some("@2026-08-14")
         );
         assert_eq!(
-            part_of(&form.input.text, today(), Part::Time).as_deref(),
+            part_of(form.text(), today(), Part::Time).as_deref(),
             Some("09:30")
         );
-        assert_eq!(tags_of(&form.input.text, today()), "#home #work");
+        assert_eq!(tags_of(form.text(), today()), "#home #work");
     }
 
     /// The date is **typed**, not picked off a row of `today / tomorrow / thu`,
@@ -5161,14 +5303,14 @@ mod tests {
     fn the_arrows_open_the_date_picker_on_the_date_field() {
         let mut form = form("x @2026-08-12", &[]);
         tab(&mut form, 1);
-        assert!(form.input.field.is_none());
+        assert!(!form.picking());
 
         form.press(press(KeyCode::Up));
-        assert!(form.input.field.is_some(), "the picker did not open");
+        assert!(form.picking(), "the picker did not open");
         form.press(press(KeyCode::Up));
         form.press(press(KeyCode::Enter));
 
-        assert!(form.input.field.is_none(), "⏎ did not put it away");
+        assert!(!form.picking(), "⏎ did not put it away");
         assert_eq!(form.text(), "x @2026-08-14");
         // And what the field is holding was re-seeded from the line the picker
         // just wrote, rather than being a keystroke out of date.
@@ -5185,13 +5327,20 @@ mod tests {
 
         // none, high, med, low — so one step right of `high` is `med`.
         form.press(press(KeyCode::Right));
-        assert_eq!(form.input.text, "#ops rotate the keys !med @2026-08-14");
+        assert_eq!(
+            form.text().to_string(),
+            "#ops rotate the keys !med @2026-08-14"
+        );
         form.press(press(KeyCode::Right));
-        assert_eq!(form.input.text, "#ops rotate the keys !low @2026-08-14");
+        assert_eq!(
+            form.text().to_string(),
+            "#ops rotate the keys !low @2026-08-14"
+        );
         // And round to `none`, which takes the word out with one adjacent space.
         form.press(press(KeyCode::Right));
         assert_eq!(
-            form.input.text, "#ops rotate the keys @2026-08-14",
+            form.text().to_string(),
+            "#ops rotate the keys @2026-08-14",
             "clearing takes one adjacent space with it"
         );
     }
@@ -5279,13 +5428,13 @@ mod tests {
         for c in "09:30".chars() {
             form.press(press(KeyCode::Char(c)));
         }
-        assert_eq!(form.input.text, "standup @2026-08-12 09:30");
+        assert_eq!(form.text().to_string(), "standup @2026-08-12 09:30");
 
         // And back out again, one character at a time.
         for _ in 0..5 {
             form.press(press(KeyCode::Backspace));
         }
-        assert_eq!(form.input.text, "standup @2026-08-12");
+        assert_eq!(form.text().to_string(), "standup @2026-08-12");
     }
 
     /// The format cannot hold a time without a date, so the row is not in the
@@ -5318,7 +5467,7 @@ mod tests {
         tab(&mut two, 4);
         assert_eq!(two.focus, Field::List);
         two.press(press(KeyCode::Right));
-        assert_eq!(two.input.text, "buy milk $work");
+        assert_eq!(two.text(), "buy milk $work");
     }
 
     /// Typing still works. `@thu`, `#home` and `!high` in the question field
@@ -5388,8 +5537,7 @@ mod tests {
         let tasks = tasks(&["late @2026-08-01"]);
         let groups = agenda(&tasks, today());
         let mut screen = Screen::new(rows(&groups));
-        let mut form = Form::adding(today(), &[]);
-        form.input = Input::new("call the accountant @2026-08-12 #home".into(), Purpose::Add);
+        let form = form("call the accountant @2026-08-12 #home", &[]);
 
         let mut terminal = Terminal::new(TestBackend::new(56, 20)).unwrap();
         terminal
@@ -5417,10 +5565,10 @@ mod tests {
             rows,
             [
                 "╭ ratodo — 1 · 1! ─────────────────────────────────────╮",
-                "│ ╭──────────────────── NEW TASK ────────────────────╮ │",
+                "│ ╭─────────────────── EDIT TASK ────────────────────╮ │",
                 "│▌│  What needs to be done?                          │ │",
                 "│ │  ╭────────────────────────────────────────────╮  │ │",
-                "│ │▌ │ call the accountant @2026-08-12 #home      │  │ │",
+                "│ │▌ │ call the accountant                        │  │ │",
                 "│ │  ╰────────────────────────────────────────────╯  │ │",
                 "│ │                                                  │ │",
                 "│ │  Date / Time [ 2026-08-12  ]  [        ]         │ │",
@@ -5431,11 +5579,11 @@ mod tests {
                 "│ │  PREVIEW                                         │ │",
                 "│ │  - [ ] call the accountant @2026-08-12 #home     │ │",
                 "│ │                                                  │ │",
-                "│ │  [ esc cancel ]               [ ⏎ create task ]  │ │",
+                "│ │  [ esc cancel ]              [ ⏎ save changes ]  │ │",
                 "│ ╰ tab · next field ────────────────────────────────╯ │",
                 "│                                                      │",
                 "╰──────────────────────────────────────────────────────╯",
-                " ⏎ create   esc cancel                                  ",
+                " ⏎ save   esc cancel                                    ",
             ]
         );
     }
@@ -5457,8 +5605,7 @@ mod tests {
         let tasks = tasks(&["late @2026-08-01"]);
         let groups = agenda(&tasks, today());
         let mut screen = Screen::new(rows(&groups));
-        let mut form = Form::adding(today(), &[]);
-        form.input = Input::new("call the accountant #home".into(), Purpose::Add);
+        let form = form("call the accountant #home", &[]);
         let render = Render {
             glyphs: Glyphs::Ascii,
             ..render(crate::theme::MOCHA)
@@ -5486,8 +5633,10 @@ mod tests {
             .map(|c| c.symbol())
             .collect();
 
-        assert!(text.contains("NEW TASK"), "{text}");
+        assert!(text.contains("EDIT TASK"), "{text}");
         assert!(text.contains("PREVIEW"), "{text}");
+        // The radios are the one that matters, and they are a shape.
+        assert!(text.contains("(o) none  ( ) high"), "{text}");
         assert!(
             text.is_ascii(),
             "something non-ASCII reached the screen: {text}"

@@ -356,6 +356,27 @@ between a form that happens to show a line and a form whose *conclusion* is a
 line. A Todoist form saves into a database and can tell you nothing; this one
 saves into your file, so the file is the last word on the screen.
 
+**The question field holds the sentence and nothing else** *(amended
+2026-08-12, after looking at it)*. It was the whole line — `call the plumber @fri
+14:00 !med #home` — because the line is the model and that was the most direct
+way to say so. On the screen it read as the syntax the boxes underneath were
+already showing, twice. The field is now a **view like every other control**: it
+holds the run of words `parts` did not claim, and the one place the whole line
+appears is the `PREVIEW`, which is what the preview was for.
+
+Nothing about the invariant moves — there is still one string and one tokenizer,
+and the question field writes back through the same `set_parts` every other row
+does. Two things follow and are worth writing down:
+
+- **A date typed into the sentence still works**, and it now visibly *moves*:
+  the word goes into the line, `parts` claims it, and it is in the date box
+  before the keystroke is over. It leaves the sentence when the field gives up
+  the keyboard.
+- **`a`'s opening date lives in the date box** rather than behind the caret,
+  which is a better place for a guess: it can be seen and changed without
+  deleting anything first. It still steps aside for a date the user types, once,
+  and only while the line still holds ours untouched.
+
 **The date and its time share a row, and the date is typed rather than picked**
 *(amended 2026-08-12, after looking at it)*. The first drawing gave `Due` a row
 of radios — `○ none ◉ today ○ tomorrow ○ pick` — and `Time` a row of its own.

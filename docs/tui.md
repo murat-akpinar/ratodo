@@ -610,7 +610,7 @@ bought. See [decisions.md](decisions.md#settled).
 ╭───────────────── NEW TASK ─────────────────╮
 │  What needs to be done?                    │
 │  ╭────────────────────────────────────╮    │
-│▌ │ call the accountant @2026-08-12     │    │
+│▌ │ call the accountant▏                │    │
 │  ╰────────────────────────────────────╯    │
 │                                            │
 │  Date / Time [ 2026-08-12▏]  [ 09:30  ]    │
@@ -626,13 +626,18 @@ bought. See [decisions.md](decisions.md#settled).
 ╰─ tab · next field ─────────────────────────╯
 ```
 
-**The line is the model, and that is the whole design.** The text box holds the
-whole line exactly as the one-line box does; every row under it is a *view* of
-that one string. Each reads `capture::parts` to know what is selected and writes
-back by replacing the span that tokenizer claimed. There is one string, one
-tokenizer and one truth — which is what lets the form exist at all, since the
+**The line is the model, and that is the whole design.** There is one string —
+the line the file will get — and every one of the six controls is a *view* of it,
+the question field included. Each reads `capture::parts` to know what it is
+holding and writes back by replacing the span that tokenizer claimed. One string,
+one tokenizer, one truth — which is what lets the form exist at all, since the
 labelled-field box was rejected for needing either a join back into a line or a
 second parser ([decisions.md](decisions.md#reversed)).
+
+**The question field holds the sentence and nothing else.** `@fri`, `14:00`,
+`!med` and `#home` have boxes of their own, so the one place the whole line
+appears is the `PREVIEW` — which is what makes the preview the form's conclusion
+rather than a second copy of the field above it.
 
 - **Six fields and no seventh:** title, date, time, tags, priority and which
   list — exactly the six a one-line format carries. No Description, no Project,
@@ -641,10 +646,19 @@ second parser ([decisions.md](decisions.md#reversed)).
   between a form that happens to show a line and a form whose *conclusion* is a
   line. A form that saves into a database can tell you nothing; this one saves
   into your file, so the file is the last word on the screen.
-- **Typing still works.** `@thu`, `#home` and `!high` in the question field parse
-  as they always did and light the matching radio as you type. The day there are
-  two tokenizers is the day the form and the box disagree about what gets
-  written.
+- **Typing still works, and it is the same words moving.** `@thu`, `#home` and
+  `!high` typed into the question field go into the line, `parts` claims them,
+  and they are in their own boxes before the keystroke is over — they leave the
+  sentence as soon as the field gives up the keyboard. The day there are two
+  tokenizers is the day the form and the box disagree about what gets written.
+- **`a` opens on today's date, in the date box.** That is where the one-line box
+  had to hide it behind the caret, and it is a better place for it: it can be
+  seen and changed without deleting anything. A date typed into the sentence
+  still takes its place, once and only while the line still holds ours untouched.
+- **Editing the sentence rewrites the title run and nothing else.** A line whose
+  title words are interleaved with tokens — `rotate #ops the keys` — gets its
+  title put back where the first of those words stood, with the tokens keeping
+  their own order. Everything the edit did not reach still keeps its bytes.
 - **The date and its time share a row**, because a date and its time are one
   thought. Below about fifty columns there is not room for both boxes and they
   take a row each, which is the same fallback everything else on this screen

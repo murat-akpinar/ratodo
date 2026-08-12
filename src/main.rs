@@ -1037,7 +1037,7 @@ fn run(
                         }
                         ui::Typed::Save => {
                             let typed = form.take().expect("the form was open a line ago");
-                            notice = live.save_typed(paths, today, &typed.input)?;
+                            notice = live.save_typed(paths, today, &typed.saving())?;
                             // A refusal keeps the form, and the sentence in it.
                             if matches!(notice, ui::Notice::Warned(_)) {
                                 form = Some(typed);
