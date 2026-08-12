@@ -20,6 +20,8 @@ Six fields, and they are the six the format already carries. The line is the mod
 The last of the four, and smaller than it was written up as — the splice never went into model.rs at all.
 - *(ui)* The date and its time share a row, and the date is typed ([a7701f1](https://github.com/murat-akpinar/ratodo/commit/a7701f1c4933d77234513c44a18b3a3ce5429d35))
 Two rows for one thought, and a row of radios the form had invented — today / tomorrow / thu is a fixed set of days that is somebody's idea of a week.
+- *(ui)* The question field holds the sentence and nothing else ([893a4cc](https://github.com/murat-akpinar/ratodo/commit/893a4cc308df15c7abe4b3c924ed3e5008fe1720))
+It was the whole line — call the plumber @fri 14:00 !med #home — because the line is the model and that was the most direct way to say so. On the screen it read as the syntax the boxes underneath were already showing, twice.
 
 ### 📚 Documentation
 
