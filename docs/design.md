@@ -96,7 +96,21 @@ Two things follow from the table that are easy to get wrong:
   the thing that earned it.
 - Two levels of hierarchy: task title bright, date/tags `dim`. There is no third.
 - Generous whitespace. The blank lines between groups are half of the design.
-- **A rule between two columns, and nowhere else.** Past
+  **Amended 2026-08-12:** that blank line is now the bottom edge of the group's
+  box. The row arithmetic is identical — a group was a heading, *n* tasks and a
+  spacer, and it is a top edge, *n* tasks and a bottom edge — but "identical
+  arithmetic" is not the same claim as the one this rule was making, so the
+  spend is written down rather than assumed:
+  [decisions.md](decisions.md#the-blank-row-between-groups-becomes-the-groups-bottom-edge-2026-08-12).
+  The whitespace *around* the box is what is left of the rule, and it is why the
+  box holds two columns back off the frame instead of closing flush against it.
+- **A rule between two columns, and nowhere else** — and, since 2026-08-12, the
+  four edges of the group box those rules now end on. The box is the exception
+  the rule always implied: this rule exists to stop three characters of noise
+  per row, and an edge is not per-row noise, it is the container the per-row
+  rules run inside. A `┬` where a column meets the top edge and a `┴` where it
+  meets the bottom is the point — nothing floats, every stroke starts at a
+  corner and ends at one. Past
   [`COLUMNS_AT`](tui.md#width) the date, priority and tags start in the same
   place on every row, and a dim `│` says where each one begins — the row is a
   table there, so it is drawn as one. Below that breakpoint the fields are

@@ -653,7 +653,10 @@ pub enum Row {
         hidden: Option<usize>,
     },
     Task(Task),
-    Spacer,
+    /// The row that closes a group. It was a blank spacer between two groups
+    /// and it is now the bottom edge of the box the group is drawn in — the
+    /// same row, spent on a border instead of on air. See `rows`.
+    GroupEnd,
 }
 
 impl Row {
@@ -665,14 +668,17 @@ impl Row {
     }
 }
 
-/// Flattens the agenda into lines. The blank row between groups is half of the
-/// design — see docs/design.md#rules — so it is a row, not a margin.
+/// Flattens the agenda into lines. A titled group is a heading, its tasks and
+/// a closing row — one, *n*, one, which is what it has always been: the blank
+/// row that used to sit between two groups is now the bottom edge of the box
+/// the group is drawn in. Same arithmetic, one stroke instead of air —
+/// docs/redesign.md.
+///
+/// An untitled group — the run of tasks above the file's first heading — keeps
+/// its rows and gets an empty title, which draws as a box with no name on it.
 pub fn rows(groups: &[Group<'_>]) -> Vec<Row> {
     let mut out = Vec::new();
     for group in groups {
-        if !out.is_empty() {
-            out.push(Row::Spacer);
-        }
         // `OVERDUE` is ours and `## Work` is the user's, and until now they were
         // the same bold word plus the same rule. The markdown marker the heading
         // already carries in the file is what tells them apart — it costs no
@@ -691,10 +697,12 @@ pub fn rows(groups: &[Group<'_>]) -> Vec<Row> {
             }
             _ => group.kind.heading(),
         };
-        if let Some(header) = header {
-            out.push(Row::header(&header));
-        }
+        // A group with no name is still a group. It gets a nameless box rather
+        // than a "(no section)" nobody wrote, and rather than rows left floating
+        // beside the boxed ones.
+        out.push(Row::header(&header.unwrap_or_default()));
         out.extend(group.tasks.iter().map(|t| Row::Task((*t).clone())));
+        out.push(Row::GroupEnd);
     }
     out
 }
@@ -776,7 +784,14 @@ impl Screen {
                     }
                     None => self.rows.push(Row::Task(t.clone())),
                 },
-                Row::Spacer => self.rows.push(Row::Spacer),
+                // A folded group is a bare rule, not an empty two-row box: the
+                // difference between a container and a line *is* the open
+                // signal — docs/redesign.md. So the closing row goes with the
+                // tasks it was closing over.
+                Row::GroupEnd => match skipping.take() {
+                    Some(_) => {}
+                    None => self.rows.push(Row::GroupEnd),
+                },
             }
         }
 
@@ -804,15 +819,21 @@ impl Screen {
     }
 
     /// The heading the cursor is under — or sitting on, when the group is
-    /// folded. A run of tasks above the file's first `##` has no header to
-    /// collapse into and gets `None`.
+    /// folded. A run of tasks above the file's first `##` has a header row with
+    /// nothing on it, and gets `None`: there is nothing to key a fold on and
+    /// nothing to write on the header that would say it is folded.
+    ///
+    /// The **nearest** header and then a look at its name, rather than the
+    /// nearest *named* one: skipping past an empty header would fold the group
+    /// above it, which is a different group.
     fn group_at_cursor(&self) -> Option<String> {
         let at = self.state.selected()?;
         self.rows[..=at.min(self.rows.len().saturating_sub(1))]
             .iter()
             .rev()
-            .find_map(|r| match r {
-                Row::Header { title, .. } => Some(title.clone()),
+            .find(|r| matches!(r, Row::Header { .. }))
+            .and_then(|r| match r {
+                Row::Header { title, .. } if !title.is_empty() => Some(title.clone()),
                 _ => None,
             })
     }
@@ -1009,6 +1030,29 @@ impl Glyphs {
         match self {
             Glyphs::Unicode => "│",
             Glyphs::Ascii => "|",
+        }
+    }
+
+    /// A group box's four corners — top left, top right, bottom left, bottom
+    /// right. Rounded, which the outer frame is not: the outer one is the pane
+    /// and the inner ones are inside it, and the softer corner is what says so.
+    ///
+    /// `+` in ASCII, like every other joint in the fallback. A box-drawing
+    /// character left in a fallback is not a fallback.
+    fn corners(self) -> [&'static str; 4] {
+        match self {
+            Glyphs::Unicode => ["╭", "╮", "╰", "╯"],
+            Glyphs::Ascii => ["+", "+", "+", "+"],
+        }
+    }
+
+    /// Where a column's divider meets the top and the bottom edge of its group
+    /// box. The whole point of the box: a stroke that used to start out of
+    /// nothing at column 40 now starts at a junction — docs/redesign.md.
+    fn junctions(self) -> (&'static str, &'static str) {
+        match self {
+            Glyphs::Unicode => ("┬", "┴"),
+            Glyphs::Ascii => ("+", "+"),
         }
     }
 
@@ -1284,7 +1328,14 @@ struct Columns {
 /// width whether or not anything on screen uses one. Below this there is not
 /// enough row to buy alignment with, the old right-aligned block packs more
 /// onto it, and packing wins when there is not much to pack into.
-const COLUMNS_AT: usize = 76;
+///
+/// It was 76 until the group box took five columns off every row — a side
+/// either end, the inset after the left one, and the two the box holds back so
+/// it does not close flush against the frame. The number follows the row it
+/// measures and not the terminal, and the terminal it answers to has not moved:
+/// eighty columns, which is what a terminal opens at and what the drawings in
+/// docs/redesign.md are made at, still gets its columns.
+const COLUMNS_AT: usize = 71;
 
 impl Columns {
     /// `size` is not consulted for the breakpoint: `COLUMNS_AT` is above the
@@ -1339,6 +1390,35 @@ impl Columns {
             prio,
             tags,
         }
+    }
+
+    /// Where each column's divider sits in a task row, counted in display
+    /// columns from the start of the row. What the group box needs in order to
+    /// put a `┬` and a `┴` on the ends of a stroke that used to start out of
+    /// nothing — docs/redesign.md.
+    ///
+    /// It walks the same additions `task_line` makes, in the same order, and a
+    /// buffer test pins the two against each other: the junction landing one
+    /// column off the divider is exactly the sort of thing that looks fine in
+    /// the arithmetic and wrong on the screen.
+    fn dividers(&self, mark: usize) -> Vec<usize> {
+        if self.title == 0 {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let mut at = mark + self.title;
+        // Each entry opens with a space, then its divider, so the stroke is one
+        // column past where the column before it ended.
+        for width in [self.date, self.prio] {
+            if width > 0 {
+                out.push(at + 1);
+                at += width;
+            }
+        }
+        if self.tags && self.date + self.prio > 0 {
+            out.push(at + 1);
+        }
+        out
     }
 }
 
@@ -1507,6 +1587,100 @@ fn header_line(
         ),
         Span::styled(tail, Style::default().fg(render.colours.dim)),
     ])
+}
+
+/// One column of air between a group box's left side and the mark. The drawings
+/// in docs/redesign.md spend the selection marker's own column on it; here the
+/// marker sits outside the box, in the gutter the `List` widget reserves for it,
+/// so the space has to be asked for. `│! late` is a row nobody wants to read.
+const INSET: usize = 1;
+
+/// What the box holds back on the right, so it closes against air rather than
+/// against the frame. The two columns on the left are the marker's gutter and
+/// were already spent — which is why the box costs four columns of row and not
+/// six, docs/redesign.md.
+const BOX_MARGIN: usize = 2;
+
+/// A group's top or bottom edge — the same stroke, the same junctions, and a
+/// different pair of corners. `title` is drawn into the top edge; a group with
+/// no name gets a bare one, which is the run of tasks above a file's first
+/// heading. It is still a group, it just has nothing to be called: no
+/// "(no section)" nobody wrote, and no orphan rows floating beside the boxes
+/// either — docs/tui.md#main-screen.
+///
+/// This is the correction the redesign is mostly about. The screen used to draw
+/// three sets of strokes that never met — a group rule stopping in mid-air, the
+/// column dividers starting out of nothing below it, and a blank row closing a
+/// group that was never a container. Here every stroke starts at a corner and
+/// ends at one — docs/redesign.md.
+fn group_edge(
+    top: bool,
+    title: &str,
+    width: usize,
+    cols: Columns,
+    render: Render<'_>,
+) -> Line<'static> {
+    let glyphs = render.glyphs;
+    let border = Style::default().fg(render.colours.border);
+    if width < 2 {
+        return Line::from(Span::styled(
+            glyphs.rule().to_string().repeat(width),
+            border,
+        ));
+    }
+
+    let [top_left, top_right, bottom_left, bottom_right] = glyphs.corners();
+    let (down, up) = glyphs.junctions();
+    let (open, close, junction) = match top {
+        true => (top_left, top_right, down),
+        false => (bottom_left, bottom_right, up),
+    };
+
+    // Built cell by cell rather than by arithmetic: every glyph in it is one
+    // column wide, so an index into this is a column on the screen, and the
+    // junctions can be dropped in wherever `dividers` says without four
+    // separate slices having to agree about where they are.
+    let mut cells = vec![glyphs.rule().to_string(); width];
+    cells[0] = open.to_string();
+    cells[width - 1] = close.to_string();
+    for at in cols.dividers(glyphs.mark_width() + 1) {
+        // Plus the left edge and the inset the task rows carry, which the
+        // divider offsets are measured without.
+        let at = at + 1 + INSET;
+        if at < width - 1 {
+            cells[at] = junction.to_string();
+        }
+    }
+
+    if title.is_empty() {
+        return Line::from(Span::styled(cells.concat(), border));
+    }
+
+    // `╭─ NAME ` and then whatever is left of the edge. A name long enough to
+    // reach the closing corner is cut rather than allowed to push one off, and
+    // a junction under the name is simply covered by it.
+    const LEAD: usize = 3;
+    let name = shorten(&text::plain(title), width.saturating_sub(LEAD + 2), glyphs);
+    let after = LEAD + columns(&name) + 1;
+    Line::from(vec![
+        Span::styled(format!("{open}{} ", glyphs.rule()), border),
+        Span::styled(name, Style::default().fg(render.colours.accent).bold()),
+        Span::styled(format!(" {}", cells[after..].concat()), border),
+    ])
+}
+
+/// A task row with the group box's sides on it. Padded to the full width first:
+/// the tags are ragged and end wherever they end, and a right edge that follows
+/// them is not an edge.
+fn boxed(row: Line<'static>, width: usize, render: Render<'_>) -> Line<'static> {
+    let side = render.glyphs.divider();
+    let border = Style::default().fg(render.colours.border);
+    let pad = width.saturating_sub(2 + INSET + row.width());
+    let mut spans = vec![Span::styled(side, border), Span::raw(" ".repeat(INSET))];
+    spans.extend(row.spans);
+    spans.push(Span::raw(" ".repeat(pad)));
+    spans.push(Span::styled(side, border));
+    Line::from(spans)
 }
 
 /// What the one reserved line under the frame is saying. One line, and it is
@@ -1899,24 +2073,65 @@ pub fn draw(
     let inner = block.as_ref().map_or(area, |b| b.inner(area));
 
     // The selection marker is drawn into the row, so the width the layout gets
-    // is what is left after it.
+    // is what is left after it. That gutter doubles as the box's left indent,
+    // which is why the box costs four columns of row and not six.
     let cursor = render.glyphs.cursor();
     let width = (inner.width as usize).saturating_sub(columns(cursor));
-    let cols = Columns::of(&screen.rows, width, render, size);
+    // Groups are boxes wherever there is a frame to nest them in. Below 34
+    // columns the frame goes and the boxes go with it — docs/redesign.md.
+    let boxes = size > Size::Bare;
+    let box_width = width.saturating_sub(BOX_MARGIN);
+    let row_width = match boxes {
+        true => box_width.saturating_sub(2 + INSET),
+        false => width,
+    };
+    let cols = Columns::of(&screen.rows, row_width, render, size);
 
     if screen.rows.iter().all(|r| !matches!(r, Row::Task(_))) {
         empty(frame, area, block, render);
     } else {
+        // Whether the row being drawn is inside a box, carried along rather than
+        // stored on the row: a folded group is a bare rule and the run of tasks
+        // above the file's first heading has no heading to open one, so "inside"
+        // is a fact about where the cursor of this loop is and not about the task.
+        let mut inside = false;
+        // Without the box there is nothing for either of these to draw: the
+        // closing row was a blank spacer at this width before it was an edge,
+        // and a header with no name would be a rule with nothing on it.
+        let furniture = |row: &Row| match row {
+            Row::GroupEnd => true,
+            Row::Header { title, .. } => title.is_empty(),
+            _ => false,
+        };
         let items: Vec<ListItem> = screen
             .rows
             .iter()
-            .filter(|row| !(size < Size::Wide && matches!(row, Row::Spacer)))
+            .filter(|row| boxes || !furniture(row))
             .map(|row| match row {
-                Row::Task(t) => ListItem::new(task_line(t, width, cols, render, size)),
-                Row::Header { title, hidden } => {
-                    ListItem::new(header_line(title, *hidden, width, cols, render))
+                Row::Task(t) => {
+                    let line = task_line(
+                        t,
+                        if inside { row_width } else { width },
+                        cols,
+                        render,
+                        size,
+                    );
+                    ListItem::new(match inside {
+                        true => boxed(line, box_width, render),
+                        false => line,
+                    })
                 }
-                Row::Spacer => ListItem::new(""),
+                Row::Header { title, hidden } => {
+                    inside = boxes && hidden.is_none();
+                    ListItem::new(match inside {
+                        true => group_edge(true, title, box_width, cols, render),
+                        false => header_line(title, *hidden, width, cols, render),
+                    })
+                }
+                Row::GroupEnd => {
+                    inside = false;
+                    ListItem::new(group_edge(false, "", box_width, cols, render))
+                }
             })
             .collect();
 
@@ -2339,7 +2554,7 @@ mod tests {
             .map(|r| match r {
                 Row::Header { title, .. } => format!("# {title}"),
                 Row::Task(t) => t.title.clone(),
-                Row::Spacer => String::new(),
+                Row::GroupEnd => String::new(),
             })
             .collect()
     }
@@ -2360,7 +2575,7 @@ mod tests {
         let groups = agenda(&mixed, today());
         assert_eq!(
             titles(&rows(&groups)),
-            ["# OVERDUE", "late", "", "# ## Work", "write the plan"]
+            ["# OVERDUE", "late", "", "# ## Work", "write the plan", ""]
         );
     }
 
@@ -2512,9 +2727,9 @@ mod tests {
             rows,
             [
                 "┌ ra┌ keys ────────────────────────────────┐───┐",
-                "│  O│  j k  ↓ ↑       move                 │── │",
-                "│▌ !│  g G            top / bottom         │ago│",
-                "│   │  ctrl-d ctrl-u  half page            │   │",
+                "│  ╭│  j k  ↓ ↑       move                 │╮  │",
+                "│▌ ││  g G            top / bottom         ││  │",
+                "│  ╰│  ctrl-d ctrl-u  half page            │╯  │",
                 "│   │  spc            toggle done          │   │",
                 "│   │  a o  ⏎  y      add / edit / copy    │   │",
                 "│   │  X  u           delete / undo        │   │",
@@ -2659,13 +2874,17 @@ mod tests {
         assert_eq!(action(key), Action::Move(1), "held down still scrolls");
     }
 
+    /// A group is a heading, its tasks and a closing row — one, *n*, one. The
+    /// row that closes it used to be the blank spacer *between* two groups and
+    /// is now the bottom edge of the box the group is drawn in, so the last
+    /// group has one where it used to end in mid-air.
     #[test]
-    fn the_groups_flatten_into_headers_tasks_and_one_blank_between() {
+    fn a_group_is_a_heading_its_tasks_and_a_closing_row() {
         let tasks = tasks(&["late @2026-08-01", "now @2026-08-10", "also @2026-08-10"]);
         let groups = agenda(&tasks, today());
         assert_eq!(
             titles(&rows(&groups)),
-            ["# OVERDUE", "late", "", "# TODAY", "now", "also"]
+            ["# OVERDUE", "late", "", "# TODAY", "now", "also", ""]
         );
     }
 
@@ -2677,12 +2896,16 @@ mod tests {
         assert_eq!(rows(&agenda(&tasks, today()))[0], Row::header("TODAY"));
     }
 
-    /// An untitled group is the run of tasks above the file's first heading, and
-    /// it still needs its tasks — just not a header row.
+    /// An untitled group is the run of tasks above the file's first heading. It
+    /// gets a header row with nothing on it — a box with no name, rather than a
+    /// "(no section)" nobody wrote or two rows left floating beside the boxes.
     #[test]
-    fn an_untitled_group_contributes_only_tasks() {
+    fn an_untitled_group_gets_a_box_with_no_name_on_it() {
         let tasks = tasks(&["a", "b"]);
-        assert_eq!(titles(&rows(&agenda(&tasks, today()))), ["a", "b"]);
+        assert_eq!(
+            titles(&rows(&agenda(&tasks, today()))),
+            ["# ", "a", "b", ""]
+        );
     }
 
     #[test]
@@ -2920,12 +3143,12 @@ mod tests {
             rendered(62, 10, &tasks),
             [
                 "┌ ratodo — 2 open · 1 overdue ───────────────────────────────┐",
-                "│  OVERDUE ───────────────────────────────────────────────── │",
-                "│▌ ! late                                        1d ago  #ops│",
-                "│                                                            │",
-                "│  ## Work ───────────────────────────────────────────────── │",
-                "│  ○ write the plan                                          │",
-                "│                                                            │",
+                "│  ╭─ OVERDUE ────────────────────────────────────────────╮  │",
+                "│▌ │ ! late                                   1d ago  #ops│  │",
+                "│  ╰──────────────────────────────────────────────────────╯  │",
+                "│  ╭─ ## Work ────────────────────────────────────────────╮  │",
+                "│  │ ○ write the plan                                     │  │",
+                "│  ╰──────────────────────────────────────────────────────╯  │",
                 "│                                                            │",
                 "└────────────────────────────────────────────────────────────┘",
                 " j k move  spc done  a add  ⏎ edit  d cancel  ? keys  q quit  ",
@@ -2945,8 +3168,8 @@ mod tests {
             rendered(62, 5, &tasks),
             [
                 "┌ ratodo — 1 open · 1 overdue ───────────────── ▰▰▰▰▱▱▱▱ 1/2 ┐",
-                "│  OVERDUE ───────────────────────────────────────────────── │",
-                "│▌ ! late                                        1d ago  #ops│",
+                "│  ╭─ OVERDUE ────────────────────────────────────────────╮  │",
+                "│▌ │ ! late                                   1d ago  #ops│  │",
                 "└────────────────────────────────────────────────────────────┘",
                 " ?                                                            ",
             ]
@@ -3126,16 +3349,18 @@ mod tests {
             rendered(50, 5, &[long]),
             [
                 "┌ ratodo — 1 · 1! ───────────────────────────────┐",
-                "│  OVERDUE ───────────────────────────────────── │",
-                "│▌ ! an extremely long task title that w…  1d ago│",
+                "│  ╭─ OVERDUE ────────────────────────────────╮  │",
+                "│▌ │ ! an extremely long task title t…  1d ago│  │",
                 "└────────────────────────────────────────────────┘",
                 " ?                                                ",
             ]
         );
     }
 
-    /// The same list one breakpoint down: short counts, no tags, and the blank
-    /// row between the groups gone.
+    /// The same list one breakpoint down: short counts and no tags. The box
+    /// survives here — it costs the row four columns and it costs the pane one
+    /// row per group, which is the one place it is not free: the blank spacer
+    /// this width dropped is a row it never had to give back.
     #[test]
     fn the_narrow_screen_exactly() {
         let mut work = capture("write the plan", today());
@@ -3143,14 +3368,15 @@ mod tests {
         let tasks = [capture("late @2026-08-09 #ops", today()), work];
 
         assert_eq!(
-            rendered(46, 8, &tasks),
+            rendered(46, 9, &tasks),
             [
                 "┌ ratodo — 2 · 1! ───────────────────────────┐",
-                "│  OVERDUE ───────────────────────────────── │",
-                "│▌ ! late                              1d ago│",
-                "│  ## Work ───────────────────────────────── │",
-                "│  ○ write the plan                          │",
-                "│                                            │",
+                "│  ╭─ OVERDUE ────────────────────────────╮  │",
+                "│▌ │ ! late                         1d ago│  │",
+                "│  ╰──────────────────────────────────────╯  │",
+                "│  ╭─ ## Work ────────────────────────────╮  │",
+                "│  │ ○ write the plan                     │  │",
+                "│  ╰──────────────────────────────────────╯  │",
                 "└────────────────────────────────────────────┘",
                 " ?                                            ",
             ]
@@ -3164,22 +3390,22 @@ mod tests {
             "now @2026-08-10 16:00",
             "soon #ops !low",
         ]);
-        let screen = rendered(62, 10, &tasks);
+        let screen = rendered(62, 12, &tasks);
 
         assert!(
             screen[0].contains("ratodo — 3 open · 1 overdue"),
             "{screen:?}"
         );
-        assert!(screen[1].starts_with("│  OVERDUE ────"), "{screen:?}");
-        assert!(screen[2].contains("▌ ! late"), "{screen:?}");
+        assert!(screen[1].starts_with("│  ╭─ OVERDUE ────"), "{screen:?}");
+        assert!(screen[2].contains("▌ │ ! late"), "{screen:?}");
         assert!(screen[2].contains("9d ago"), "{screen:?}");
         assert!(screen[4].contains("TODAY"), "{screen:?}");
         assert!(screen[5].contains("○ now"), "{screen:?}");
         assert!(screen[5].contains("16:00"), "{screen:?}");
         assert!(!screen[5].contains('▌'), "two rows drawn as selected");
-        assert!(screen[7].contains("○ soon"), "{screen:?}");
+        assert!(screen[8].contains("○ soon"), "{screen:?}");
         assert!(
-            screen[7].contains("!low") && screen[7].contains("#ops"),
+            screen[8].contains("!low") && screen[8].contains("#ops"),
             "{screen:?}"
         );
     }
@@ -3215,9 +3441,10 @@ mod tests {
         // against the right edge, or one gap past the longest title.
         let at = |terminal: u16| at_column(&rendered(terminal, 8, &tasks)[2], "9d ago");
 
-        // Four columns of frame and selection marker sit between the terminal
-        // and the row that COLUMNS_AT measures.
-        let packed = COLUMNS_AT as u16 + 3;
+        // Nine columns sit between the terminal and the row that COLUMNS_AT
+        // measures: two of frame, two of selection marker, and the five the
+        // group box takes off every row it draws.
+        let packed = COLUMNS_AT as u16 + 8;
         assert!(
             at(packed) > COLUMNS_AT - 10,
             "columns one column too early: {:?}",
@@ -3225,7 +3452,7 @@ mod tests {
         );
         assert_eq!(
             at(packed + 1),
-            1 + 2 + 2 + columns("a much longer title here") + RULED,
+            1 + 2 + 1 + INSET + 2 + columns("a much longer title here") + RULED,
             "columns one column too late: {:?}",
             rendered(packed + 1, 8, &tasks)
         );
@@ -3242,7 +3469,7 @@ mod tests {
             "short date, no priority @2026-08-01 #bravo",
             "no date at all !low #charlie",
         ]);
-        let screen = rendered(90, 10, &tasks);
+        let screen = rendered(90, 14, &tasks);
 
         let at: Vec<usize> = ["#alpha", "#bravo", "#charlie"]
             .iter()
@@ -3293,17 +3520,73 @@ mod tests {
             .collect();
         assert_eq!(rows.len(), 4, "not every task is on screen: {screen:?}");
         for row in &rows {
-            assert_eq!(row.len(), 3, "a row is missing a rule: {screen:?}");
+            // Three column rules and the group box's own two sides. The sides
+            // count here on purpose: they are the same stroke, and the whole
+            // point of the box is that the column rules now end on it.
+            assert_eq!(row.len(), 5, "a row is missing a rule: {screen:?}");
             assert_eq!(row, &rows[0], "the rules do not line up: {screen:?}");
         }
 
         // And below the breakpoint there is nothing to line up, so there are no
-        // rules to draw: three characters of noise per row is what a table
-        // costs when it has no columns.
+        // column rules to draw: three characters of noise per row is what a
+        // table costs when it has no columns. The box keeps its two sides.
         let narrow = rendered(70, 12, &tasks);
         for row in narrow.iter().filter(|r| r.contains("late one")) {
-            assert_eq!(bars(row), Vec::<usize>::new(), "{narrow:?}");
+            assert_eq!(bars(row).len(), 2, "{narrow:?}");
         }
+    }
+
+    /// The whole claim of the group box, in one assertion: nothing floats. The
+    /// `┬` on the top edge, the `│` in the row and the `┴` on the bottom edge
+    /// are one stroke, so they are one column — docs/redesign.md.
+    ///
+    /// This is the arithmetic that looks right in `Columns::dividers` and lands
+    /// a column out on the screen, which is exactly the class of bug the group
+    /// rule stopping in mid-air was.
+    #[test]
+    fn every_junction_lands_on_the_rule_it_is_the_end_of() {
+        let tasks = tasks(&[
+            "late one @2026-08-01 !high #ops",
+            "no priority @2026-08-14 #home",
+        ]);
+        let screen = rendered(90, 10, &tasks);
+        let at = |row: &str, wanted: char| -> Vec<usize> {
+            row.chars()
+                .enumerate()
+                .filter(|(_, c)| *c == wanted)
+                .map(|(i, _)| i)
+                .collect()
+        };
+
+        let top = at(&screen[1], '┬');
+        let bottom = at(&screen[3], '┴');
+        // Four of the row's verticals are furniture — the frame either side and
+        // the box either side — and what is between them is the columns.
+        let sides = at(&screen[2], '│');
+        let inner = &sides[2..sides.len() - 2];
+
+        assert_eq!(top.len(), 3, "{screen:?}");
+        assert_eq!(top, bottom, "the box does not close on its own junctions");
+        assert_eq!(top, inner, "a junction is not on its rule: {screen:?}");
+    }
+
+    /// Below 34 columns the frame goes, and the box goes with it: two columns of
+    /// border out of thirty-three is a tenth of the pane spent on furniture, and
+    /// this width has always been bare rows — docs/tui.md#width.
+    #[test]
+    fn the_box_goes_with_the_frame_below_thirty_four_columns() {
+        let tasks = tasks(&["late one @2026-08-01", "no priority @2026-08-14"]);
+
+        let bare = rendered(33, 8, &tasks);
+        for row in &bare {
+            for glyph in ['╭', '╮', '╰', '╯', '│', '┬', '┴'] {
+                assert!(!row.contains(glyph), "{glyph} survived at 33: {bare:?}");
+            }
+        }
+        // And one column wider it is all back.
+        let boxed = rendered(34, 8, &tasks);
+        assert!(boxed[1].contains('╭'), "{boxed:?}");
+        assert!(boxed[3].contains('╰'), "{boxed:?}");
     }
 
     /// The column widths themselves, not the difference between two of them: a
@@ -3375,17 +3658,23 @@ mod tests {
             "a tag was cut in half: {screen:?}"
         );
 
-        // Where the budget runs out, to the column. The row is 92 wide; the
-        // mark, the 56-column title, the date column and the priority column
-        // spend 73 of it, and `#alpha` and `#bravo` are what the rest buys.
+        // Where the budget runs out, to the column. The pane leaves 92 columns
+        // of row and the group box takes five of them — a side either end, the
+        // inset after the left one, and the two it holds back off the frame.
+        // The mark, the 56-column title, the date column and the priority
+        // column spend most of what is left, and `#alpha` is what the rest buys.
         let title = columns("a title long enough to leave the last tags nowhere to go");
-        let budget = 92 - (2 + title + (6 + RULED) + (5 + RULED));
+        let budget = 92 - 5 - (2 + title + (6 + RULED) + (5 + RULED));
         // The rule in front of the first tag is part of what the budget buys,
         // and these two spend every column of it.
-        assert_eq!(budget, columns(" │ #alpha  #bravo"), "the tag budget moved");
+        assert_eq!(budget, 12, "the tag budget moved");
+        // Nine of the twelve go on the rule and `#alpha`. `  #bravo` wants
+        // eight more, so it goes whole rather than half — three columns are
+        // left unspent and that is the point of the rule.
+        assert_eq!(columns(" │ #alpha"), 9);
+        assert!(budget < columns(" │ #alpha  #bravo"));
         assert!(screen[2].contains("#alpha"), "{screen:?}");
-        assert!(screen[2].contains("#bravo"), "{screen:?}");
-        for missing in ["#charlie", "#delta"] {
+        for missing in ["#bravo", "#charlie", "#delta"] {
             assert!(
                 !screen[2].contains(missing),
                 "{missing} was drawn past the budget: {screen:?}"
@@ -3531,15 +3820,18 @@ mod tests {
             "a very much longer title down here @2026-08-01",
         ]);
         let rows = rows(&agenda(&tasks, today()));
-        let wide = Columns::of(&rows, 86, render(crate::theme::MOCHA), Size::Wide);
+        // Ninety columns of terminal is eighty-one of row: two of frame, two of
+        // cursor gutter, and five the group box takes.
+        let wide = Columns::of(&rows, 81, render(crate::theme::MOCHA), Size::Wide);
 
         // Two rows of list is not enough to show the second task at all.
         let cramped = rendered(90, 5, &tasks);
         assert!(cramped[2].contains("short"), "{cramped:?}");
-        // The frame, the cursor, the mark, then the title column and its gap.
+        // The frame, the cursor, the box side and its inset, the mark, then the
+        // title column and its gap.
         assert_eq!(
             at_column(&cramped[2], "9d ago"),
-            1 + 2 + 2 + wide.title + RULED,
+            1 + 2 + 1 + INSET + 2 + wide.title + RULED,
             "the visible row was measured on its own: {cramped:?}"
         );
     }
@@ -3679,7 +3971,9 @@ mod tests {
             assert!(row.ends_with('│'), "the right edge broke: {screen:?}");
         }
         assert!(screen[0].ends_with('┐') && screen[frame].ends_with('┘'));
-        assert!(screen[2].ends_with("9d ago│"), "{screen:?}");
+        // The box's own right side, the margin it holds back, and then the
+        // frame — three edges that all have to land, not one.
+        assert!(screen[2].ends_with("9d ago│  │"), "{screen:?}");
     }
 
     #[test]
@@ -3705,8 +3999,9 @@ mod tests {
             .map(|c| c.symbol())
             .collect();
 
-        assert!(text.contains("> [!] late"), "{text}");
-        assert!(text.contains("[ ] fine"), "{text}");
+        assert!(text.contains("> | [!] late"), "{text}");
+        assert!(text.contains("| [ ] fine"), "{text}");
+        assert!(text.contains("+- OVERDUE --"), "{text}");
         // The strong form: not "the checkboxes are ASCII" but "the screen is".
         // A fallback that leaves the frame in box-drawing characters is the same
         // broken screen with tidier checkboxes.
@@ -4481,14 +4776,14 @@ mod tests {
             with_input(70, 11, &tasks, &input, Glyphs::Unicode),
             [
                 "┌ ratodo — 4 open · 0 overdue ───────────────────────────────────────┐",
-                "│  TODAY ─────────────────────────────────────────────────────────── │",
-                "│▌┌────────────────────────────────────────────────────────────────┐y│",
+                "│  ╭─ TODAY ──────────────────────────────────────────────────────╮  │",
+                "│▌┌────────────────────────────────────────────────────────────────┐ │",
                 "│ │ ADD ▏call the accountant @thu !high                            │ │",
                 "│ ├────────────────────────────────────────────────────────────────┤ │",
                 "│ │      due Thursday (2026-08-13) │ !high                         │ │",
                 "│ └────────────────────────────────────────────────────────────────┘ │",
-                "│                                                                    │",
-                "│                                                                    │",
+                "│  │ ○ d                                                          │  │",
+                "│  ╰──────────────────────────────────────────────────────────────╯  │",
                 "└────────────────────────────────────────────────────────────────────┘",
                 " ⏎ save   esc cancel   tab date                                       ",
             ]
@@ -5235,7 +5530,7 @@ mod tests {
         assert_eq!(screen.fold(Fold::Close), None, "nothing was folded");
         assert_eq!(
             titles(&screen.rows),
-            ["# ## Work", "", "# ## Home", "plumber"],
+            ["# ## Work", "# ## Home", "plumber", ""],
             "the tasks are gone but the heading stayed"
         );
         assert!(
@@ -5252,7 +5547,15 @@ mod tests {
         assert_eq!(screen.fold(Fold::Open), None);
         assert_eq!(
             titles(&screen.rows),
-            ["# ## Work", "deploy", "invoice", "", "# ## Home", "plumber"]
+            [
+                "# ## Work",
+                "deploy",
+                "invoice",
+                "",
+                "# ## Home",
+                "plumber",
+                ""
+            ]
         );
     }
 
@@ -5295,9 +5598,9 @@ mod tests {
             [
                 "┌ ratodo — 3 · 0! ─────────────────────────┐",
                 "│▌ ## Work (2) ───────────────────────── l │",
-                "│  ## Home ─────────────────────────────── │",
-                "│  ○ plumber                               │",
-                "│                                          │",
+                "│  ╭─ ## Home ──────────────────────────╮  │",
+                "│  │ ○ plumber                          │  │",
+                "│  ╰────────────────────────────────────╯  │",
                 "│                                          │",
                 "└──────────────────────────────────────────┘",
                 " ?                                          ",
@@ -5345,8 +5648,8 @@ mod tests {
             [
                 "┌ ratodo — 3 open · 0 overdue ─────────────────────────────────────────────────────┐",
                 "│▌ ## Work (2)  l                                                                  │",
-                "│                                                                                  │",
-                "│  ## Home ─────                                                                   │",
+                "│  ╭─ ## Home ──────────────────────────────────────────────────────────────────╮  │",
+                "│  │ ○ plumber                                                                  │  │",
                 "└──────────────────────────────────────────────────────────────────────────────────┘",
                 " ?                                                                                  ",
             ]
@@ -5370,7 +5673,7 @@ mod tests {
         screen.fold(Fold::Toggle);
         assert_eq!(titles(&screen.rows).len(), 4);
         screen.fold(Fold::Toggle);
-        assert_eq!(titles(&screen.rows).len(), 6);
+        assert_eq!(titles(&screen.rows).len(), 7);
     }
 
     /// Asking twice is not an error, but it is not a change either — and the
@@ -5431,7 +5734,7 @@ mod tests {
         let mut screen = Screen::new(rows(&groups));
 
         assert_eq!(screen.fold(Fold::Close), Some("no group to fold here"));
-        assert_eq!(titles(&screen.rows), ["a", "b"]);
+        assert_eq!(titles(&screen.rows), ["# ", "a", "b", ""]);
     }
 
     /// `ratodo add` in another pane fires the watcher, which reloads. A fold
@@ -5590,7 +5893,7 @@ mod tests {
     /// one — but a document of nothing but prose has nothing to show.
     #[test]
     fn a_document_with_no_tasks_at_all_gets_the_empty_screen() {
-        let with_headers = Screen::new(vec![Row::header("Work"), Row::Spacer]);
+        let with_headers = Screen::new(vec![Row::header("Work"), Row::GroupEnd]);
         let counts = Counts::default();
         let mut screen = with_headers;
         let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();

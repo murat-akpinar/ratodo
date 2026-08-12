@@ -338,6 +338,58 @@ no. Reopening one requires new information.
 
 ## Reversed
 
+### The blank row between groups becomes the group's bottom edge (2026-08-12)
+
+**Was:** [design.md](design.md#rules) — *"Generous whitespace. The blank lines
+between groups are half of the design."* — and the code said it too:
+`ui::rows`'s own doc comment called the spacer *a row, not a margin*. A group was
+a heading with a rule after it, its tasks, and a blank row.
+
+**Now:** a group is a **box**. The heading moves into the top edge, the blank row
+becomes the bottom edge, and the column dividers meet them at `┬` and `┴`.
+
+**Why, and it is a correction rather than a decoration.** The screen drew three
+line systems that never touched each other: the group rule stopped in mid-air at
+column 39, the column dividers began at column 40 out of nothing, attached to
+neither, and the group ended in a blank row that closed nothing. Three sets of
+strokes sharing a screen without ever meeting is most of why a screen where
+every field is correct still read as unfinished — [redesign.md](redesign.md).
+Nothing floats now: every stroke starts at a corner and ends at one.
+
+**What it costs, honestly:**
+
+- **No rows at 60 columns and up.** One heading, *n* tasks, one spacer becomes
+  one top edge, *n* tasks, one bottom edge. The last group gains the one row it
+  used to end without.
+- **One row per group between 34 and 59 columns**, which is the width that had
+  already dropped the spacer. This is the real price and it is not free: a short
+  pane at that width shows one group fewer.
+- **Five columns of row** — a side either end, one of inset after the left one,
+  and two the box holds back so it does not close flush against the frame.
+  `COLUMNS_AT` went from 76 to 71 with it, so that eighty columns — the width a
+  terminal opens at — keeps the columns it has rather than losing them to the
+  border.
+- **Nothing below 34 columns.** The frame goes at that width and the box goes
+  with it.
+
+**What is kept:**
+
+- **A folded group stays a bare rule.** An empty two-row box to say a group is
+  closed is exactly backwards: the difference between a container and a line
+  *is* the open/closed signal.
+- **The furniture stays furniture.** The box is drawn in `border`, the colour
+  design.md already reserves for frames and rules. The group's *name* keeps its
+  accent. No new colour, no new role.
+- **A group with no name still gets a box**, with nothing written on its top
+  edge — the run of tasks above a file's first heading. Still no "(no section)"
+  nobody wrote, and no rows left floating beside the boxed ones either.
+
+**The rule this walks into second**, and it is amended in the same place:
+*"A rule between two columns, and nowhere else."* As written it forbids exactly
+what the correction does. It was written to stop three characters of noise per
+row; an edge is not per-row noise, it is the container the per-row rules run
+inside, and it is what they now end on.
+
 ### `!high` is bold and that is all it gets → the priority gets a colour of its own (2026-08-12)
 
 **Was:** the priority borrowed the row's own colour and added weight when it was

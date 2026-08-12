@@ -84,25 +84,23 @@ twenty columns on a wide one.
 ## Main screen
 
 ```
-┌─ ratodo ─ 5 open · 1 overdue ───────────── ▰▰▰▱▱▱▱▱ 3/8 ─┐
-│                                                            │
-│ OVERDUE ─────────────────────────────────────────────────  │
-│   ! rotate the backup keys                   2d ago  #ops  │
-│                                                            │
-│ TODAY ───────────────────────────────────────────────────  │
-│ ▌ ○ pay the invoice                                 #home  │
-│   ○ review the deploy PR                     16:00  #work  │
-│                                                            │
-│ THIS WEEK ───────────────────────────────────────────────  │
-│   ○ book a dentist appointment         Thu 09:30  #health  │
-│   ✓ migrate the server                          Mon        │
-│   ✗ rewrite the docs                                 #docs │
-│                                                            │
-│ ## Someday ──────────────────────────────────────────────  │
-│   ○ finish chapter 13 of the Rust book               !low  │
-│                                                            │
-│ LATER (3) ──────────────────────────────────────────── l   │
-│                                                            │
+┌ ratodo — 5 open · 1 overdue ───────────────── ▰▰▰▱▱▱▱▱ 3/8 ┐
+│  ╭─ OVERDUE ────────────────────────────────────────────╮  │
+│▌ │ ! rotate the backup keys                 2d ago  #ops│  │
+│  ╰──────────────────────────────────────────────────────╯  │
+│  ╭─ TODAY ──────────────────────────────────────────────╮  │
+│  │ ○ pay the invoice                               #home│  │
+│  │ ○ review the deploy PR                   16:00  #work│  │
+│  ╰──────────────────────────────────────────────────────╯  │
+│  ╭─ THIS WEEK ──────────────────────────────────────────╮  │
+│  │ ○ book a dentist appointment       Thu 09:30  #health│  │
+│  │ ✓ migrate the server                           Mon   │  │
+│  │ ✗ rewrite the docs                              #docs│  │
+│  ╰──────────────────────────────────────────────────────╯  │
+│  ╭─ ## Someday ─────────────────────────────────────────╮  │
+│  │ ○ finish chapter 13 of the Rust book             !low│  │
+│  ╰──────────────────────────────────────────────────────╯  │
+│  LATER (3) ───────────────────────────────────────── l     │
 └────────────────────────────────────────────────────────────┘
 
  j k move  spc done  a add  ⏎ edit  d cancel  ? keys  q quit
@@ -125,10 +123,24 @@ Details that are decisions, not drawing:
   the due date, so the column stays one date wide, and a task ticked before the
   stamp existed still shows its old one. The stamp itself is in the file:
   [format.md](format.md#the-completion-stamp).
-- **Group headers get a rule.** In a narrow pane the eye needs a horizontal
-  anchor to find where a group starts; a bare word does not give it. Here it
-  runs to the right edge; past eighty columns it stops at the title column
-  instead — [below](#width).
+- **A group is a box, and the group header is its top edge.** In a narrow pane
+  the eye needs a horizontal anchor to find where a group starts; a bare word
+  does not give it. The rule used to stop in mid-air and the blank row after the
+  group closed nothing, so the box is where both of those go: the heading is the
+  top edge, the blank row is the bottom edge, and past `COLUMNS_AT` the column
+  dividers meet them at `┬` and `┴`. Nothing floats — every stroke starts at a
+  corner and ends at one. Same row count at 60 columns and up, one row per group
+  more between 34 and 59, five columns of row, and nothing at all below 34 where
+  the frame goes too. It is drawn in `border` and the group's name keeps its
+  accent: the box is scenery, and scenery does not get the accent
+  ([decisions.md](decisions.md#the-blank-row-between-groups-becomes-the-groups-bottom-edge-2026-08-12)).
+
+  **A group with no name still gets one**, with nothing written on its top edge.
+  That is the run of tasks above a file's first heading — no "(no section)"
+  nobody wrote, and no rows left floating beside the boxed ones either.
+- **A folded group is a bare rule, not a box.** An empty two-row box to say a
+  group is closed is exactly backwards: the difference between a container and
+  a line *is* the open/closed signal.
 - **`LATER (3)` stays collapsed** and shows its count and its key. A collapsed
   group that does not say how to open it is a dead end.
 
@@ -711,9 +723,11 @@ Four things follow from the columns, and they are decisions:
   and scenery does not get the accent. The same `│` separates the fields in the
   input box's preview, so the screen has one separator and not two. Below this
   breakpoint there are no rules, because there is nothing lined up to separate.
-- **The group rule stops at the title column** instead of running to the right
-  edge. At this width a rule to the edge is the heaviest thing on the screen and
-  says nothing; one that ends where the titles end draws the column instead.
+- **The dividers end on the group box.** A `┬` where a column meets the top
+  edge, a `┴` where it meets the bottom. Before the box the group rule stopped
+  at the title column and the dividers began one column later out of nothing;
+  the box is what joined them up, and it is why a rule to the right edge is no
+  longer the heaviest thing on the screen — it is an edge, and it closes.
 - **The title column is measured over the whole list, not the visible rows.** A
   column that resizes as you scroll past a long title is not a column.
 - **Tags get no column of their own.** They are last and ragged, so nothing
@@ -729,27 +743,32 @@ Four things follow from the columns, and they are decisions:
 **Wide (60–79 columns)** — the main screen above: no columns, the right-hand
 fields packed against the right edge.
 
-**Narrow (34–59 columns)** — blank spacer rows and the hint bar shrink first:
+**Narrow (34–59 columns)** — the tags and the hint bar shrink first. The box
+survives here, and this is the one width where it is not free: the blank spacer
+row was already gone at this width, so the bottom edge is a row per group that
+the pane has to find.
 
 ```
-┌─ ratodo ──────────────── 5 · 1! ─┐
-│ OVERDUE ───────────────────────  │
-│   ! rotate the backup k…     2d  │
-│ TODAY ─────────────────────────  │
-│ ▌ ○ pay the invoice       #home  │
-│   ○ review the deploy…    16:00  │
-│ THIS WEEK ─────────────────────  │
-│   ○ book a dentist ap…      Thu  │
+┌ ratodo — 5 · 1! ─────────────────┐
+│  ╭─ OVERDUE ──────────────────╮  │
+│▌ │ ! rotate the backup k…  2d │  │
+│  ╰────────────────────────────╯  │
+│  ╭─ TODAY ────────────────────╮  │
+│  │ ○ pay the invoice     today│  │
+│  │ ○ review the deploy…  16:00│  │
+│  ╰────────────────────────────╯  │
 └──────────────────────────────────┘
  j k  spc  a  d  ?
 ```
 
-**Very narrow (< 34 columns)** — the frame is dropped entirely; just rows.
+**Very narrow (< 34 columns)** — the frame is dropped entirely, and the boxes
+with it; just rows.
 
 What is given up, in order, as the width shrinks:
 
 1. the columns — the right-hand fields pack against the right edge again
-2. blank spacer rows between groups
+2. blank spacer rows between groups *(spent on the group box since 2026-08-12,
+   so what goes here is the box's interior spacing, not a row)*
 3. tags
 4. priority
 5. the date shortens (`Thu 09:30` → `Thu` → `2d`)
@@ -796,7 +815,8 @@ ASCII form. Whether a terminal can draw `○` and whether its user wants colour
 are different questions, however often the same terminal answers no to both.
 
 When the ASCII form is chosen it takes **the whole screen** with it: the frame
-becomes `+ - |`, the group rules become `-`, and the `—` and `·` in the title
+becomes `+ - |`, the group boxes become `+ - |` with `+` for their corners and
+their junctions, the group rules become `-`, and the `—` and `·` in the title
 become `-` and `/`. A fallback that leaves box-drawing characters in the border
 is not a fallback; it is the same broken screen with tidier checkboxes. The test
 for it asserts the entire buffer `is_ascii()` rather than checking three symbols.

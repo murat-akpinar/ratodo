@@ -64,15 +64,19 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
             document: no new state, no new key, no new data — the numbers are the
             ones `ratodo status` already computes. Six changes to how the same
             rows are drawn.
-            - [ ] **Every group becomes a nested box, and the column separators
-                  become its `┬`/`┴` junctions.** This is the one that matters and
+            - [x] **Every group becomes a nested box, and the column separators
+                  become its `┬`/`┴` junctions.** **Done.** This is the one that matters and
                   it is a **correction, not a decoration**: nothing floats, every
                   stroke starts at a corner and ends at one. It costs **no rows**
                   — a heading, *n* tasks and a spacer is a top edge, *n* tasks and
                   a bottom edge — and four columns. A **folded** group stays a
                   bare rule rather than an empty two-row box: the difference
                   between a container and a line *is* the open/closed signal
-            - [ ] **What the box actually costs, which is not draw code.**
+            - [x] **What the box actually costs, which is not draw code.**
+                  **Done** — `Row::Spacer` became `Row::GroupEnd`, every group
+                  now emits one including the last and including the unnamed
+                  one, a folded group drops it again, and the four selection
+                  tests were updated rather than worked around.
                   `ui::rows` (`src/ui.rs:668`) flattens the agenda into a flat
                   `Vec<Row>` of `Header`, `Task` and `Spacer`, and its own doc
                   comment says *"the blank row between groups is half of the
@@ -84,12 +88,13 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   selection logic, which is the one thing on this screen with an
                   invariant on it — four tests are pinned to the current shape and
                   they are the specification, not an obstacle
-            - [ ] **`COLUMNS_AT` is 76, not 80.** The redesign says eighty
+            - [x] **`COLUMNS_AT` is 76, not 80.** The redesign says eighty
                   throughout — the width a terminal opens at — but the constant
-                  the code breaks on is `76` (`src/ui.rs:1287`), chosen so the
-                  breakpoint sits above the row it measures. Use the constant;
-                  the drawings are right about the shape and wrong about the
-                  number
+                  the code breaks on is a row width, chosen so the breakpoint
+                  sits above the row it measures. **Done, and it moved to 71**:
+                  the box takes five columns off every row, so the constant had
+                  to come down by five for eighty columns of terminal to keep
+                  the columns it has today
             - [ ] **The band at the top** — the date spelled out, stat tiles as a
                   big number over a small label, and a seven-cell week sparkline
                   off the `✓` stamps. Five rows, and the only thing on the screen
@@ -121,7 +126,10 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   run
             - [ ] **The ASCII forms, decided before anything is drawn.** Three of
                   the four new glyphs have none: `╭╮╰╯` (rounded corners),
-                  `▁▂▃▅▆▇█` (the sparkline) and the `┬`/`┴` junctions. `src/ui.rs`
+                  `▁▂▃▅▆▇█` (the sparkline) and the `┬`/`┴` junctions.
+                  **The corners and the junctions are done** — both `+`, both
+                  pinned by `the_ascii_fallback_replaces_every_glyph`, which now
+                  asserts the box sides too. The sparkline is what is left. `src/ui.rs`
                   asserts the **whole buffer** `is_ascii()` in five places, so
                   this is not a polish item — it is the first thing that goes red.
                   The frame already falls back to `+ - |` and the junctions can be
