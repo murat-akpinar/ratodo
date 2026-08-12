@@ -12,6 +12,8 @@ A task due today sat under a heading that says TODAY with a column that said 'to
 Screen 0's two additions, and the only two things on the main screen that are about this product rather than about looking better.
 - *(ui)* Two lines of welcome on the first run, and a width sweep ([23b776a](https://github.com/murat-akpinar/ratodo/commit/23b776a89bb23779a0b9b666b112dde385d22526))
 The empty screen already named the file and already drew the box a opens with @tomorrow resolved by the real parser. What it did not have is the greeting, and the greeting is two centred lines. No ASCII-art logo: this is a pane somebody leaves open beside their work and a banner is charming exactly once.
+- *(ui)* S opens the stats screen ([7722afe](https://github.com/murat-akpinar/ratodo/commit/7722afe08c5882ea4560fa27f5fe727352cb28b5))
+The second screen, and the answer to 'there is only one screen'. Every number on it is already in the file: the completion stamps are what it reads.
 
 ### 📚 Documentation
 
