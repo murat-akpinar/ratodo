@@ -99,7 +99,10 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   big number over a small label, and a seven-cell week sparkline
                   off the `✓` stamps. Five rows, and the only thing on the screen
                   that says the tool has a memory
-            - [ ] **The date column stops repeating the heading.** `today` inside
+            - [x] **The date column stops repeating the heading.** **Done** —
+                  one arm of `when`, and the width comes back with it: a group
+                  where nothing is timed now spends no columns on the date at
+                  all rather than a column of blanks. `today` inside
                   a group headed `TODAY` spends nine characters saying where it
                   already is. The rule: the column says what the heading does not
                   — `2d ago` under `OVERDUE`, the **time or nothing** under

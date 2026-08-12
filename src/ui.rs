@@ -1280,7 +1280,14 @@ fn when(task: &Task, today: NaiveDate, size: Size) -> String {
         // finished work out of `overdue`. It falls through to the plain date,
         // which is still true: that is when it was for.
         (d, _) if d < 0 && task.open() => format!("{}d ago", -d),
-        (0, _) => time.unwrap_or_else(|| "today".to_string()),
+        // The **time, or nothing**. A task due today sits under a heading that
+        // says `TODAY`, so a column saying `today` spent nine characters
+        // repeating the box it was already in. Emptied, the rows that do have a
+        // time stand out — which is the only thing about a task due today still
+        // worth reading. The rule is that the column says what the heading does
+        // not: `2d ago` under `OVERDUE`, the day under `THIS WEEK`, the date
+        // under a `##` section — docs/tui.md#main-screen.
+        (0, _) => time.unwrap_or_default(),
         (1..=6, Size::Wide) => match time {
             Some(t) => format!("{} {t}", due.date.format("%a")),
             None => due.date.format("%a").to_string(),
@@ -3494,6 +3501,37 @@ mod tests {
         );
     }
 
+    /// **The column says what the heading does not.** `today` inside a group
+    /// headed `TODAY` spent nine characters saying where it already was; the
+    /// other three groups each say something their heading cannot —
+    /// docs/tui.md#main-screen.
+    #[test]
+    fn the_date_column_never_repeats_the_heading_above_it() {
+        let column = |spec: &str| when(&capture(spec, today()), today(), Size::Wide);
+
+        // OVERDUE says it is late; the column says how late.
+        assert_eq!(column("a @2026-08-08"), "2d ago");
+        // TODAY says the day; the column says the time, or nothing at all.
+        assert_eq!(column("a @2026-08-10"), "");
+        assert_eq!(column("a @2026-08-10 16:00"), "16:00");
+        // THIS WEEK says the week; the column says which day of it.
+        assert_eq!(column("a @2026-08-14"), "Fri");
+        assert_eq!(column("a @2026-08-14 09:30"), "Fri 09:30");
+        // A `##` section says nothing about dates, so the column says the date.
+        assert_eq!(column("a @2026-09-20"), "Sep 20");
+
+        // And a group where every task is due today unstyled spends no width on
+        // the column at all, rather than a column of blanks.
+        let rows = [
+            Row::Task(capture("a @2026-08-10", today())),
+            Row::Task(capture("b @2026-08-10", today())),
+        ];
+        assert_eq!(
+            Columns::of(&rows, 86, render(crate::theme::MOCHA), Size::Wide).date,
+            0
+        );
+    }
+
     /// The date column is the easy half: it starts right after the title, so
     /// it lines up even if the padding after it is wrong. What proves the
     /// padding is the column *behind* it — tags on rows whose dates and
@@ -3747,7 +3785,14 @@ mod tests {
         };
 
         assert_eq!(style_of("a @2026-08-08", false).fg, Some(colours.overdue));
-        assert_eq!(style_of("a @2026-08-10", false).fg, Some(colours.today));
+        // Due today and untimed, the column is **empty** — the heading above it
+        // already says `TODAY`. So the only thing left in it to colour is a
+        // time, and that is the one most worth seeing.
+        assert_eq!(
+            when(&capture("a @2026-08-10", today()), today(), Size::Wide),
+            "",
+            "the column repeated the heading"
+        );
         assert_eq!(
             style_of("a @2026-08-10 16:00", false).fg,
             Some(colours.today),

@@ -182,6 +182,24 @@ Details that are decisions, not drawing:
   absolute where it does not (`Aug 20`). At this width it is right-aligned, so
   the eye reads down the right edge; past eighty columns it becomes a real
   left-aligned column — [below](#width).
+- **The column says what the heading does not**, amended 2026-08-12. `today`
+  inside a group headed `TODAY` was spending nine characters saying where it
+  already was:
+
+  | Group | The heading says | The column says |
+  |---|---|---|
+  | `OVERDUE` | that it is late | *how* late — `2d ago` |
+  | `TODAY` | the day | the **time, or nothing** — `16:00` |
+  | `THIS WEEK` | the week | which day — `Fri 09:30` |
+  | `## Someday` | nothing about dates | the date — `Sep 20` |
+
+  `TODAY` is the group most people look at most often and it was the one where
+  the column was pure noise. Emptied, the rows that *do* have a time stand out,
+  which is the only thing about a task due today still worth reading — and a
+  group where nothing is timed now spends no width on the column at all.
+
+  A **finished** row is unaffected: its column is the day it was finished, which
+  no heading says.
 - **The date goes loud only when it presses.** A late task's `3d ago` is in
   `overdue` and a `16:00` due today is in `today` — the same two colours the
   title already uses, so no twelfth theme role — while `Fri 09:30` and `Aug 20`
