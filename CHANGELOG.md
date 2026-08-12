@@ -18,6 +18,8 @@ The second screen, and the answer to 'there is only one screen'. Every number on
 Six fields, and they are the six the format already carries. The line is the model: the text box holds the whole line exactly as the one-line box does, and Due, Time, Priority, Tags and List are views of it — each reads capture::parts to know what is selected and writes back by replacing the span that tokenizer claimed. One string, one tokenizer, one truth, which is what lets the form exist at all: the labelled-field box was rejected for needing either a join back into a line or a second parser.
 - *(ui)* ⏎ opens the form too, and an edit keeps its bytes ([206acf1](https://github.com/murat-akpinar/ratodo/commit/206acf1652c55719dfff8965ac4eb8df892cbfe8))
 The last of the four, and smaller than it was written up as — the splice never went into model.rs at all.
+- *(ui)* The date and its time share a row, and the date is typed ([a7701f1](https://github.com/murat-akpinar/ratodo/commit/a7701f1c4933d77234513c44a18b3a3ce5429d35))
+Two rows for one thought, and a row of radios the form had invented — today / tomorrow / thu is a fixed set of days that is somebody's idea of a week.
 
 ### 📚 Documentation
 
