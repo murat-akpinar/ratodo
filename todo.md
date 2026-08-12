@@ -6,20 +6,207 @@ loose ends live in [notes.md](notes.md).
 **v1 shipped as `v0.1.0`, the next batch as `v0.2.0`, the crates.io release as
 `v0.3.0`, the date field as `v0.4.0` and the ruled columns as `v0.5.0` — all on
 2026-08-11. The input box opening on today's date is `v0.6.0` and the colour
-scheme — one colour, one job — is `v0.7.0`, tidied into `v0.7.1`, all
-2026-08-12.**
+scheme — one colour, one job — is `v0.7.0`, tidied into `v0.7.1` and `v0.7.2`,
+all 2026-08-12. The screen redesign is `v0.8.0` and is what is being built now.**
 Steps 0–8 below are the record of how that was built and are kept for the
 reasoning in them, not because there is anything left to do in them. The work
 that is actually open is the short list directly under this line.
 
 ## What is left
 
-Two open, and both are packaging: the product itself has nothing left on this
-list. Nothing here blocks anything else, so the order is by reach rather than by
-dependency.
+Three open. Two are packaging and block nothing; the third is the screen, and it
+is the release. Order inside the redesign is by dependency — every step after
+the first is drawn on top of it — and everything else here is ordered by reach.
 The ticked ones are kept here rather than moved down, because the reasoning in
 them is about things that were asked for and are **not** being built — a key,
-and a box split into fields.
+and a box split into fields. The second of those is the one the redesign
+reverses, and it is reversed on purpose and in writing rather than quietly.
+
+- [ ] **Improve the UI — the screen is correct and reads as unfinished.** Every
+      field on it is right and there is nowhere on it to go: one screen, opening
+      mid-sentence, drawn in three line systems that never touch each other — a
+      group rule that stops in mid-air at column 39, column separators that start
+      at column 40 out of nothing, and a blank row closing a group that was never
+      a container. Density is not warmth: the screen already carries more than
+      any of the mockups and still looks plainer than all of them.
+      Five mockups were drawn against it — they are in `tui/` — and each is
+      answered one at a time in [docs/redesign.md](docs/redesign.md), redrawn
+      with ratodo's real data at ratodo's real widths. That is what makes the
+      rejections worth anything: the split pane and the Description field are
+      turned down from a **picture** of what they do to an 80-column terminal,
+      not from a rule quoted at them.
+      **This is `v0.8.0`**, not a patch: it reverses a decision that is published
+      in [docs/tui.md](docs/tui.md) and it adds a screen.
+
+      The principle the whole redesign hangs off, and the test for anything added
+      to it later:
+
+      > **ratodo must not hide the file the way a database hides one.**
+
+      Nothing below may create a place where the tool knows something the file
+      does not. That single line is why there is no Description field, no Project
+      field and no split pane — not because they are hard, but because each one
+      puts state somewhere the user cannot open in vim. It is also why the form's
+      last word is a `PREVIEW` of the line the file will get, and why the main
+      screen's last row is the selected task's raw line, byte for byte.
+
+      Four steps, in this order, each shippable on its own and each leaving the
+      tool working. **1 to 3 are the work; 4 is conditional** on a test named in
+      it, and is dropped without loss if that test does not pass. The order is
+      not preference: step 1 changes how every screen after it looks, so doing it
+      second means drawing everything twice. The costs and the rejected
+      alternatives for each are the table in
+      [docs/redesign.md](docs/redesign.md#what-each-one-costs).
+
+      - [ ] **1 · The dashboard.** Screen 0, and the cheapest thing in the
+            document: no new state, no new key, no new data — the numbers are the
+            ones `ratodo status` already computes. Six changes to how the same
+            rows are drawn.
+            - [ ] **Every group becomes a nested box, and the column separators
+                  become its `┬`/`┴` junctions.** This is the one that matters and
+                  it is a **correction, not a decoration**: nothing floats, every
+                  stroke starts at a corner and ends at one. It costs **no rows**
+                  — a heading, *n* tasks and a spacer is a top edge, *n* tasks and
+                  a bottom edge — and four columns. A **folded** group stays a
+                  bare rule rather than an empty two-row box: the difference
+                  between a container and a line *is* the open/closed signal
+            - [ ] **The band at the top** — the date spelled out, stat tiles as a
+                  big number over a small label, and a seven-cell week sparkline
+                  off the `✓` stamps. Five rows, and the only thing on the screen
+                  that says the tool has a memory
+            - [ ] **The date column stops repeating the heading.** `today` inside
+                  a group headed `TODAY` spends nine characters saying where it
+                  already is. The rule: the column says what the heading does not
+                  — `2d ago` under `OVERDUE`, the **time or nothing** under
+                  `TODAY`, the day under `THIS WEEK`, the date under a `##`
+                  section. Amends the date rule in [docs/tui.md](docs/tui.md)
+            - [ ] **Counts on every heading**, `BorderType::Rounded`, and keycaps
+                  on the hint bar — `[a] add`, in brackets so it survives
+                  `NO_COLOR` and reads as a keycap the way lazygit's bar does
+            - [ ] **The footer: the selected task's line from the file, raw.** One
+                  row, and it is the row that says *this is a file and this is
+                  your line in it* on the screen somebody stares at all day. It is
+                  also the honest answer to "did the tool understand what I
+                  typed", with no box open and nothing to press
+            - [ ] **First run** — two centred lines over the box `a` already
+                  draws. **No ASCII-art logo**: this is a pane left open beside
+                  the work, and a banner is charming exactly once
+            - [ ] **The widths, which are the part that gets skipped.** Band down
+                  to one line of counts under 20 rows and gone under 16, footer
+                  with it; boxes and frame gone under 34 columns. Drawn at 44 in
+                  [docs/redesign.md](docs/redesign.md#all-of-it-at-40-columns),
+                  with one question left open there: at that width three of the
+                  row's columns are furniture, and a **left spine only** marks the
+                  same extent for one. Worth drawing if 44 is the width actually
+                  run
+            - [ ] Buffer tests at 80 / 60 / 44 / 34, and `LC_ALL=C` still putting
+                  nothing non-ASCII on the screen — the box-drawing set is new
+                  furniture and the ASCII fallback has escaped through new
+                  furniture twice before
+
+      - [ ] **2 · `a` opens a form.** Screens 2 and 3. Six fields, which are
+            exactly the six the format already carries — title, date, time, tags,
+            priority and which list — and no seventh, because there is nowhere in
+            a one-line format to put one.
+            - [ ] **The reversal goes into
+                  [docs/decisions.md](docs/decisions.md) first**, before a line of
+                  code, the way `$work` and the date field did. It **narrows**
+                  rather than dies: "one field, not five labelled ones" still
+                  governs the 34-column pane, which is the case its arithmetic was
+                  always about
+            - [ ] **`PREVIEW`, with its own label and its own rule above it.** The
+                  difference between a form that happens to show a line and a form
+                  whose *conclusion* is a line. It is the same tokenizer read
+                  backwards — `capture` builds a task from text, this renders text
+                  from a task, and `Task::line()` is most of it already
+            - [ ] **Typing still works.** `@thu`, `#home` and `!high` in the
+                  question field parse as they always did and light the matching
+                  radio as you type. One tokenizer, one truth — the day there are
+                  two, the form and the box disagree about what gets written
+            - [ ] **Radios `◉`/`○`, ASCII `(o)`/`( )`** — a difference in *shape*,
+                  so the selection survives `NO_COLOR=1`. `▌` sits beside the
+                  **control** that has the keyboard, not beside its label. Buttons
+                  carry their own key: `[ ⏎ create task ]`
+            - [ ] **The one-line box stays**, and this is what lets the form be as
+                  big as it is. Under **15 rows or 40 columns** `a` opens the box
+                  instead — a form that half-fits is worse than a box that always
+                  fits, and the box is already built and already tested. `p` and
+                  `y` keep it at every width: a form for one question is a form
+                  nobody wants
+            - [ ] **Three loose ends to settle while building it**, from
+                  [docs/redesign.md](docs/redesign.md#still-open): whether `o`
+                  stays the fast box while `a` becomes the form, whether the `p`
+                  and `y` boxes want a different label now that the box is no
+                  longer what `a` opens, and `tab` meaning *next field* in the
+                  form and *date picker* in the box
+
+      - [ ] **3 · `s` — the stats screen.** The one mockup that takes nothing
+            away, and the answer to "there is only one screen". Every number is
+            already in the file; `✓2026-08-11` is what `done_on` reads.
+            - [ ] **`stats(&[Task], today) -> Stats`, pure, `today` a parameter**
+                  — the same shape as `agenda` and testable for the same reason.
+                  No clock inside it, ever
+            - [ ] **No new dependency and no new format.** The bars are `█` and
+                  `░`. `s` opens and `s` or `esc` closes; `1` `2` `3` are week,
+                  month and year. A **screen, not an overlay** — nothing on it is
+                  glanced at mid-task
+            - [ ] **No boxes and no rules between the blocks, deliberately.** The
+                  list is a grid because its rows are read across; this is five
+                  paragraphs read one at a time. A statistics screen is exactly
+                  where a tool starts trying to look like Grafana, and the
+                  restraint gets spent here rather than argued about later
+            - [ ] **One caveat on the screen, not in a doc:** a task ticked before
+                  the completion stamp existed has no `done_on`, so it counts in
+                  `31 done` and in nothing with a day attached. If that number is
+                  large the screen says so rather than quietly under-reporting the
+                  streak
+            - [ ] A [docs/decisions.md](docs/decisions.md) entry — a new screen,
+                  nothing reversed — and unit tests over `stats` including the
+                  empty list and the unstamped case
+
+      - [ ] **4 · `⏎` opens the form too — conditional, and last.** The naive
+            version of this is **forbidden**: a form that parses six fields and
+            re-serialises them turns `- [ ] #ops rotate the keys !high @2026-08-10`
+            into the canonical order having edited nothing, and that is
+            [docs/architecture.md](docs/architecture.md#round-trip-fidelity)
+            broken by the prettiest screen in the program. `y` is allowed to
+            re-serialise because a copy is a *new* line; `⏎` is not.
+            - [ ] **The splice, not a rebuild.** `capture::parts` already hands
+                  back a `Range<usize>` per token: an untouched field leaves its
+                  span alone, a changed one replaces its own span and nothing
+                  else. Four cases — **unchanged** (and if nothing changed, no
+                  write at all and no undo spent), **changed** in place, **added**
+                  at the end of the line, **removed** with one adjacent space or
+                  the line keeps a double space and does it again next time. The
+                  title is the awkward one, because it is not a token: it is
+                  everything `parts` did not claim, and it is the case to write
+                  the test for **first**
+            - [ ] **The gate, and it is a gate.** A property test in
+                  `tests/fidelity.rs`: open the form on every fixture including
+                  the gnarly ones, change nothing, save — the line comes back byte
+                  for byte. Then one field at a time, asserting every *other* byte
+                  survived. Plus `cargo mutants --timeout 90`, per
+                  [CLAUDE.md](CLAUDE.md), because this touches `capture`
+            - [ ] **If it does not pass, `⏎` keeps the one-line box** — already
+                  built, already byte-perfect — and the form stays add-only.
+                  Nothing else in the redesign depends on this step. A beautiful
+                  TUI that silently reformats the user's file has spent the only
+                  thing this product actually sells
+
+      **Not in this, and not "later" either:** split panes, a Description field
+      and a Section/Project picker. Each is a different promise about whose file
+      it is — the first reverses [docs/design.md](docs/design.md), the second
+      reverses [docs/format.md](docs/format.md), and the third means teaching the
+      writer to *insert* into the middle of a file it only appends to today,
+      which is the one place fidelity is won or lost. If one is wanted anyway,
+      the reversal goes into [docs/decisions.md](docs/decisions.md) first and the
+      code follows it.
+
+      **The release is the one in [CLAUDE.md](CLAUDE.md), not a green suite.**
+      `cargo install --force --path .`, then **stop** and let the maintainer look
+      at it in their own terminal. Driving it on a pty is evidence that it
+      *works*; this whole item is about whether it *reads*, which is the half a
+      publish cannot take back.
 
 - [x] **Copying a task means retyping it.** A task that is nearly one you already
       have — same tag, same shape, different day — had no way in but `a` and the

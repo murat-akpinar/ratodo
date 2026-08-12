@@ -15,6 +15,7 @@ and *what was given up*.
 | [architecture.md](architecture.md) | How does data flow, which modules exist, how are concurrent edits handled, which crates and why |
 | [design.md](design.md) | Palette, layout, agenda grouping rules, symbols |
 | [tui.md](tui.md) | Every screen and interaction state, the keymap, narrow-width behaviour |
+| [redesign.md](redesign.md) | The v0.8.0 screen redesign: what the mockups asked for, what was taken, what was drawn and rejected |
 | [theming.md](theming.md) | `theme.conf`, the 11 colour keys, built-in themes |
 | [cli.md](cli.md) | Commands, flags, keybindings, output shapes |
 | [calendar.md](calendar.md) | `.ics` export, VTODO, which calendar clients actually work |

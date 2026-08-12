@@ -25,6 +25,7 @@ exclude = [
     "packaging/",
     "scripts/",
     "todo.md",
+    "tui/",
 ]
 
 # Dependencies are added when the step that needs them arrives, so the build
