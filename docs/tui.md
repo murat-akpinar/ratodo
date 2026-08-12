@@ -92,7 +92,12 @@ twenty columns on a wide one.
 ## Main screen
 
 ```
-╭ ratodo — 5 open · 1 overdue ───────────────── ▰▰▰▱▱▱▱▱ 3/8 ╮
+╭ ratodo ─────────────────────── Wednesday, 12 August 2026 ╮
+│                                                            │
+│    1          3        8       3/11         ▂▅▃█▆▂▁        │
+│    OVERDUE    TODAY    OPEN    DONE · 27%   MON — SUN      │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
 │  ╭─ OVERDUE · 1 ────────────────────────────────────────╮  │
 │▌ │ ! rotate the backup keys                 2d ago  #ops│  │
 │  ╰──────────────────────────────────────────────────────╯  │
@@ -109,12 +114,37 @@ twenty columns on a wide one.
 │  │ ○ finish chapter 13 of the Rust book             !low│  │
 │  ╰──────────────────────────────────────────────────────╯  │
 │  LATER · 3 ───────────────────────────────────────── l     │
+├────────────────────────────────────────────────────────────┤
+│  - [ ] rotate the backup keys @2026-08-10 #ops             │
 ╰────────────────────────────────────────────────────────────╯
 
  [j k] move [spc] done [a] add [⏎] edit [d] cancel [?] keys [q] quit
 ```
 
 Details that are decisions, not drawing:
+
+- **The band at the top**, five rows, and the only thing on the screen that says
+  the tool has a memory. The date spelled out — the first thing a todo list
+  should say and the one thing this screen never said — then stat tiles as a big
+  number over a small label, and a seven-cell sparkline off the `✓` completion
+  stamps for the current week, Monday first.
+
+  Every number in it is one `ratodo status` already computes, so the band adds
+  no state and no new data. **The band owns the counts while it is drawn**, which
+  is why the title bar spends its right-hand side on the date instead; when the
+  band goes, the counts and the progress bar come back to the title rather than
+  disappearing.
+
+  The sparkline has **no ASCII form**, and that is a decision rather than an
+  omission: seven cells of `#` and `-` is not a bar chart, it is a row of
+  punctuation the reader has to be told is a chart. It goes the way the columns
+  go below eighty. A week with nothing finished in it draws none either.
+- **The footer: the selected task's line, from the file, raw.** One row, and it
+  is the row that says *this is a file and this is your line in it* on the screen
+  somebody stares at all day. It is also the honest answer to "did the tool
+  understand what I typed", with no box open and nothing to press. A task the
+  tool has changed this session shows the line that **will** be written — a
+  footer that showed the old bytes after a tick would be worse than none.
 
 - **`▌` is the selection**, in `accent`, with the row on `selection` background.
   A colour alone is not enough — see [design.md](design.md#rules).
@@ -791,8 +821,19 @@ the pane has to find.
  [j k] [spc] [a] [d] [?]
 ```
 
+**Short panes** drop the band before anything else, in two steps rather than
+one: under **20 rows** it becomes a single line of counts, and under **16** it
+goes entirely and the footer goes with it. The tiles are worth five rows on a
+pane somebody leaves open beside their work and worth nothing on a pane with six
+tasks in it. Under **10 rows** the hint bar collapses to `?`.
+
 **Very narrow (< 34 columns)** — the frame is dropped entirely, and the boxes
-with it; just rows.
+with it; just rows. The band needs 60 columns to lay tiles across and is not
+drawn below that at any height.
+
+What is given up, in order, as the **height** shrinks: the band's tiles, then
+the band, then the footer with it, then the hint bar. The list is the last thing
+standing, which is the rule the whole table is derived from.
 
 What is given up, in order, as the width shrinks:
 

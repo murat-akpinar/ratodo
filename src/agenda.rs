@@ -1,6 +1,6 @@
 //! Agenda grouping. See docs/design.md#agenda-grouping-rules-v1.
 
-use chrono::{Days, NaiveDate};
+use chrono::{Datelike, Days, NaiveDate};
 
 use crate::model::{Priority, Task};
 
@@ -71,6 +71,34 @@ impl Counts {
             "ok"
         }
     }
+}
+
+/// How many tasks were finished on each day of `today`'s week, Monday first.
+///
+/// `today` is a parameter and there is no clock in here, for the same reason
+/// `agenda` has none: a function that asks the calendar what day it is cannot be
+/// tested on any other day.
+///
+/// Read off the `✓` completion stamps in the file, so it says nothing about a
+/// task ticked before the stamp existed. That is a real hole and the screen owes
+/// the reader an answer about it rather than a quietly short bar —
+/// docs/format.md#the-completion-stamp.
+/// Takes an iterator rather than a slice so the TUI can hand it the tasks it
+/// already holds, folded groups included, without collecting the list again on
+/// every keystroke.
+pub fn week<'a>(tasks: impl IntoIterator<Item = &'a Task>, today: NaiveDate) -> [usize; 7] {
+    let monday = today - Days::new(today.weekday().num_days_from_monday() as u64);
+    let mut out = [0usize; 7];
+    for task in tasks {
+        let Some(on) = task.done_on.filter(|_| task.done()) else {
+            continue;
+        };
+        let day = (on - monday).num_days();
+        if (0..7).contains(&day) {
+            out[day as usize] += 1;
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,6 +227,61 @@ mod tests {
 
     fn today() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 8, 10).unwrap()
+    }
+
+    /// The seven cells behind the sparkline on the main screen and the
+    /// histogram on the stats one. Monday first, and `today` is Monday the 10th
+    /// of August 2026, so the week runs the 10th to the 16th.
+    #[test]
+    fn the_week_counts_completions_by_the_day_they_were_stamped() {
+        let stamped = |title: &str, y, m, d| {
+            let mut task = capture(title, today());
+            task.set_state(State::Done, NaiveDate::from_ymd_opt(y, m, d).unwrap());
+            task
+        };
+        let tasks = [
+            stamped("mon", 2026, 8, 10),
+            stamped("wed", 2026, 8, 12),
+            stamped("wed again", 2026, 8, 12),
+            stamped("sun", 2026, 8, 16),
+            // Last week and next week are somebody else's bar.
+            stamped("last sunday", 2026, 8, 9),
+            stamped("next monday", 2026, 8, 17),
+            // Open, and never mind that it has a stamp on it.
+            capture("still open", today()),
+        ];
+
+        assert_eq!(week(&tasks, today()), [1, 0, 2, 0, 0, 0, 1]);
+        assert_eq!(week(&[], today()), [0; 7]);
+    }
+
+    /// The week is `today`'s week wherever in it `today` falls, so the answer
+    /// does not move between Monday and Sunday.
+    #[test]
+    fn the_week_is_the_same_week_from_any_day_in_it() {
+        let mut task = capture("done", today());
+        task.set_state(State::Done, NaiveDate::from_ymd_opt(2026, 8, 12).unwrap());
+
+        for day in 10..=16 {
+            let from = NaiveDate::from_ymd_opt(2026, 8, day).unwrap();
+            assert_eq!(
+                week(std::slice::from_ref(&task), from),
+                [0, 0, 1, 0, 0, 0, 0],
+                "{from}"
+            );
+        }
+    }
+
+    /// A task ticked before the completion stamp existed has no `done_on`, so it
+    /// is in no day's bar. The screen says so rather than quietly under-reporting
+    /// — docs/tui.md#main-screen.
+    #[test]
+    fn a_completion_with_no_stamp_lands_in_no_day() {
+        let mut task = capture("done long ago", today());
+        task.set_state(State::Done, today());
+        task.done_on = None;
+
+        assert_eq!(week(std::slice::from_ref(&task), today()), [0; 7]);
     }
 
     /// Undated tasks group by heading, and with several lists open the heading

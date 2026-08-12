@@ -2085,28 +2085,51 @@ pub fn draw(
         )
     });
     let size = Size::of(area.width);
+    // The band owns the counts when it is drawn, so the title bar spends its
+    // right-hand side on the date instead — the first thing a todo list should
+    // say and the one thing this screen never said. When the band goes, the
+    // counts and the progress bar come back to where they have always been.
+    let banded = Band::of(whole.height, size);
 
     // Under 34 columns the frame is two of them, which is a tenth of the pane.
     let (dash, _) = render.glyphs.punctuation();
     let block = (size > Size::Bare).then(|| {
-        let name = format!(
-            " ratodo {dash} {} ",
-            title_counts(counts, size, render.glyphs)
-        );
-        let bar = (size == Size::Wide)
-            .then(|| progress(counts, area.width as usize, columns(&name), render))
-            .flatten();
+        let name = match banded {
+            Band::None => format!(
+                " ratodo {dash} {} ",
+                title_counts(counts, size, render.glyphs)
+            ),
+            _ => " ratodo ".to_string(),
+        };
+        let right = match banded {
+            Band::None => (size == Size::Wide)
+                .then(|| progress(counts, area.width as usize, columns(&name), render))
+                .flatten(),
+            _ => Some(Line::from(Span::styled(
+                format!(" {} ", render.today.format("%A, %-d %B %Y")),
+                Style::default().fg(render.colours.dim),
+            ))),
+        };
 
         let block = Block::bordered()
             .border_set(render.glyphs.border())
             .border_style(Style::default().fg(render.colours.border))
             .title(name);
-        match bar {
-            Some(bar) => block.title(bar.right_aligned()),
+        match right {
+            Some(right) => block.title(right.right_aligned()),
             None => block,
         }
     });
-    let inner = block.as_ref().map_or(area, |b| b.inner(area));
+    let framed = block.as_ref().map_or(area, |b| b.inner(area));
+    // What is left for the list once the band and the footer have been paid
+    // for. They are drawn after it, over rows it was never given.
+    let spent = banded.rows() + if banded == Band::None { 0 } else { FOOTER };
+    let inner = Rect::new(
+        framed.x,
+        framed.y + banded.rows(),
+        framed.width,
+        framed.height.saturating_sub(spent),
+    );
 
     // The selection marker is drawn into the row, so the width the layout gets
     // is what is left after it. That gutter doubles as the box's left indent,
@@ -2126,6 +2149,9 @@ pub fn draw(
     if screen.rows.iter().all(|r| !matches!(r, Row::Task(_))) {
         empty(frame, area, block, render);
     } else {
+        if let Some(block) = &block {
+            frame.render_widget(block.clone(), area);
+        }
         // Whether the row being drawn is inside a box, carried along rather than
         // stored on the row: a folded group is a bare rule and the run of tasks
         // above the file's first heading has no heading to open one, so "inside"
@@ -2175,7 +2201,7 @@ pub fn draw(
             })
             .collect();
 
-        let mut list = List::new(items)
+        let list = List::new(items)
             .style(Style::default().bg(render.colours.background))
             .highlight_symbol(cursor)
             // Background only. Setting a foreground here would repaint the
@@ -2184,11 +2210,36 @@ pub fn draw(
             // one row you are most likely to be looking at. docs/design.md: red
             // only ever means late.
             .highlight_style(Style::default().bg(render.colours.selection));
-        if let Some(block) = block {
-            list = list.block(block);
-        }
 
-        frame.render_stateful_widget(list, area, &mut screen.state);
+        frame.render_stateful_widget(list, inner, &mut screen.state);
+
+        if banded != Band::None {
+            band(
+                frame,
+                Rect::new(area.x, framed.y, area.width, banded.rows()),
+                banded,
+                counts,
+                crate::agenda::week(
+                    screen.all.iter().filter_map(|r| match r {
+                        Row::Task(t) => Some(t),
+                        _ => None,
+                    }),
+                    render.today,
+                ),
+                render,
+            );
+            footer(
+                frame,
+                Rect::new(
+                    area.x,
+                    framed.y + framed.height - FOOTER,
+                    area.width,
+                    FOOTER,
+                ),
+                screen.task(),
+                render,
+            );
+        }
     }
 
     if helping {
@@ -2227,6 +2278,230 @@ pub fn draw(
     frame.render_widget(
         Paragraph::new(line).style(Style::default().bg(render.colours.background)),
         bottom,
+    );
+}
+
+/// The rule above the footer and the footer itself. Two rows, and the rule is
+/// not optional: without it the file's own line reads as one more task row,
+/// which is the one thing it is not.
+const FOOTER: u16 = 2;
+
+/// How much of the band at the top the pane can pay for.
+///
+/// It is the first thing to go, and it goes in two steps rather than one: the
+/// tiles are worth five rows on a pane somebody leaves open and worth nothing on
+/// a pane with six tasks in it — docs/tui.md#width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Band {
+    /// The date, the tiles and the week. Five rows.
+    Full,
+    /// The same numbers on one line, and the rule under them. Two rows.
+    Counts,
+    /// Nothing, and the footer goes with it.
+    None,
+}
+
+impl Band {
+    fn of(height: u16, size: Size) -> Self {
+        match height {
+            // No frame to hang it in, and no width to lay tiles across.
+            _ if size < Size::Wide => Band::None,
+            20.. => Band::Full,
+            16..=19 => Band::Counts,
+            _ => Band::None,
+        }
+    }
+
+    fn rows(self) -> u16 {
+        match self {
+            Band::Full => 5,
+            Band::Counts => 2,
+            Band::None => 0,
+        }
+    }
+}
+
+/// The seven cells of the week, as blocks. `None` under the ASCII fallback, and
+/// that is a decision rather than an omission: a seven-cell bar chart made of
+/// `#` and `-` is not a bar chart, it is a row of punctuation the reader has to
+/// be told is a chart. It goes the way the columns go below eighty — the screen
+/// is allowed to say less when it cannot say it well.
+fn sparkline(week: [usize; 7], glyphs: Glyphs) -> Option<String> {
+    if glyphs == Glyphs::Ascii {
+        return None;
+    }
+    const CELLS: [&str; 8] = ["▁", "▁", "▂", "▃", "▅", "▆", "▇", "█"];
+    let peak = *week.iter().max().unwrap_or(&0);
+    if peak == 0 {
+        return None;
+    }
+    Some(
+        week.iter()
+            .map(|&n| CELLS[(n * 7).div_ceil(peak).min(7)])
+            .collect(),
+    )
+}
+
+/// The tiles: a big number over a small label. The numbers are the ones
+/// `ratodo status` already computes, so the band adds no state and no new data —
+/// docs/redesign.md.
+fn tiles(counts: Counts, week: [usize; 7], glyphs: Glyphs) -> Vec<(String, String)> {
+    let (_, dot) = glyphs.punctuation();
+    let total = counts.open + counts.done;
+    let mut out = vec![
+        (counts.overdue.to_string(), "OVERDUE".to_string()),
+        (counts.today.to_string(), "TODAY".to_string()),
+        (counts.open.to_string(), "OPEN".to_string()),
+    ];
+    if total > 0 {
+        out.push((
+            format!("{}/{total}", counts.done),
+            format!("DONE {dot} {}%", counts.done * 100 / total),
+        ));
+    }
+    if let Some(bars) = sparkline(week, glyphs) {
+        let (dash, _) = glyphs.punctuation();
+        out.push((bars, format!("MON {dash} SUN")));
+    }
+    out
+}
+
+/// Lays the tiles across the width, and gives back the number row and the label
+/// row. A tile that will not fit whole is not drawn at all: half a label is
+/// worse than one tile fewer.
+fn tile_rows(tiles: &[(String, String)], width: usize) -> (String, String) {
+    const INDENT: usize = 4;
+    const GUTTER: usize = 4;
+    let mut numbers = " ".repeat(INDENT);
+    let mut labels = " ".repeat(INDENT);
+    for (number, label) in tiles {
+        let cell = columns(number).max(columns(label)) + GUTTER;
+        if columns(&labels) + cell > width {
+            break;
+        }
+        // Padded by measured columns rather than by `{:<w$}`, which counts
+        // `char`s: `▅██▁▁▁▁` is seven columns and seven chars but twenty-one
+        // bytes, and `·` is one column and two — a format width gets one of the
+        // two rows right and slides the other one sideways.
+        let pad = |text: &str| format!("{text}{}", " ".repeat(cell - columns(text)));
+        numbers.push_str(&pad(number));
+        labels.push_str(&pad(label));
+    }
+    (numbers, labels)
+}
+
+/// The band, drawn into the rows `draw` reserved for it. `area` is the frame's
+/// interior plus the two border columns, so the rule at the bottom can meet the
+/// frame at a `├` and a `┤` rather than stopping one column short of each.
+fn band(
+    frame: &mut Frame,
+    area: Rect,
+    kind: Band,
+    counts: Counts,
+    week: [usize; 7],
+    render: Render<'_>,
+) {
+    let dim = Style::default().fg(render.colours.dim);
+    let accent = Style::default().fg(render.colours.accent);
+    let inner = area.width.saturating_sub(2) as usize;
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    match kind {
+        Band::Full => {
+            let (numbers, labels) = tile_rows(&tiles(counts, week, render.glyphs), inner);
+            lines.push(Line::default());
+            lines.push(Line::from(Span::styled(numbers, accent)));
+            lines.push(Line::from(Span::styled(labels, dim)));
+            lines.push(Line::default());
+        }
+        // One line, and the labels stay rather than the numbers: `3 TODAY` still
+        // reads without its second row, and a row of bare numbers does not.
+        //
+        // A week of nothing rather than the real one, which is how the sparkline
+        // is dropped: it has no label that survives being read inline, and seven
+        // cells wedged between two counts is a smudge. The labels lose their
+        // second word for the same reason — `DONE · 45%` beside a `·` separator
+        // is two dots doing different jobs on one line.
+        Band::Counts => {
+            let (_, dot) = render.glyphs.punctuation();
+            let one = tiles(counts, [0; 7], render.glyphs)
+                .iter()
+                .map(|(n, l)| format!("{n} {}", l.split(' ').next().unwrap_or(l)))
+                .collect::<Vec<_>>()
+                .join(&format!("  {dot}  "));
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "  {}",
+                    shorten(&one, inner.saturating_sub(2), render.glyphs)
+                ),
+                dim,
+            )));
+        }
+        Band::None => return,
+    }
+    // The content goes inside the frame and the rule goes across it, so they are
+    // two rectangles: a paragraph wide enough to hold the `├` would paint over
+    // the `│` on every row above it.
+    let rows = lines.len() as u16;
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(render.colours.background)),
+        Rect::new(area.x + 1, area.y, inner as u16, rows),
+    );
+    frame.render_widget(
+        Paragraph::new(rule_across(area.width as usize, render)),
+        Rect::new(area.x, area.y + rows, area.width, 1),
+    );
+}
+
+/// A rule the full width of the frame, meeting it at both ends. The same joint
+/// the input box uses, and for the same reason: a rule that butts straight into
+/// the side border reads as a broken frame.
+fn rule_across(width: usize, render: Render<'_>) -> Line<'static> {
+    let (left, right) = render.glyphs.tee();
+    let middle = render
+        .glyphs
+        .rule()
+        .to_string()
+        .repeat(width.saturating_sub(2));
+    Line::from(Span::styled(
+        format!("{left}{middle}{right}"),
+        Style::default().fg(render.colours.border),
+    ))
+}
+
+/// The selected task's line, from the file, byte for byte.
+///
+/// One row, and it is the row that says *this is a file and this is your line in
+/// it* on the screen somebody stares at all day. It is also the honest answer to
+/// "did the tool understand what I typed", with no box open and nothing to press
+/// — docs/redesign.md.
+///
+/// A task the tool has edited this session shows what **will** be written rather
+/// than what was read: `raw` is only authoritative while `dirty` is false, and a
+/// footer that lied about a line the user just ticked would be worse than none.
+fn footer(frame: &mut Frame, area: Rect, task: Option<&Task>, render: Render<'_>) {
+    let width = area.width.saturating_sub(2) as usize;
+    let raw = task.map(|t| match t.dirty {
+        true => t.line(),
+        false => t.raw.clone(),
+    });
+    let line = Line::from(Span::styled(
+        format!(
+            "  {}",
+            shorten(
+                &text::plain(raw.as_deref().unwrap_or("")),
+                width.saturating_sub(2),
+                render.glyphs
+            )
+        ),
+        Style::default().fg(render.colours.dim),
+    ));
+    frame.render_widget(
+        Paragraph::new(rule_across(area.width as usize, render)),
+        Rect::new(area.x, area.y, area.width, 1),
+    );
+    frame.render_widget(
+        Paragraph::new(line).style(Style::default().bg(render.colours.background)),
+        Rect::new(area.x + 1, area.y + 1, width as u16, 1),
     );
 }
 
@@ -3166,6 +3441,169 @@ mod tests {
             .chunks(width as usize)
             .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
             .collect()
+    }
+
+    /// A list with something finished on three days of the week, so the band
+    /// has a sparkline to draw and a footer has a line to show.
+    fn a_week_of_work() -> Vec<Task> {
+        let mut out = tasks(&["late @2026-08-08 #ops", "now @2026-08-10 16:00"]);
+        for (title, day) in [("mon", 10), ("wed", 12), ("wed too", 12)] {
+            let mut done = capture(title, today());
+            done.set_state(State::Done, NaiveDate::from_ymd_opt(2026, 8, day).unwrap());
+            out.push(done);
+        }
+        out
+    }
+
+    /// The band, exactly, at the width the drawings are made at. Five rows: the
+    /// blank, the numbers, the labels, the blank, and the rule that meets the
+    /// frame at both ends — docs/redesign.md.
+    #[test]
+    fn the_band_exactly() {
+        let screen = rendered(80, 24, &a_week_of_work());
+        assert_eq!(
+            &screen[..6],
+            [
+                "╭ ratodo ────────────────────────────────────────────── Monday, 10 August 2026 ╮",
+                "│                                                                              │",
+                "│    1          1        2       3/5           ▅▁█▁▁▁▁                         │",
+                "│    OVERDUE    TODAY    OPEN    DONE · 60%    MON — SUN                       │",
+                "│                                                                              │",
+                "├──────────────────────────────────────────────────────────────────────────────┤",
+            ]
+        );
+    }
+
+    /// The band owns the counts while it is drawn, so the title bar spends its
+    /// right-hand side on the date instead — and takes them back the moment the
+    /// band goes, rather than leaving the pane with no counts at all.
+    #[test]
+    fn the_title_bar_says_the_date_only_while_the_band_is_carrying_the_counts() {
+        let tasks = a_week_of_work();
+
+        let tall = rendered(80, 24, &tasks);
+        assert!(tall[0].contains("Monday, 10 August 2026"), "{tall:?}");
+        assert!(
+            !tall[0].contains("open"),
+            "the counts are said twice: {tall:?}"
+        );
+
+        let short = rendered(80, 14, &tasks);
+        assert!(short[0].contains("2 open · 1 overdue"), "{short:?}");
+        assert!(!short[0].contains("August"), "{short:?}");
+    }
+
+    /// The first thing to go, in two steps rather than one, and the footer goes
+    /// with the last of them — docs/tui.md#width.
+    #[test]
+    fn the_band_gives_way_a_step_at_a_time_as_the_pane_shortens() {
+        let tasks = a_week_of_work();
+        let band_of = |height: u16| {
+            let screen = rendered(80, height, &tasks);
+            let sparkline = screen.iter().any(|r| r.contains('█'));
+            let labels = screen.iter().any(|r| r.contains("OVERDUE    TODAY"));
+            let inline = screen.iter().any(|r| r.contains("1 OVERDUE  ·"));
+            let footer = screen.iter().any(|r| r.contains("- [ ] late"));
+            (sparkline, labels, inline, footer)
+        };
+
+        assert_eq!(band_of(24), (true, true, false, true), "the whole band");
+        assert_eq!(band_of(20), (true, true, false, true), "still whole at 20");
+        assert_eq!(
+            band_of(19),
+            (false, false, true, true),
+            "one line of counts"
+        );
+        assert_eq!(
+            band_of(16),
+            (false, false, true, true),
+            "still one line at 16"
+        );
+        assert_eq!(band_of(15), (false, false, false, false), "band and footer");
+
+        // And a pane too narrow for tiles never gets one however tall it is.
+        assert!(
+            !rendered(50, 30, &tasks)
+                .iter()
+                .any(|r| r.contains("OVERDUE    TODAY"))
+        );
+    }
+
+    /// The row that says *this is a file and this is your line in it*. Byte for
+    /// byte, and it follows the cursor rather than the top of the list.
+    #[test]
+    fn the_footer_is_the_selected_tasks_own_line_from_the_file() {
+        let tasks = a_week_of_work();
+        let on_first = rendered(80, 24, &tasks);
+        assert!(
+            on_first
+                .iter()
+                .any(|r| r.contains("- [ ] late @2026-08-08 #ops")),
+            "{on_first:?}"
+        );
+
+        let moved = rendered_with(80, 24, &tasks, |s| s.move_by(1));
+        assert!(
+            moved
+                .iter()
+                .any(|r| r.contains("- [ ] now @2026-08-10 16:00")),
+            "the footer did not follow the cursor: {moved:?}"
+        );
+        assert!(
+            !moved.iter().any(|r| r.contains("- [ ] late @2026-08-08")),
+            "{moved:?}"
+        );
+    }
+
+    /// A seven-cell bar chart made of `#` and `-` is not a bar chart. It goes
+    /// the way the columns go below eighty, and the rest of the band stays —
+    /// todo.md, decided before it was drawn rather than at the assertion.
+    #[test]
+    fn the_sparkline_has_no_ascii_form_and_says_so_by_not_being_there() {
+        let week = [1, 0, 3, 0, 0, 0, 0];
+        assert_eq!(sparkline(week, Glyphs::Unicode).as_deref(), Some("▃▁█▁▁▁▁"));
+        assert_eq!(sparkline(week, Glyphs::Ascii), None);
+        // Nothing finished this week is not a chart either.
+        assert_eq!(sparkline([0; 7], Glyphs::Unicode), None);
+
+        // The tallest day is always full and a day with nothing in it is always
+        // the floor, so the shape is a shape and not a rounding artefact.
+        let tall = sparkline([9, 1, 0, 0, 0, 0, 0], Glyphs::Unicode).unwrap();
+        assert!(tall.starts_with('█'), "{tall}");
+        assert!(tall.ends_with("▁▁▁▁▁"), "{tall}");
+    }
+
+    /// The band is furniture like everything else, and furniture is where the
+    /// ASCII fallback has escaped twice before.
+    #[test]
+    fn the_band_and_the_footer_are_ascii_under_a_c_locale() {
+        let tasks = a_week_of_work();
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let counts = Counts::of(&tasks, today());
+        let render = Render {
+            glyphs: Glyphs::Ascii,
+            ..render(crate::theme::MOCHA)
+        };
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|f| draw(f, &mut screen, counts, render, &Notice::Hints, false, None))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+
+        assert!(text.contains("OVERDUE"), "the band did not draw: {text}");
+        assert!(text.contains("- [ ] late @2026-08-08 #ops"), "{text}");
+        assert!(
+            text.is_ascii(),
+            "something non-ASCII reached the screen: {text}"
+        );
     }
 
     /// The layout arithmetic, pinned. Every other rendering test asks whether

@@ -95,10 +95,15 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   the box takes five columns off every row, so the constant had
                   to come down by five for eighty columns of terminal to keep
                   the columns it has today
-            - [ ] **The band at the top** — the date spelled out, stat tiles as a
+            - [x] **The band at the top** — the date spelled out, stat tiles as a
                   big number over a small label, and a seven-cell week sparkline
                   off the `✓` stamps. Five rows, and the only thing on the screen
-                  that says the tool has a memory
+                  that says the tool has a memory. **Done.** The week comes from
+                  `agenda::week`, which takes an iterator and `today` as a
+                  parameter, so step 3's histogram is the same function. The band
+                  **owns the counts while it is drawn** and the title bar spends
+                  its right-hand side on the date instead; when the band goes the
+                  counts and the progress bar come back
             - [x] **The date column stops repeating the heading.** **Done** —
                   one arm of `when`, and the width comes back with it: a group
                   where nothing is timed now spends no columns on the date at
@@ -117,11 +122,15 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   with no name gets no count. The keycaps cost `[y] copy` at
                   eighty columns and the separator went from two spaces to one
                   to pay for `[p] later` — measured, not assumed
-            - [ ] **The footer: the selected task's line from the file, raw.** One
+            - [x] **The footer: the selected task's line from the file, raw.** One
                   row, and it is the row that says *this is a file and this is
                   your line in it* on the screen somebody stares at all day. It is
                   also the honest answer to "did the tool understand what I
-                  typed", with no box open and nothing to press
+                  typed", with no box open and nothing to press. **Done** — two
+                  rows including the rule above it, because without the rule the
+                  file's own line reads as one more task row. A task edited this
+                  session shows the line that *will* be written, since `raw` is
+                  only authoritative while `dirty` is false
             - [ ] **First run** — two centred lines over the box `a` already
                   draws. **No ASCII-art logo**: this is a pane left open beside
                   the work, and a banner is charming exactly once
@@ -133,12 +142,14 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   row's columns are furniture, and a **left spine only** marks the
                   same extent for one. Worth drawing if 44 is the width actually
                   run
-            - [ ] **The ASCII forms, decided before anything is drawn.** Three of
+            - [x] **The ASCII forms, decided before anything is drawn.** Three of
                   the four new glyphs have none: `╭╮╰╯` (rounded corners),
                   `▁▂▃▅▆▇█` (the sparkline) and the `┬`/`┴` junctions.
-                  **The corners and the junctions are done** — both `+`, both
-                  pinned by `the_ascii_fallback_replaces_every_glyph`, which now
-                  asserts the box sides too. The sparkline is what is left. `src/ui.rs`
+                  **Done.** Corners and junctions are `+`. **The sparkline has
+                  no ASCII form and is not drawn under one** — the honest answer
+                  the item itself argued for, decided here rather than at the
+                  assertion, and pinned by a test that renders the whole band
+                  under `Glyphs::Ascii` and asserts the buffer `is_ascii()`. `src/ui.rs`
                   asserts the **whole buffer** `is_ascii()` in five places, so
                   this is not a polish item — it is the first thing that goes red.
                   The frame already falls back to `+ - |` and the junctions can be
