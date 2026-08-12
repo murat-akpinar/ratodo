@@ -1,3 +1,14 @@
+## [unreleased]
+
+### 📚 Documentation
+
+- Drop the windows findings, now that they are fixed or tracked ([7255048](https://github.com/murat-akpinar/ratodo/commit/725504868427b3da618e0f20eeb3bbd0f53ed952))
+Every section landed: the backup name and the AltGr chord are fixed, the cfg(unix) gate and the check-docs separator are in, the paths table is in docs/cli.md, and the $XDG integration tests are a decision in todo.md.
+- Make the github release a step of the release, not an option ([7773a44](https://github.com/murat-akpinar/ratodo/commit/7773a441bdda85464777bba23740163dfb126e00))
+
+### ⚙️ Miscellaneous Tasks
+
+- Point the PKGBUILD at v0.7.2 ([d30eafe](https://github.com/murat-akpinar/ratodo/commit/d30eafe51cc48d495abb1b5e11f07db71343ff1d))
 ## [0.7.2] - 2026-08-12
 
 ### 🐛 Bug Fixes
@@ -20,6 +31,7 @@ Windows reports AltGr as ctrl+alt, and on the Turkish, German and Polish layouts
 
 - Point the PKGBUILD at v0.7.1 ([24958c1](https://github.com/murat-akpinar/ratodo/commit/24958c1ffb2f19c45d51eed31bc910c36ae2ab6a))
 - *(release)* V0.7.2 ([1c9a99b](https://github.com/murat-akpinar/ratodo/commit/1c9a99b5a9f85f624b9a50aea407e002b0f63134))
+- Keep the windows findings out of the published crate ([e827171](https://github.com/murat-akpinar/ratodo/commit/e8271717198409cb388400a9aaefc81aa4a42a38))
 ## [0.7.1] - 2026-08-11
 
 ### 📚 Documentation
