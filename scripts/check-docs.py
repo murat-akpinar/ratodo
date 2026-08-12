@@ -41,7 +41,9 @@ def anchors(path):
 files = sorted(
     p for p in ROOT.rglob('*.md')
     if '.git' not in p.parts
-    and not any(str(p.relative_to(ROOT)).startswith(s) for s in SKIP)
+    # `as_posix`, not `str`: on Windows the latter is `tests\fixtures\…`, which
+    # never matches a forward-slash prefix, and the fixtures get linted as docs.
+    and not any(p.relative_to(ROOT).as_posix().startswith(s) for s in SKIP)
 )
 anchor_cache = {p: anchors(p) for p in files}
 errors = []
