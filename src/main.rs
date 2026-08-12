@@ -1542,7 +1542,12 @@ mod tests {
     /// Only a refused write becomes a warning. Everything else is a real
     /// failure, and swallowing it as "changed on disk" would send the user to
     /// press `r` at a problem that reloading cannot fix.
+    ///
+    /// Unix-only because the failure is forced with a read-only directory mode,
+    /// which Windows has no equivalent for — and without the gate the whole test
+    /// binary refuses to compile there, so the suite cannot run at all.
     #[test]
+    #[cfg(unix)]
     fn a_write_that_fails_for_any_other_reason_is_not_reported_as_a_conflict() {
         use std::os::unix::fs::PermissionsExt;
 
