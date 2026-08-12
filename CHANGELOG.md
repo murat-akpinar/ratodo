@@ -5,6 +5,8 @@
 - Drop the windows findings, now that they are fixed or tracked ([7255048](https://github.com/murat-akpinar/ratodo/commit/725504868427b3da618e0f20eeb3bbd0f53ed952))
 Every section landed: the backup name and the AltGr chord are fixed, the cfg(unix) gate and the check-docs separator are in, the paths table is in docs/cli.md, and the $XDG integration tests are a decision in todo.md.
 - Make the github release a step of the release, not an option ([7773a44](https://github.com/murat-akpinar/ratodo/commit/7773a441bdda85464777bba23740163dfb126e00))
+- Plan the v0.8.0 screen redesign ([93ea108](https://github.com/murat-akpinar/ratodo/commit/93ea1082de9d4b6e232e73f6279067e493b30b0a))
+The five mockups drawn against ratodo are answered one at a time in docs/redesign.md, redrawn with real data at real widths so the split pane and the Description field are turned down from a picture rather than from a rule. todo.md carries the four steps: the dashboard, the add form, stats, and the edit form conditional on its splice test.
 
 ### 🧪 Testing
 
