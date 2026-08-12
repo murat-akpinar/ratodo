@@ -1,10 +1,11 @@
 # CLAUDE.md
 
 Working rules for AI agents in this repository. Read [docs/README.md](docs/README.md)
-before touching anything — the decisions live there, not here.
+before touching anything — the decisions live there, not here. For *which file to
+open*, [docs/map.md](docs/map.md) is the index.
 
 **Project:** ratodo — a todo TUI in Rust + ratatui. Single Markdown file, no
-cloud, no account. v0.1.0 is tagged; the code is the eight flat modules in
+cloud, no account. v0.1.0 is tagged; the code is the eleven flat modules in
 `src/` described in [docs/architecture.md](docs/architecture.md#module-layout).
 
 ---
@@ -150,7 +151,7 @@ recorded in [docs/decisions.md](docs/decisions.md), not applied silently.
 - rustfmt defaults; clippy clean at `-D warnings`
 - `anyhow` for errors; no `unwrap()` outside tests (`expect` with a real message
   is acceptable in `main`)
-- Keep modules flat — the eight files in
+- Keep modules flat — the eleven files in
   [docs/architecture.md](docs/architecture.md#module-layout) are the whole plan.
   No `mod.rs` pyramid, no trait layer
 - Pure functions stay pure: `parse`, `write`, `agenda`, `ics`, `theme` take input

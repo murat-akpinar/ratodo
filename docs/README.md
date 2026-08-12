@@ -10,6 +10,7 @@ and *what was given up*.
 
 | Document | Answers |
 |---|---|
+| [map.md](map.md) | Where the **code** is: which of the eleven files to open for which change, and the landmarks inside the two big ones |
 | [product.md](product.md) | What is this, who is it for, why does it need to exist, what is deliberately out of scope |
 | [format.md](format.md) | What does the file look like, where does it live, what does the tool touch |
 | [architecture.md](architecture.md) | How does data flow, which modules exist, how are concurrent edits handled, which crates and why |
