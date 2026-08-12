@@ -58,6 +58,16 @@ pub enum Action {
     Ignore,
 }
 
+/// Whether ctrl is down **as a chord**.
+///
+/// Windows reports AltGr as ctrl+alt, and AltGr is how `#`, `@` and `$` are
+/// typed on the Turkish, German and Polish layouts — three characters this
+/// program's own syntax is built out of. Both modifiers at once is a keyboard
+/// layout, not a chord, and the character it produced is text.
+fn chord(modifiers: KeyModifiers) -> bool {
+    modifiers.contains(KeyModifiers::CONTROL) && !modifiers.contains(KeyModifiers::ALT)
+}
+
 /// The list-mode keys from docs/tui.md#keys. Note what is deliberately absent:
 /// `esc` is `Ignore`, never `Quit` — someone pressing it out of habit must not
 /// lose the pane.
@@ -68,7 +78,7 @@ pub fn action(key: KeyEvent) -> Action {
     if key.kind == KeyEventKind::Release {
         return Action::Ignore;
     }
-    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let ctrl = chord(key.modifiers);
 
     match key.code {
         KeyCode::Char('c') if ctrl => Action::Quit,
@@ -597,7 +607,10 @@ pub fn typing(key: KeyEvent) -> Typed {
     if key.kind == KeyEventKind::Release {
         return Typed::Ignore;
     }
-    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let ctrl = chord(key.modifiers);
+    // The mirror of `chord`: alt on its own is `alt-f`, alt with ctrl is AltGr.
+    let alt =
+        key.modifiers.contains(KeyModifiers::ALT) && !key.modifiers.contains(KeyModifiers::CONTROL);
 
     match key.code {
         KeyCode::Char('c') if ctrl => Typed::Cancel,
@@ -619,8 +632,8 @@ pub fn typing(key: KeyEvent) -> Typed {
         // Every other modified key is left alone: `ctrl-v`, `alt-f` and the rest
         // mean things in a terminal that a one-line field has no business
         // claiming, and a stray control character in a task title is a file the
-        // user cannot read back.
-        KeyCode::Char(c) if !ctrl && !key.modifiers.contains(KeyModifiers::ALT) => Typed::Char(c),
+        // user cannot read back. AltGr is not one of them — see `chord`.
+        KeyCode::Char(c) if !ctrl && !alt => Typed::Char(c),
         _ => Typed::Ignore,
     }
 }
@@ -4099,12 +4112,34 @@ mod tests {
         for m in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
             assert_eq!(typing(KeyEvent::new(KeyCode::Char('d'), m)), Typed::Ignore);
         }
+        // But ctrl *and* alt together is AltGr, not a chord — see below.
         let mut held = press(KeyCode::Char('a'));
         held.kind = KeyEventKind::Release;
         assert_eq!(
             typing(held),
             Typed::Ignore,
             "a key being let go is not a press"
+        );
+    }
+
+    /// Windows reports AltGr as ctrl+alt. On the Turkish, German and Polish
+    /// layouts `#`, `@` and `$` are AltGr keys, so reading that as a chord
+    /// leaves the three characters the syntax is *made of* untypeable — and
+    /// AltGr-c, which is a letter on several layouts, quitting the program.
+    #[test]
+    fn altgr_is_a_layout_and_not_a_chord() {
+        let altgr = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        for c in ['#', '@', '$', 'c'] {
+            assert_eq!(
+                typing(KeyEvent::new(KeyCode::Char(c), altgr)),
+                Typed::Char(c),
+                "{c}"
+            );
+        }
+        assert_eq!(
+            action(KeyEvent::new(KeyCode::Char('c'), altgr)),
+            Action::Ignore,
+            "altgr-c is not ctrl-c"
         );
     }
 
