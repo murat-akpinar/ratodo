@@ -18,7 +18,6 @@ categories = ["command-line-utilities"]
 exclude = [
     ".vscode/",
     "assets/",
-    "bugfix.md",
     "CLAUDE.md",
     "cliff.toml",
     "flake.nix",
