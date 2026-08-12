@@ -23,6 +23,11 @@ Two rows for one thought, and a row of radios the form had invented — today / 
 - *(ui)* The question field holds the sentence and nothing else ([893a4cc](https://github.com/murat-akpinar/ratodo/commit/893a4cc308df15c7abe4b3c924ed3e5008fe1720))
 It was the whole line — call the plumber @fri 14:00 !med #home — because the line is the model and that was the most direct way to say so. On the screen it read as the syntax the boxes underneath were already showing, twice.
 
+### 🐛 Bug Fixes
+
+- *(ui)* The form names shift-tab, and its button stops at the frame ([2832abf](https://github.com/murat-akpinar/ratodo/commit/2832abfce5e06a0851a91aab37aa772750b6dfd0))
+Two things found by opening the form and looking at it.
+
 ### 📚 Documentation
 
 - Drop the windows findings, now that they are fixed or tracked ([7255048](https://github.com/murat-akpinar/ratodo/commit/725504868427b3da618e0f20eeb3bbd0f53ed952))
