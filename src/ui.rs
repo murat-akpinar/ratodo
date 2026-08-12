@@ -641,12 +641,17 @@ fn set_parts(text: &str, today: NaiveDate, wanted: &[Part], to: Option<&str>) ->
             }
             // The word goes, and one space with it: the following one where
             // there is one, the preceding one otherwise.
+            //
+            // The preceding one is taken off **what has been built** rather
+            // than off `keep`, which can be empty: two adjacent words removed
+            // together — a date and its time — leave the second with nothing in
+            // front of it and the space before the first still standing.
             None => {
+                out.push_str(keep);
                 let trailing = text[range.end..].starts_with(' ');
-                out.push_str(match (trailing, keep.ends_with(' ')) {
-                    (false, true) => &keep[..keep.len() - 1],
-                    _ => keep,
-                });
+                if !trailing && out.ends_with(' ') {
+                    out.pop();
+                }
                 at = range.end + usize::from(trailing);
             }
         }
@@ -741,7 +746,9 @@ impl Field {
     fn label(self) -> &'static str {
         match self {
             Field::Title => "",
-            Field::Due => "Due",
+            // The two share a row wherever there is width for one, and a date
+            // and its time are one thought: `Date / Time  [ … ] [ … ]`.
+            Field::Due => "Date / Time",
             Field::Time => "Time",
             Field::Priority => "Priority",
             Field::Tags => "Tags",
@@ -752,8 +759,14 @@ impl Field {
     }
 
     /// Whether it is typed into rather than chosen from.
+    ///
+    /// The date is typed rather than picked off a row of `today / tomorrow /
+    /// thu`, which is a smaller screen and a bigger vocabulary: the field takes
+    /// anything `capture` resolves, so the `@thu` and `3d` shorthand the box
+    /// already teaches works here too and the form invents no fixed set of
+    /// days. `↑` `↓` still open the three-part picker on it.
     fn typed(self) -> bool {
-        matches!(self, Field::Time | Field::Tags)
+        matches!(self, Field::Due | Field::Time | Field::Tags)
     }
 }
 
@@ -784,6 +797,11 @@ pub struct Form {
     /// cannot hold one. Leaving the field throws it away, because by then the
     /// line has it.
     typing: String,
+    /// The time, held aside while the **date** is being typed. A time only
+    /// parses directly after a date, so rewriting the date means taking both out
+    /// of `base` and putting the time back after whatever the date becomes —
+    /// otherwise it is left stranded as a word in the title.
+    spare: String,
     /// The line **without** whatever the focused sub-field owns, taken when the
     /// focus lands on it. Every keystroke rebuilds from this rather than editing
     /// what the last one left behind.
@@ -810,6 +828,7 @@ impl Form {
             today,
             lists: lists.to_vec(),
             typing: String::new(),
+            spare: String::new(),
             base: String::new(),
         }
     }
@@ -830,6 +849,7 @@ impl Form {
             today,
             lists: lists.to_vec(),
             typing: String::new(),
+            spare: String::new(),
             base: String::new(),
         }
     }
@@ -863,10 +883,28 @@ impl Form {
         let at = order.iter().position(|f| *f == self.focus).unwrap_or(0) as isize;
         let next = (at + by).rem_euclid(order.len() as isize) as usize;
         self.focus = order[next];
-        // Seeded on arrival and thrown away on leaving: the line is where it
-        // lives the rest of the time.
+        self.seed();
+    }
+
+    /// Seeds the focused sub-field from the line, and takes out of `base` what
+    /// that field owns. On arrival, and again whenever something else has
+    /// written into the line underneath it.
+    fn seed(&mut self) {
         let (text, today) = (self.input.text.clone(), self.today);
+        self.spare = String::new();
         let (typing, owns) = match self.focus {
+            Field::Due => {
+                // Both come out, and the time is held: it only parses directly
+                // after a date, so it has to be put back after whatever the
+                // date becomes rather than left where it was.
+                self.spare = part_of(&text, today, Part::Time).unwrap_or_default();
+                (
+                    part_of(&text, today, Part::Date)
+                        .map(|word| word.trim_start_matches('@').to_string())
+                        .unwrap_or_default(),
+                    &[Part::Date, Part::Time][..],
+                )
+            }
             Field::Time => (
                 part_of(&text, today, Part::Time).unwrap_or_default(),
                 &[Part::Time][..],
@@ -894,30 +932,6 @@ impl Form {
         let text = &self.input.text;
         let today = self.today;
         match field {
-            Field::Due => {
-                let has = part_of(text, today, Part::Date);
-                let named = |d: NaiveDate| format!("@{d}");
-                let tomorrow = today.succ_opt().unwrap_or(today);
-                let mut out = vec![
-                    ("none".to_string(), has.is_none()),
-                    ("today".to_string(), has.as_deref() == Some(&named(today))),
-                    (
-                        "tomorrow".to_string(),
-                        has.as_deref() == Some(&named(tomorrow)),
-                    ),
-                ];
-                // A date that is neither shows itself rather than nothing: the
-                // form has to be able to say what the line already holds.
-                if let Some(word) = has.filter(|w| *w != named(today) && *w != named(tomorrow)) {
-                    out.push((word.trim_start_matches('@').to_string(), true));
-                }
-                // `pick` and not `pick…`: the ellipsis would be the one
-                // character on this screen with no ASCII form, and plumbing the
-                // glyph set into a model that is otherwise only the line is a
-                // lot of wire for one dot.
-                out.push(("pick".to_string(), false));
-                out
-            }
             Field::Priority => {
                 let has = part_of(text, today, Part::Priority);
                 let mut out = vec![("none".to_string(), has.is_none())];
@@ -958,24 +972,6 @@ impl Form {
             return;
         };
         self.input.text = match self.focus {
-            Field::Due => match label.as_str() {
-                "none" => set_parts(&text, today, &[Part::Date, Part::Time], None),
-                "today" => set_parts(&text, today, &[Part::Date], Some(&format!("@{today}"))),
-                "tomorrow" => set_parts(
-                    &text,
-                    today,
-                    &[Part::Date],
-                    Some(&format!("@{}", today.succ_opt().unwrap_or(today))),
-                ),
-                // The date field the box already has, opened on the date the
-                // line already means. `tab` is what opens it there; here the
-                // radio is, which is the same key doing one job per screen.
-                "pick" => {
-                    self.input.toggle_field(today);
-                    text
-                }
-                own => set_parts(&text, today, &[Part::Date], Some(&format!("@{own}"))),
-            },
             Field::Priority => match label.as_str() {
                 "none" => set_parts(&text, today, &[Part::Priority], None),
                 name => set_parts(&text, today, &[Part::Priority], Some(&format!("!{name}"))),
@@ -989,11 +985,6 @@ impl Form {
             _ => text,
         };
         self.input.at = self.input.text.len();
-        // The date row can appear or vanish under the cursor, so the focus is
-        // re-seated on a row that still exists.
-        if !self.order().contains(&self.focus) {
-            self.focus = Field::Due;
-        }
     }
 
     /// `←` and `→` on a chosen row: one step, applied at once. No `⏎` to
@@ -1014,6 +1005,18 @@ impl Form {
     fn sync(&mut self) {
         let (base, today, typing) = (self.base.clone(), self.today, self.typing.clone());
         self.input.text = match self.focus {
+            // An emptied date takes the time with it: a time with no date is
+            // not a field the file can keep.
+            Field::Due if typing.trim().is_empty() => base,
+            Field::Due => {
+                let dated = set_parts(
+                    &base,
+                    today,
+                    &[Part::Date],
+                    Some(&format!("@{}", typing.trim())),
+                );
+                after_date(&dated, today, &self.spare.clone())
+            }
             Field::Time => after_date(&base, today, typing.trim()),
             Field::Tags => set_tags(&base, today, &typing),
             _ => base,
@@ -1035,6 +1038,9 @@ impl Form {
                 Typed::Char(c) => self.input.insert(c),
                 Typed::Field | Typed::Save => {
                     self.input.apply_field();
+                    // The picker wrote a date into the line, so what the `Date`
+                    // field is holding is a keystroke out of date.
+                    self.seed();
                 }
                 Typed::Cancel => {
                     self.input.close_field();
@@ -1056,7 +1062,6 @@ impl Form {
                     || key.modifiers.contains(KeyModifiers::SHIFT);
                 self.step_focus(if back { -1 } else { 1 });
             }
-            (Typed::Step(by), _) => self.step_focus(-by as isize),
             (Typed::Char(c), Field::Title) => self.input.insert(c),
             (Typed::Back, Field::Title) => self.input.back(),
             (Typed::Delete, Field::Title) => self.input.delete(),
@@ -1072,6 +1077,16 @@ impl Form {
                 self.typing.pop();
                 self.sync();
             }
+            // The three-part picker, on the one field it belongs to. `tab` is
+            // next-field in here, so the arrows are the door: the picker opens
+            // on the date the line already means and the first press steps it.
+            (Typed::Step(by), Field::Due) => {
+                self.input.toggle_field(self.today);
+                self.input.step(by);
+            }
+            // Typed fields take the arrows as nothing rather than as a nudge:
+            // there is no set of options behind them to step through.
+            (_, field) if field.typed() => {}
             (Typed::Left, _) => self.nudge(-1),
             (Typed::Right, _) => self.nudge(1),
             _ => {}
@@ -3433,13 +3448,53 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
             false => Span::raw(" "),
         }
     };
+    // Twelve, because `Date / Time` is eleven. Every label lines up under it.
+    const LABEL: usize = 12;
+    // The date and its time share a row wherever there is room for both boxes,
+    // because a date and its time are one thought. Below that they take a row
+    // each, which is the same fallback everything else on this screen has.
+    // A ten-column date box and a five-column time box, five columns of
+    // brackets and caret each, and two between them.
+    let paired = inner >= LABEL + 27;
+    let holds = |field: Field| match (paired, field) {
+        (true, Field::Due) => form.focus == Field::Due || form.focus == Field::Time,
+        _ => form.focus == field,
+    };
     let row = |field: Field, body: Vec<Span<'static>>| -> Line<'static> {
-        let mut spans = vec![mark(field), Span::raw(" ")];
+        let mut spans = vec![
+            match holds(field) {
+                true => Span::styled(render.glyphs.cursor().trim_end().to_string(), accent),
+                false => Span::raw(" "),
+            },
+            Span::raw(" "),
+        ];
         if !field.label().is_empty() {
-            spans.push(Span::styled(format!("{:<10}", field.label()), dim));
+            let name = match (paired, field) {
+                (false, Field::Due) => "Date",
+                _ => field.label(),
+            };
+            spans.push(Span::styled(format!("{name:<LABEL$}"), dim));
         }
         spans.extend(body);
         Line::from(spans)
+    };
+
+    // A typed field carries the caret the box carries, so a row holding two of
+    // them says which one the keys are going into. A shape, not a colour: `▌`
+    // in the gutter marks the row and this marks the control.
+    let typed_box = |field: Field, text: &str, room: usize| -> Span<'static> {
+        let caret = match form.focus == field {
+            true => render.glyphs.field(),
+            false => " ",
+        };
+        let shown = shorten(text, room, render.glyphs);
+        Span::styled(
+            format!(
+                "[ {shown}{caret}{} ]",
+                " ".repeat(room.saturating_sub(columns(&shown)))
+            ),
+            plain,
+        )
     };
 
     // The text box is drawn by hand rather than with a `Block`, so the focus
@@ -3490,25 +3545,27 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
     ];
 
     let fields_at = lines.len();
+    // What a field is holding: what is being typed into it while it has the
+    // keyboard, and what the line says the rest of the time.
+    let held = |field: Field| -> String {
+        if form.focus == field {
+            return form.typed_text();
+        }
+        match field {
+            Field::Due => part_of(&form.input.text, render.today, Part::Date)
+                .map(|word| word.trim_start_matches('@').to_string())
+                .unwrap_or_default(),
+            Field::Time => part_of(&form.input.text, render.today, Part::Time).unwrap_or_default(),
+            _ => tags_of(&form.input.text, render.today),
+        }
+    };
     for field in form.order() {
         let body: Vec<Span<'static>> = match field {
             Field::Title | Field::Cancel | Field::Create => continue,
-            Field::Time | Field::Tags => {
-                let shown = match (field, form.focus == field) {
-                    (_, true) => form.typed_text(),
-                    (Field::Time, false) => {
-                        part_of(&form.input.text, render.today, Part::Time).unwrap_or_default()
-                    }
-                    _ => tags_of(&form.input.text, render.today),
-                };
-                let room = inner.saturating_sub(14); // label, brackets, marker
-                vec![Span::styled(
-                    format!("[ {:<room$} ]", shorten(&shown, room, render.glyphs)),
-                    plain,
-                )]
-            }
-            // `Due · pick…` opens the three-part date field the box already
-            // has, and it takes the row over while it is up: the radios and the
+            // Drawn on the date's row, where there is room for both.
+            Field::Time if paired => continue,
+            // `↑` `↓` on the date open the three-part picker the box already
+            // has, and it takes the row over while it is up: the field and the
             // picker are two answers to one question and only one of them can
             // be the live one — docs/tui.md#the-date-field--tab.
             Field::Due if form.input.field.is_some() => {
@@ -3529,10 +3586,19 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
                 ));
                 spans
             }
+            Field::Due if paired => vec![
+                typed_box(Field::Due, &held(Field::Due), 10),
+                Span::raw("  "),
+                typed_box(Field::Time, &held(Field::Time), 5),
+            ],
+            Field::Due | Field::Time | Field::Tags => {
+                let room = inner.saturating_sub(LABEL + 7);
+                vec![typed_box(field, &held(field), room)]
+            }
             _ => vec![Span::styled(
                 shorten(
                     &radios(&form.choices_for(field), render.glyphs),
-                    inner.saturating_sub(10),
+                    inner.saturating_sub(LABEL),
                     render.glyphs,
                 ),
                 plain,
@@ -5044,13 +5110,69 @@ mod tests {
                 .collect()
         };
 
-        assert_eq!(on(Field::Due), ["2026-08-14"]);
         assert_eq!(on(Field::Priority), ["high"]);
-        assert_eq!(tags_of(&form.input.text, today()), "#home #work");
+        assert_eq!(
+            part_of(&form.input.text, today(), Part::Date).as_deref(),
+            Some("@2026-08-14")
+        );
         assert_eq!(
             part_of(&form.input.text, today(), Part::Time).as_deref(),
             Some("09:30")
         );
+        assert_eq!(tags_of(&form.input.text, today()), "#home #work");
+    }
+
+    /// The date is **typed**, not picked off a row of `today / tomorrow / thu`,
+    /// so the shorthand the box already teaches works here — and the preview
+    /// resolves it, because it is the same tokenizer reading the same string.
+    #[test]
+    fn the_date_field_takes_the_shorthand_and_the_preview_resolves_it() {
+        let mut form = form("standup @2026-08-12 09:30", &[]);
+        tab(&mut form, 1);
+        assert_eq!(form.focus, Field::Due);
+        assert_eq!(form.typed_text(), "2026-08-12");
+
+        for _ in 0..10 {
+            form.press(press(KeyCode::Backspace));
+        }
+        for c in "thu".chars() {
+            form.press(press(KeyCode::Char(c)));
+        }
+        // The time is put back **after** the new date, not left stranded where
+        // the old one was: a time only parses directly after a date.
+        assert_eq!(form.text(), "standup @thu 09:30");
+        assert_eq!(
+            crate::capture::capture(form.text(), today()).line(),
+            "- [ ] standup @2026-08-13 09:30"
+        );
+
+        // Emptying it takes the time with it — a time with no date is not a
+        // field the file can keep.
+        for _ in 0..3 {
+            form.press(press(KeyCode::Backspace));
+        }
+        assert_eq!(form.text(), "standup");
+    }
+
+    /// `↑` `↓` on the date open the three-part picker the box already has, and
+    /// it takes the row over while it is up. `tab` is next-field in here, so the
+    /// arrows are the door.
+    #[test]
+    fn the_arrows_open_the_date_picker_on_the_date_field() {
+        let mut form = form("x @2026-08-12", &[]);
+        tab(&mut form, 1);
+        assert!(form.input.field.is_none());
+
+        form.press(press(KeyCode::Up));
+        assert!(form.input.field.is_some(), "the picker did not open");
+        form.press(press(KeyCode::Up));
+        form.press(press(KeyCode::Enter));
+
+        assert!(form.input.field.is_none(), "⏎ did not put it away");
+        assert_eq!(form.text(), "x @2026-08-14");
+        // And what the field is holding was re-seeded from the line the picker
+        // just wrote, rather than being a keystroke out of date.
+        assert_eq!(form.typed_text(), "2026-08-14");
     }
 
     /// A radio writes into the line and nothing else. What is around the token
@@ -5095,6 +5217,26 @@ mod tests {
         assert_eq!(
             set_parts(line, day, &[Part::Date], None),
             "rotate #ops the keys !high"
+        );
+        // Two adjacent words removed together — a date and its time — leave no
+        // space standing between what was in front of them and what is after.
+        assert_eq!(
+            set_parts(
+                "standup @2026-08-14 09:30",
+                day,
+                &[Part::Date, Part::Time],
+                None
+            ),
+            "standup"
+        );
+        assert_eq!(
+            set_parts(
+                "a @2026-08-14 09:30 b",
+                day,
+                &[Part::Date, Part::Time],
+                None
+            ),
+            "a b"
         );
         // Added where there was none — the end, which is the one position this
         // tool ever chooses.
@@ -5281,10 +5423,9 @@ mod tests {
                 "│ │▌ │ call the accountant @2026-08-12 #home      │  │ │",
                 "│ │  ╰────────────────────────────────────────────╯  │ │",
                 "│ │                                                  │ │",
-                "│ │  Due       ○ none  ○ today  ○ tomorrow  ◉ 2026…  │ │",
-                "│ │  Time      [                                  ]  │ │",
-                "│ │  Priority  ◉ none  ○ high  ○ med  ○ low          │ │",
-                "│ │  Tags      [ #home                            ]  │ │",
+                "│ │  Date / Time [ 2026-08-12  ]  [        ]         │ │",
+                "│ │  Priority    ◉ none  ○ high  ○ med  ○ low        │ │",
+                "│ │  Tags        [ #home                        ]    │ │",
                 "│ │                                                  │ │",
                 "│ │  ──────────────────────────────────────────────  │ │",
                 "│ │  PREVIEW                                         │ │",
@@ -5292,6 +5433,7 @@ mod tests {
                 "│ │                                                  │ │",
                 "│ │  [ esc cancel ]               [ ⏎ create task ]  │ │",
                 "│ ╰ tab · next field ────────────────────────────────╯ │",
+                "│                                                      │",
                 "╰──────────────────────────────────────────────────────╯",
                 " ⏎ create   esc cancel                                  ",
             ]

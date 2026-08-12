@@ -613,11 +613,10 @@ bought. See [decisions.md](decisions.md#settled).
 │▌ │ call the accountant @2026-08-12     │    │
 │  ╰────────────────────────────────────╯    │
 │                                            │
-│  Due       ○ none  ◉ today  ○ tomorrow  ○ pick │
-│  Time      [ 09:30                    ]    │
-│  Priority  ◉ none  ○ high  ○ med  ○ low    │
-│  Tags      [ #home #work              ]    │
-│  List      ◉ todo.md  ○ work.md            │
+│  Date / Time [ 2026-08-12▏]  [ 09:30  ]    │
+│  Priority    ◉ none  ○ high  ○ med  ○ low  │
+│  Tags        [ #home #work            ]    │
+│  List        ◉ todo.md  ○ work.md          │
 │                                            │
 │  ──────────────────────────────────────    │
 │  PREVIEW                                   │
@@ -646,17 +645,32 @@ second parser ([decisions.md](decisions.md#reversed)).
   as they always did and light the matching radio as you type. The day there are
   two tokenizers is the day the form and the box disagree about what gets
   written.
+- **The date and its time share a row**, because a date and its time are one
+  thought. Below about fifty columns there is not room for both boxes and they
+  take a row each, which is the same fallback everything else on this screen
+  has.
+- **The date is typed, not picked off a row of `today / tomorrow / thu`.** A
+  smaller screen and a bigger vocabulary: the field takes anything `capture`
+  resolves, so `thu`, `3d` and `2026-08-14` all work and the form invents no
+  fixed set of days. The `PREVIEW` is what says which day `thu` came out as,
+  which is the same live parse the one-line box has always had. Emptying it
+  takes the time with it — a time with no date is not a field the file can keep.
+- **`↑` `↓` on the date open the three-part picker** the box already has, and it
+  takes the row over while it is up. `tab` is next-field in here, so the arrows
+  are its door.
 - **Radios are `◉` against `○`**, and `(o)` against `( )` in ASCII: a difference
   in *shape*, so the choice survives `NO_COLOR=1` and the fallback. `←` and `→`
   move one, and it applies at once — the preview is the confirmation and it is
   already on the screen.
-- **`▌` sits beside the control that has the keyboard**, not beside its label.
-  Same marker and same colour as the selected row on the list.
+- **`▌` sits beside the row that has the keyboard, and the caret `▏` beside the
+  control.** Two marks because one row can hold two controls; both are shapes,
+  so both survive `NO_COLOR`. Same marker and same colour as the selected row on
+  the list.
 - **The buttons carry their key.** `[ ⏎ create task ]` is both the button and the
   keybinding, so it is honest on a keyboard and still looks like a button.
-- **`tab` is *next field* here**, and the date picker is reached through
-  `Due · pick` instead — one key, one job per screen. Inside the box `tab` is
-  still the picker, because there are no fields there to walk.
+- **`tab` is *next field* here** — one key, one job per screen. Inside the
+  one-line box `tab` is still the date picker, because there are no fields there
+  to walk.
 - **`Time` is not in the tab order without a date.** The format cannot hold a
   time without one, so a row that accepted one would be a field the file cannot
   keep.

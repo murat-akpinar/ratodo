@@ -356,6 +356,16 @@ between a form that happens to show a line and a form whose *conclusion* is a
 line. A Todoist form saves into a database and can tell you nothing; this one
 saves into your file, so the file is the last word on the screen.
 
+**The date and its time share a row, and the date is typed rather than picked**
+*(amended 2026-08-12, after looking at it)*. The first drawing gave `Due` a row
+of radios — `○ none ◉ today ○ tomorrow ○ pick` — and `Time` a row of its own.
+Two rows for one thought, and a fixed set of days the form had invented. As one
+row, `Date / Time  [ 2026-08-12▏]  [ 09:30 ]`, it is a row shorter and the field
+takes anything `capture` resolves: `thu`, `3d`, `2026-08-14`. The `PREVIEW` is
+what says which day `thu` came out as, which is the same live parse the one-line
+box has always had, and `↑` `↓` still open the three-part picker on it. Below
+about fifty columns the two boxes do not fit side by side and take a row each.
+
 **Six fields and no seventh.** Title, date, time, tags, priority and which list —
 exactly the six a one-line format carries. No Description and no Project, because
 there is nowhere in a line to put them, and no Section picker, because that means
