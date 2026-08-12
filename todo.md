@@ -99,6 +99,16 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   row's columns are furniture, and a **left spine only** marks the
                   same extent for one. Worth drawing if 44 is the width actually
                   run
+            - [ ] **The ASCII forms, decided before anything is drawn.** Three of
+                  the four new glyphs have none: `╭╮╰╯` (rounded corners),
+                  `▁▂▃▅▆▇█` (the sparkline) and the `┬`/`┴` junctions. `src/ui.rs`
+                  asserts the **whole buffer** `is_ascii()` in five places, so
+                  this is not a polish item — it is the first thing that goes red.
+                  The frame already falls back to `+ - |` and the junctions can be
+                  `+`; the sparkline is the open one, and the honest answer is
+                  that a seven-cell bar chart made of ASCII is not a bar chart —
+                  **it goes, like the columns go below 80.** Decide it here rather
+                  than at the assertion
             - [ ] Buffer tests at 80 / 60 / 44 / 34, and `LC_ALL=C` still putting
                   nothing non-ASCII on the screen — the box-drawing set is new
                   furniture and the ASCII fallback has escaped through new
@@ -160,9 +170,31 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   `31 done` and in nothing with a day attached. If that number is
                   large the screen says so rather than quietly under-reporting the
                   streak
+            - [ ] **It does not get a file of its own.**
+                  [docs/architecture.md](docs/architecture.md#module-layout) says
+                  eleven files, flat, and means it. `stats` has `agenda`'s exact
+                  signature and `agenda`'s exact purity, so it goes in
+                  `agenda.rs` beside it and the module list does not move. A
+                  twelfth file would be the first `mod.rs` pyramid brick
+            - [ ] **`s` needs a slot in two places that are already full.** The
+                  `?` overlay is exactly ten keys plus two of border, which is
+                  what fits a fourteen-row pane — the last line of a help screen
+                  must never be the one that falls off, and it is currently `q
+                  quit`. And the hint bar has a fixed priority order (`move ·
+                  done · add · edit · cancel · later · copy`); `s` goes into it
+                  somewhere, and that somewhere is a decision about what gets
+                  pushed off a sixty-column pane
+            - [ ] **What the screen does in a short pane.** Drawn at 80 and at 44
+                  in [docs/redesign.md](docs/redesign.md#all-of-it-at-40-columns)
+                  — both about twenty rows tall, and **neither says what happens
+                  in ten**. Every other screen in this product has a documented
+                  answer to that; this one needs the same, in the same drop order
+                  (the two-column block first, then the daily labels, then the
+                  histogram) rather than a scrollbar
             - [ ] A [docs/decisions.md](docs/decisions.md) entry — a new screen,
-                  nothing reversed — and unit tests over `stats` including the
-                  empty list and the unstamped case
+                  nothing reversed — a [docs/tui.md](docs/tui.md) section, since
+                  that document owns every screen and the keymap, and unit tests
+                  over `stats` including the empty list and the unstamped case
 
       - [ ] **4 · `⏎` opens the form too — conditional, and last.** The naive
             version of this is **forbidden**: a form that parses six fields and
@@ -192,6 +224,42 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   Nothing else in the redesign depends on this step. A beautiful
                   TUI that silently reformats the user's file has spent the only
                   thing this product actually sells
+
+      - [ ] **The docs owe more than the one reversal, and the extra ones were
+            missed on the first read.** [docs/redesign.md](docs/redesign.md)
+            names `design.md:108` — one layout, no split panes — and stops there.
+            [docs/design.md](docs/design.md#rules) has **three more rules the
+            redesign walks into**, and each is either amended in writing or the
+            drawing changes:
+            - [ ] **"Generous whitespace. The blank lines between groups are half
+                  of the design."** The group box *eats* that blank line — it
+                  becomes the bottom edge. The row arithmetic is identical, which
+                  is the redesign's argument, but "identical arithmetic" is not
+                  the same claim as "the whitespace was half the design and we
+                  are spending it on a border". This is the single largest thing
+                  to look at on a real screen before step 1 is called done
+            - [ ] **"A rule between two columns, and nowhere else."** The box's
+                  top and bottom edges are rules that are not between two
+                  columns. The rule as written forbids exactly what the grid
+                  correction does, and it was written to stop three characters of
+                  noise per row — so the amendment has to say why an edge is not
+                  that
+            - [ ] **"One layout, no split panes. No sidebar, no modal."** The
+                  form in step 2 is a centred overlay, which is a modal, and
+                  [docs/tui.md](docs/tui.md) currently calls the help overlay
+                  *the one overlay in the product*. Two documents will disagree
+                  the moment the form is drawn
+            - [ ] **No new theme role**, and this one is a constraint rather than
+                  a reversal: the band, the boxes and the bars are `border` and
+                  `accent`, the bars in `done`. If any of them wants a colour of
+                  its own then [docs/theming.md](docs/theming.md) grows a key and
+                  every built-in theme grows a line, which is a much bigger
+                  change than it looks from the screen
+      - [ ] **`assets/demo.gif` shows the old screen**, and it is the first thing
+            on the README and on crates.io. `scripts/demo.py` re-records it but
+            needs kitty, menyoki, ffmpeg and X11, so it is the maintainer's
+            machine and not a CI step. Last thing before the tag, once the screen
+            has stopped moving
 
       **Not in this, and not "later" either:** split panes, a Description field
       and a Section/Project picker. Each is a different promise about whose file
