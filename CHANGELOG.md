@@ -1,4 +1,4 @@
-## [unreleased]
+## [0.8.0] - 2026-08-12
 
 ### 🚀 Features
 
@@ -61,6 +61,7 @@ directories reads none of those variables off Linux, so the six that depend on o
 ### ⚙️ Miscellaneous Tasks
 
 - Point the PKGBUILD at v0.7.2 ([d30eafe](https://github.com/murat-akpinar/ratodo/commit/d30eafe51cc48d495abb1b5e11f07db71343ff1d))
+- *(release)* V0.8.0 ([afe1ecd](https://github.com/murat-akpinar/ratodo/commit/afe1ecdb17d81753b9913d4ed959d3ed0fb601db))
 ## [0.7.2] - 2026-08-12
 
 ### 🐛 Bug Fixes
