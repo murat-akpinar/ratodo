@@ -22,6 +22,8 @@ The last of the four, and smaller than it was written up as — the splice never
 Two rows for one thought, and a row of radios the form had invented — today / tomorrow / thu is a fixed set of days that is somebody's idea of a week.
 - *(ui)* The question field holds the sentence and nothing else ([893a4cc](https://github.com/murat-akpinar/ratodo/commit/893a4cc308df15c7abe4b3c924ed3e5008fe1720))
 It was the whole line — call the plumber @fri 14:00 !med #home — because the line is the model and that was the most direct way to say so. On the screen it read as the syntax the boxes underneath were already showing, twice.
+- *(ui)* Every block on the stats screen is a box, and the sentence gives its words up ([1a941ff](https://github.com/murat-akpinar/ratodo/commit/1a941ff7a1e9bab0f977fb0b5af16a6245abd6b4))
+The stats screen read as loose — five paragraphs with nothing round them in a product where everything else is a container, and a heading with nothing holding what is under it is not a category. It is five boxes now: TOTALS, DONE THIS WEEK, PRIORITY, SECTIONS and PACE, the same box the agenda draws a group in and touching the way its groups do. PRIORITY and SECTIONS were two ragged half-width columns under two headings and are a box each; stacking costs rows, and rows were what this screen had spare. The two summary blocks got the names they never had. Reversed in docs/decisions.md, with the drop order rewritten and blocks going whole so a box is never cut open at the bottom of a pane.
 
 ### 🐛 Bug Fixes
 
@@ -47,6 +49,8 @@ docs/README.md indexes the decision record; nothing indexed the source. Eleven f
 The order CLAUDE.md asks for: the reversal goes in first, the way $work and the date field did.
 - *(docs)* The redesign is built, and the tag is not cut ([fbcfa8e](https://github.com/murat-akpinar/ratodo/commit/fbcfa8e0b7b233525e693e096516acc34f96307c))
 All four steps are in. redesign.md's status says so, and names the two things that came out different from the write-up: COLUMNS_AT moved 76 to 71 because the group box takes five columns off every row, and Screen 4's splice never reached model.rs because the form edits the line in place.
+- *(docs)* The readme shows the screen it ships, and a new demo ([656ca5f](https://github.com/murat-akpinar/ratodo/commit/656ca5f9bea2a500e4c79ae33712967094913768))
+The GIF was the old screen — no band, no boxes, no footer, and a one-line box where a opens a form — and it is the first thing on the README and on crates.io. Re-recorded off the current build, with the form and the stats screen in the run.
 
 ### 🧪 Testing
 
