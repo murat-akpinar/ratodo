@@ -17,9 +17,16 @@ that is actually open is the short list directly under this line.
 
 ## What is left
 
-**The screen is built.** What is left of it is one thing that needs a real
-machine — `assets/demo.gif` — and the maintainer's own look before the tag. The
-other two open items are packaging and block nothing.
+**The screen is built and the demo is re-recorded.** The maintainer looked at it
+on 2026-08-12 and four things came out of that look, all shipped: the form's
+border names `shift-tab`, its create button stops at the frame in a 40-column
+pane, no key edits the date on its way to showing it, and the **stats screen is
+five boxes rather than five paragraphs** — it read as uncontained, and the
+reversal is in [docs/decisions.md](docs/decisions.md#reversed). One more went
+with them: the question field now gives its words up to their own boxes, which
+`docs/tui.md` had promised and the code did not do.
+What is left before the tag is the maintainer's look at *this* build. The other
+two open items are packaging and block nothing.
 
 The paragraph below is how the work was ordered while it was being done, and is
 kept because the reasoning in it is what the ticks are against. Order inside the redesign is by dependency — every step after
@@ -428,11 +435,18 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
             wearing two names. The length is in the tests, which live with their
             code by Rust convention: `ui.rs` is about 3,400 lines of code and
             4,600 of tests. `architecture.md`'s file list does not move
-      - [ ] **`assets/demo.gif` shows the old screen**, and it is the first thing
-            on the README and on crates.io. `scripts/demo.py` re-records it but
-            needs kitty, menyoki, ffmpeg and X11, so it is the maintainer's
-            machine and not a CI step. Last thing before the tag, once the screen
-            has stopped moving
+      - [x] **`assets/demo.gif` showed the old screen**, and it is the first
+            thing on the README and on crates.io. **Re-recorded 2026-08-12**
+            off the current build, with the form and the stats screen in the
+            run, and `scripts/demo.py` earned three fixes doing it: the fixture
+            dates are relative so a later re-record does not draw a screen where
+            every group is OVERDUE, two `✓` stamps give the sparkline and the
+            stats screen something to read, and the window is floated and sized
+            on Hyprland before menyoki reads its geometry — left to the tiling
+            layout it was a tall tile with a third of the GIF empty below the
+            last group, which no crop reaches because the footer is pinned to
+            the bottom. Every screen drawing in the README was redrawn from the
+            running binary at the same time
 
       **Not in this, and not "later" either:** split panes, a Description field
       and a Section/Project picker. Each is a different promise about whose file
