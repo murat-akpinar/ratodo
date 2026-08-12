@@ -212,7 +212,9 @@ of thing that is invisible until it bites:
 
 - **`ratatui` runs with `default-features = false`.** The defaults bring a
   calendar widget which brings its own date crate, alongside the `chrono` already
-  here. We take `crossterm` and `layout-cache` and nothing else.
+  here. We take `crossterm` and nothing else — not even `layout-cache`, because
+  the layouts are hand-computed `Rect`s and `Layout::split` is never called, so
+  there is nothing for that cache to hold.
 - **`crossterm` has to stay on the version ratatui re-exports.** A key event from
   two different crossterm versions is two different types that read identically
   in a compiler error. `cargo tree -i crossterm` printing one entry is the check.

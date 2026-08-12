@@ -43,7 +43,7 @@ directories = "6"
 notify = "8.2.0"
 # No default features: they bring a calendar widget and its own date crate, on
 # top of the chrono we already have. See docs/architecture.md#dependencies.
-ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache"] }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 
 [profile.release]
 strip = true
