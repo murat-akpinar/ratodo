@@ -225,3 +225,74 @@ fn the_simple_fixture_matches_the_documented_example() {
         "tests/fixtures/simple.md drifted from docs/examples/todo.md"
     );
 }
+
+/// **The form opened on a task and closed again changes nothing.**
+///
+/// This is the test `⏎` owes. The form's every row is a view of one string and
+/// writes back by replacing the one span `capture::parts` claimed, so a field
+/// nobody touched is never rewritten — but "never rewritten" is a claim about
+/// bytes and this is where it is checked, on every fixture including the
+/// deliberately awkward one. docs/architecture.md#round-trip-fidelity.
+#[test]
+fn the_form_opened_and_closed_leaves_every_line_byte_for_byte() {
+    for name in FIXTURES {
+        let text = fixture(name);
+        let doc = parse(&text);
+        for task in doc.tasks() {
+            let form = ratodo::ui::Form::editing(task, a_day(), &[]);
+            assert_eq!(
+                form.text(),
+                task.body(),
+                "{name}: the form did not open on the line the file has"
+            );
+
+            // And walking every field and back is not an edit either: `tab`
+            // moves the keyboard, it does not touch the line.
+            let mut walked = ratodo::ui::Form::editing(task, a_day(), &[]);
+            for _ in 0..12 {
+                walked.press(crossterm::event::KeyEvent::new(
+                    crossterm::event::KeyCode::Tab,
+                    crossterm::event::KeyModifiers::NONE,
+                ));
+            }
+            assert_eq!(walked.text(), task.body(), "{name}: `tab` edited the line");
+        }
+    }
+}
+
+/// One field at a time, and every *other* byte survives.
+///
+/// The line is arranged the way its author arranged it — tags first, date last,
+/// two spaces where they put two — and changing the priority moves the priority.
+#[test]
+fn one_field_changed_leaves_every_other_byte_where_it_was() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let press = |form: &mut ratodo::ui::Form, code| {
+        form.press(KeyEvent::new(code, KeyModifiers::NONE));
+    };
+
+    let doc = parse("- [ ] #ops  rotate the keys !high @2026-08-10 more words\n");
+    let task = doc.tasks().next().expect("a task");
+
+    let mut form = ratodo::ui::Form::editing(task, a_day(), &[]);
+    // Title, Due, Time, Priority — the line has a date, so `Time` is offered.
+    for _ in 0..3 {
+        press(&mut form, KeyCode::Tab);
+    }
+    press(&mut form, KeyCode::Right);
+
+    assert_eq!(
+        form.text(),
+        "#ops  rotate the keys !med @2026-08-10 more words",
+        "one word changed and something else moved"
+    );
+
+    // And what the file gets is those bytes, not a rendering of them.
+    let mut edited = task.clone();
+    let typed = form.text().to_string();
+    edited.retype(&typed, ratodo::capture::capture(&typed, a_day()));
+    assert_eq!(
+        edited.line(),
+        "- [ ] #ops  rotate the keys !med @2026-08-10 more words"
+    );
+}

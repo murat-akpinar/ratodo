@@ -676,16 +676,33 @@ that moment can afford a form. `o` is there for when it cannot.
 
 ## Editing
 
-`⏎` on a selected task opens the same input, pre-filled with the task's text as
-it appears in the file — everything after the checkbox, byte for byte. Same
-preview line, same keys.
+`⏎` on a selected task opens the [form](#the-form--a), pre-filled with the task's
+text as it appears in the file — everything after the checkbox, byte for byte.
+The same form, a different title and a different button, which is all that
+separates the two screens because it is all that separates the two jobs. Under
+15 rows or 40 columns it opens the one-line box instead, exactly as `a` does.
 
-Saving replaces exactly that: the **prefix survives untouched**, so the
-indentation, the bullet the user chose (`-`, `*` or `+`) and whether the box is
-ticked all come through a retype unharmed. Nothing else in the file is written,
-which is the invariant in
-[architecture.md](architecture.md#round-trip-fidelity). Retyping a line without
-changing it writes nothing at all and does not spend the undo.
+**Saving writes back the bytes the field was left holding**, and this is worth
+being precise about, because until 2026-08-12 it did not:
+
+- The **prefix survives untouched** — the indentation, the bullet the user chose
+  (`-`, `*` or `+`), whether the box is ticked, and the gap between the checkbox
+  and the first word, however many spaces that is.
+- **So does everything the edit did not reach.** The form replaces the one span
+  `capture::parts` claimed and leaves every other byte alone, so a line arranged
+  `#ops rotate the keys !high @2026-08-10` comes back with its tags still first
+  and its date still last after a priority change. It used to come back in the
+  tool's canonical order, having been re-rendered through `capture` on the way —
+  which meant *editing one word reformatted the line*. A reader could not tell
+  that from the sentence this section used to end with, so it is spelled out
+  here rather than left as an implication of the invariant in
+  [architecture.md](architecture.md#round-trip-fidelity).
+- **An edit that changed nothing writes nothing at all** and does not spend the
+  undo. Compared against the untrimmed field, so a line with trailing spaces is
+  not "changed" by being looked at.
+- `$list` is refused rather than swallowed: it addresses a *capture*, and moving
+  a line between two files is two writes against two mtimes, which is not this
+  key.
 
 ## Deleting — no confirmation dialog
 

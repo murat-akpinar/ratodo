@@ -814,6 +814,32 @@ impl Form {
         }
     }
 
+    /// The same form, prefilled from the line **as the file has it** — byte for
+    /// byte, the way the one-line box has always opened for an edit.
+    ///
+    /// That is what makes the form safe for `⏎`. Every row is a view of that
+    /// string and every row writes back by replacing the one span the tokenizer
+    /// claimed, so a field nobody touched is never rewritten: its bytes, its
+    /// position and the whitespace either side stay the user's. What used to
+    /// reorder an edited line was the *write*, not the form —
+    /// `Task::retype` — docs/architecture.md#round-trip-fidelity.
+    pub fn editing(task: &Task, today: NaiveDate, lists: &[String]) -> Self {
+        Form {
+            input: Input::editing(task),
+            focus: Field::Title,
+            today,
+            lists: lists.to_vec(),
+            typing: String::new(),
+            base: String::new(),
+        }
+    }
+
+    /// The line, as it stands. The whole model, and the only thing a caller
+    /// ever needs off a form that is not being drawn.
+    pub fn text(&self) -> &str {
+        &self.input.text
+    }
+
     /// The tab order, with the rows that have nothing to offer left out.
     ///
     /// `Time` goes when there is no date: the format cannot hold a time without
@@ -2809,9 +2835,13 @@ pub fn draw(
         // The form names `tab` on its own bottom border, where the eye already
         // is, so this line says the two keys that end it and nothing else.
         Open::Form(form) => Line::from(Span::styled(
-            match form.input.field.is_some() {
-                true => format!(" {} date   esc back", render.glyphs.enter()),
-                false => format!(" {} create   esc cancel", render.glyphs.enter()),
+            match (
+                form.input.field.is_some(),
+                form.input.purpose.raw().is_some(),
+            ) {
+                (true, _) => format!(" {} date   esc back", render.glyphs.enter()),
+                (false, true) => format!(" {} save   esc cancel", render.glyphs.enter()),
+                (false, false) => format!(" {} create   esc cancel", render.glyphs.enter()),
             },
             Style::default().fg(render.colours.dim),
         )),
@@ -3542,7 +3572,14 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
     // The buttons stay, and they carry their key: `[ ⏎ create task ]` is both
     // the button the mockups drew and the keybinding, so it is honest on a
     // keyboard and still looks like a button.
-    let create = format!("[ {} create task ]", render.glyphs.enter());
+    // The same form, a different title and a different button — which is all
+    // that separates the two screens, because it is all that separates the two
+    // jobs: docs/redesign.md#screen-4--the-edit-form.
+    let editing = form.input.purpose.raw().is_some();
+    let create = match editing {
+        true => format!("[ {} save changes ]", render.glyphs.enter()),
+        false => format!("[ {} create task ]", render.glyphs.enter()),
+    };
     let cancel = "[ esc cancel ]";
     let gap = inner.saturating_sub(columns(cancel) + columns(&create) + 2);
     let buttons_at = lines.len();
@@ -3583,7 +3620,16 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
                 .border_set(render.glyphs.border())
                 .border_style(Style::default().fg(render.colours.accent))
                 .style(Style::default().bg(render.colours.background))
-                .title(Line::from(Span::styled(" NEW TASK ", accent.bold())).centered())
+                .title(
+                    Line::from(Span::styled(
+                        match editing {
+                            true => " EDIT TASK ",
+                            false => " NEW TASK ",
+                        },
+                        accent.bold(),
+                    ))
+                    .centered(),
+                )
                 .title_bottom(Span::styled(
                     format!(" tab {} next field ", render.glyphs.punctuation().1),
                     dim,

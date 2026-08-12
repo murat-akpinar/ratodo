@@ -280,8 +280,9 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   that document owns every screen and the keymap, and unit tests
                   over `stats` including the empty list and the unstamped case
 
-      - [ ] **4 · `⏎` opens the form too — last, and smaller than it was
-            written up as.** The redesign hedged this step on the risk that a
+      - [x] **4 · `⏎` opens the form too — last, and smaller than it was
+            written up as.** **Done 2026-08-12, and smaller again than the
+            correction expected: `splice_at` was never needed.** The redesign hedged this step on the risk that a
             form which parses six fields and re-serialises them would turn
             `- [ ] #ops rotate the keys !high @2026-08-10` into the canonical
             order having edited nothing. Three things read out of the code on
@@ -307,8 +308,19 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
               nothing at all. **This step does not add that risk, it takes it
               away** — which is the opposite of the reason it was going to be
               dropped.
-            - [ ] **Splice per field — but by range, not by predicate, and this
-                  is the trap.** `splice` takes a predicate and returns the
+            - [x] **Splice per field — but by range, not by predicate, and this
+                  is the trap.** **It moved out of `model.rs` entirely.** The
+                  form's model *is* the line: every row reads `capture::parts`
+                  and writes back by replacing the one span that tokenizer
+                  claimed, so the splice happens on the string in the field and
+                  `Task::splice`'s predicate form never has to grow an `is_time`
+                  or learn which `@` won. The trap the step named is simply not
+                  reachable — the range comes from `parts`, which knows both.
+                  What was actually wrong was one line in the **write** path:
+                  `Task::retype` re-rendered the captured fields instead of
+                  writing the bytes it was given, and that is what put an edited
+                  line back in canonical order. It now takes `typed` and keeps
+                  the gap after the checkbox as it found it `splice` takes a predicate and returns the
                   **first** word that matches it. There is no `is_time`, and
                   `16:00` in a *title* would be found before the real time and
                   spliced instead. `is_due` has the mirror of it: it insists on
@@ -320,24 +332,27 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   than three more predicates. The predicate form stays for
                   `postpone` and the done stamp, which have no line position to
                   work from
-            - [ ] A field the form did not touch never reaches either, so its
-                  bytes, its position and the whitespace either side stay the
-                  user's — which is more than `⏎` promises now
-            - [ ] **The two that `splice` cannot do as written, and they are the
-                  real work.** It finds **one** word: tags are a set, so adding
-                  one and removing another is two calls and an order to decide;
-                  and the title is a **run** of `Text` words that the user may
-                  have interleaved with tokens — `rotate #ops the keys`. Rule:
-                  replace the run when the `Text` words are contiguous, and when
-                  they are not, that one edit falls back to today's `retype`.
-                  Nothing regresses, because `retype` is what happens now
-            - [ ] **The test, which is now a regression test and not a gate.**
+            - [x] A field the form did not touch is never rewritten at all, so
+                  its bytes, its position and the whitespace either side stay
+                  the user's. **Verified on a deliberately awkward line** —
+                  `-   [ ]  #ops   rotate  the keys !high @2026-08-10   trailing
+                  words  ` — where a priority change moves one word and leaves
+                  the double spaces, the field order and the trailing spaces
+                  exactly where they were
+            - [x] **The two that `splice` cannot do as written** — tags as a set
+                  and the title as a run of `Text` words — **are both free in
+                  this shape.** Tags are cleared and written back as one run by
+                  `set_tags`; the title is edited by typing in the question
+                  field, which is the whole line with a caret in it, so its
+                  bytes are whatever the user leaves. No contiguity rule and no
+                  fallback
+            - [x] **The test, which is now a regression test and not a gate.**
                   `tests/fidelity.rs`: open the form on every fixture including
                   the gnarly ones, change nothing, save — byte for byte. Then one
                   field at a time, asserting every *other* byte survived. Plus
                   `cargo mutants --timeout 90` per [CLAUDE.md](CLAUDE.md), since
                   this touches `model` and `capture`
-            - [ ] **[docs/tui.md](docs/tui.md) says what an edit does to the
+            - [x] **[docs/tui.md](docs/tui.md) says what an edit does to the
                   field order, because right now it does not.** *"Saving replaces
                   exactly that"* is true of the body and reads as true of the
                   bytes, one sentence before it invokes
@@ -345,36 +360,51 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   A reader cannot tell from it that editing a word normalises the
                   line. Fixed by this step, and worth writing down either way
 
-      - [ ] **The docs owe more than the one reversal, and the extra ones were
-            missed on the first read.** [docs/redesign.md](docs/redesign.md)
+      - [x] **The docs owe more than the one reversal, and the extra ones were
+            missed on the first read.** **All four settled 2026-08-12.** [docs/redesign.md](docs/redesign.md)
             names `design.md:108` — one layout, no split panes — and stops there.
             [docs/design.md](docs/design.md#rules) has **three more rules the
             redesign walks into**, and each is either amended in writing or the
             drawing changes:
-            - [ ] **"Generous whitespace. The blank lines between groups are half
+            - [x] **"Generous whitespace. The blank lines between groups are half
                   of the design."** The group box *eats* that blank line — it
                   becomes the bottom edge. The row arithmetic is identical, which
                   is the redesign's argument, but "identical arithmetic" is not
                   the same claim as "the whitespace was half the design and we
                   are spending it on a border". This is the single largest thing
-                  to look at on a real screen before step 1 is called done
-            - [ ] **"A rule between two columns, and nowhere else."** The box's
+                  to look at on a real screen before step 1 is called done.
+                  **Amended in writing** in `design.md` and recorded in
+                  `decisions.md`, with the cost spelled out rather than waved
+                  through: no rows at 60 columns and up, **one row per group
+                  between 34 and 59**, five columns of row, nothing below 34.
+                  What is left of the whitespace is the two columns the box
+                  holds back off the frame
+            - [x] **"A rule between two columns, and nowhere else."** The box's
                   top and bottom edges are rules that are not between two
                   columns. The rule as written forbids exactly what the grid
                   correction does, and it was written to stop three characters of
                   noise per row — so the amendment has to say why an edge is not
-                  that
-            - [ ] **"One layout, no split panes. No sidebar, no modal."** The
+                  that. **It does**: an edge is not per-row noise, it is the
+                  container the per-row rules run inside, and it is what they
+                  now end on
+            - [x] **"One layout, no split panes. No sidebar, no modal."** The
                   form in step 2 is a centred overlay, which is a modal, and
                   [docs/tui.md](docs/tui.md) currently calls the help overlay
                   *the one overlay in the product*. Two documents will disagree
-                  the moment the form is drawn
-            - [ ] **No new theme role**, and this one is a constraint rather than
+                  the moment the form is drawn. **Settled**: the words "no
+                  modal" came off the rule, which keeps what it was protecting —
+                  nothing is ever *permanently* beside the list. An overlay is
+                  opened by a key, closed by `esc`, and gives the pane back
+            - [x] **No new theme role**, and this one is a constraint rather than
                   a reversal: the band, the boxes and the bars are `border` and
                   `accent`, the bars in `done`. If any of them wants a colour of
                   its own then [docs/theming.md](docs/theming.md) grows a key and
                   every built-in theme grows a line, which is a much bigger
-                  change than it looks from the screen
+                  change than it looks from the screen. **Held**: the band, the
+                  boxes, the bars, the radios and the whole form draw in
+                  `border`, `accent`, `done`, `dim`, `foreground` and `overdue`.
+                  `theming.md` is untouched and every built-in still has twelve
+                  keys
       - [x] **`src/ui.rs` is 5,654 lines and this adds three screens to it.**
             [docs/architecture.md](docs/architecture.md#module-layout) says
             eleven files, flat, and `ui.rs` is already three times the next

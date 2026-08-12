@@ -496,6 +496,22 @@ built, already byte-perfect — and the form stays add-only. Nothing else in the
 proposal depends on this screen. A beautiful TUI that silently reformats the
 user's file has spent the only thing this product actually sells.
 
+> **Built 2026-08-12, and the splice never went into `model.rs` at all.** The
+> form's model *is* the line: the text box holds the whole string and every row
+> under it replaces the one span `capture::parts` claimed, so a field nobody
+> touched is never rewritten and there is nothing to re-serialize. The four
+> cases above are what `set_parts` does to a string rather than what a new
+> `splice_at` does to a `Task`, and the two `splice` "cannot do" — the tag set
+> and the title run — are free in that shape: tags are cleared and written back
+> together, and the title is edited by typing into the line itself.
+>
+> What was actually wrong was one line in the **write** path. `Task::retype`
+> re-rendered the captured fields instead of writing the bytes it was handed,
+> which is what put an edited line into canonical order; it now takes the typed
+> text and keeps the gap after the checkbox as it found it. Pinned by
+> `tests/fidelity.rs` over every fixture, and checked by hand on
+> `-   [ ]  #ops   rotate  the keys !high @2026-08-10   trailing words  `.
+
 ---
 
 ## Screen 5 — `s`, stats  ·  NEW

@@ -256,12 +256,33 @@ impl Task {
         self.raw.get(self.checkbox + 2..).unwrap_or("").trim_start()
     }
 
-    /// Swaps the body for a freshly captured one and keeps everything up to and
-    /// including the checkbox byte for byte — the indentation, the bullet, and
-    /// whether the box is ticked. The user retyped the line's content, not its
-    /// shape, and a nested task has to stay nested.
-    pub fn retype(&mut self, fields: Task) {
-        self.raw = format!("{} {}", &self.raw[..self.checkbox + 2], fields.body());
+    /// Swaps the body for **the bytes the user left in the field** and keeps
+    /// everything up to and including the checkbox byte for byte — the
+    /// indentation, the bullet, and whether the box is ticked. The user edited
+    /// the line's content, not its shape, and a nested task has to stay nested.
+    ///
+    /// `typed`, and not `fields.body()`, and that difference is the whole of
+    /// what `⏎` promises. Re-rendering the captured fields put them back in the
+    /// tool's canonical order, so
+    /// `- [ ] #ops rotate the keys !high @2026-08-10` came back as
+    /// `- [ ] rotate the keys @2026-08-10 #ops !high` having edited nothing but
+    /// one word. The form edits the line in place — it replaces the span
+    /// `capture::parts` claimed and leaves every other byte where it was — so
+    /// the only thing left to get wrong was writing that line back through a
+    /// renderer. docs/architecture.md#round-trip-fidelity.
+    ///
+    /// `fields` still supplies the parsed values, because they are what the
+    /// screen and the calendar read; the *line* is the user's.
+    /// The gap between the checkbox and the body is kept too, and it is kept
+    /// **as it was found** rather than normalised to one space: `- [ ]  #ops`
+    /// is a line somebody wrote with two, and putting one back is a reformat.
+    /// `body` trims that gap off because the field has no business showing it,
+    /// which is exactly why it has to be put back here.
+    pub fn retype(&mut self, typed: &str, fields: Task) {
+        let head = self.checkbox + 2;
+        let rest = self.raw.get(head..).unwrap_or("");
+        let gap = rest.len() - rest.trim_start().len();
+        self.raw = format!("{}{typed}", &self.raw[..head + gap]);
         self.title = fields.title;
         self.due = fields.due;
         self.tags = fields.tags;
@@ -475,16 +496,61 @@ mod task_tests {
         let doc = crate::parse::parse("  * [x] wash up @2026-08-12 #home\n");
         let mut task = doc.tasks().next().unwrap().clone();
 
-        task.retype(crate::capture::capture(
-            "wash up tonight #home !high",
-            ymd(2026, 8, 11),
-        ));
+        let typed = "wash up tonight #home !high";
+        task.retype(typed, crate::capture::capture(typed, ymd(2026, 8, 11)));
 
         assert_eq!(task.line(), "  * [x] wash up tonight #home !high");
         assert!(task.done(), "the tick was not the user's to retype");
         assert_eq!(task.title, "wash up tonight");
         assert_eq!(task.due, None, "the date was dropped, so it goes");
         assert_eq!(task.priority, Some(Priority::High));
+    }
+
+    /// **The line is the user's, not the renderer's.** This is what `⏎` used to
+    /// get wrong: an edit went through `capture` and came back in the tool's own
+    /// field order, so a line arranged tags-first and date-last was rewritten
+    /// having changed one word.
+    #[test]
+    fn retyping_writes_the_bytes_it_was_given_and_not_a_rendering_of_them() {
+        let doc = crate::parse::parse("- [ ] #ops rotate the keys !high @2026-08-10\n");
+        let mut task = doc.tasks().next().unwrap().clone();
+
+        // One word changed, in place, which is what the form does to the line.
+        let typed = "#ops rotate the keys !med @2026-08-10";
+        task.retype(typed, crate::capture::capture(typed, ymd(2026, 8, 12)));
+
+        assert_eq!(task.line(), "- [ ] #ops rotate the keys !med @2026-08-10");
+        // And the parsed fields still come off the capture, because they are
+        // what the screen and the calendar read.
+        assert_eq!(task.priority, Some(Priority::Med));
+        assert_eq!(task.title, "rotate the keys");
+    }
+
+    /// The gap between the checkbox and the first word is the user's too, and it
+    /// is kept **as it was found** rather than normalised to one space. `body`
+    /// trims it off because the field has no business showing it, which is
+    /// exactly why it has to be put back — a line written with two spaces that
+    /// comes back with one has been reformatted.
+    ///
+    /// Two spaces and not one, deliberately: at one space every arithmetic that
+    /// could be wrong here gives the same answer.
+    #[test]
+    fn retyping_puts_back_the_gap_after_the_checkbox_however_wide_it_was() {
+        // Spaces only: the parser refuses anything but a space after `]`, so a
+        // tab there is not a task in the first place.
+        for gap in ["  ", "   ", "        "] {
+            let doc = crate::parse::parse(&format!("-   [x]{gap}wash up #home\n"));
+            let mut task = doc.tasks().next().unwrap().clone();
+            assert_eq!(task.body(), "wash up #home", "{gap:?}");
+
+            let typed = "wash up #home !low";
+            task.retype(typed, crate::capture::capture(typed, ymd(2026, 8, 11)));
+            assert_eq!(
+                task.line(),
+                format!("-   [x]{gap}wash up #home !low"),
+                "{gap:?}"
+            );
+        }
     }
 }
 

@@ -876,10 +876,15 @@ impl Live {
                         ("put off", title)
                     }
                     None => {
-                        if task.body() == typed {
+                        // Against the **untrimmed** field, both times. `body`
+                        // keeps whatever the line had after its last word, so a
+                        // trimmed comparison calls an untouched line changed
+                        // and a trimmed write then eats the spaces to prove it
+                        // — docs/architecture.md#round-trip-fidelity.
+                        if task.body() == input.text {
                             return Ok(ui::Notice::Said("unchanged".to_string()));
                         }
-                        task.retype(fields);
+                        task.retype(&input.text, fields);
                         ("edited", title)
                     }
                 }
@@ -1133,9 +1138,24 @@ fn run(
                             input = Some(ui::Input::adding(today));
                             helping = false;
                         }
+                        // The same form, prefilled, and the same fallback: a
+                        // pane too small for it gets the box, which is what `⏎`
+                        // has always opened.
                         ui::Action::Change => match live.screen.task() {
                             Some(task) => {
-                                input = Some(ui::Input::editing(task));
+                                let pane = terminal.size()?;
+                                let area = ratatui::layout::Rect::new(
+                                    0,
+                                    0,
+                                    pane.width,
+                                    pane.height.saturating_sub(1),
+                                );
+                                match ui::Form::fits(area) {
+                                    true => {
+                                        form = Some(ui::Form::editing(task, today, render.lists))
+                                    }
+                                    false => input = Some(ui::Input::editing(task)),
+                                }
                                 helping = false;
                             }
                             None => notice = ui::Notice::Said("nothing to edit here".to_string()),
