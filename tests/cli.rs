@@ -48,6 +48,16 @@ fn run(args: &[&str]) -> Output {
 /// The scratch XDG environment, on whatever command is about to run — including
 /// the `script`-wrapped ones, where the binary is a word inside a shell string
 /// and inherits the environment all the same.
+///
+/// **This only steers the binary on Linux.** `directories` answers from the
+/// platform's own convention elsewhere — the Known Folder API on Windows — and
+/// reads none of these variables, so a case that *depends* on one of them for
+/// where a file lands would read the developer's real config and data
+/// directories instead of the scratch tree. Those six carry `#[cfg(unix)]`; the
+/// rest pass `--file` and set these defensively, so they are portable as they
+/// are. Threading the config directory down from `main` the way `Derived`
+/// already carries the backup and calendar paths would make all six portable —
+/// a refactor, tracked in todo.md, not a gate.
 fn xdg(command: &mut Command) -> &mut Command {
     let scratch = std::env::temp_dir().join(format!("ratodo-cli-xdg-{}", std::process::id()));
     command
@@ -105,7 +115,9 @@ fn add_appends_without_touching_what_is_already_there() {
 /// to it shows up in `git status` after every capture. Both halves matter: the
 /// backup must be gone from here **and** present over there — checking only the
 /// first would pass just as well if the backup stopped being written at all.
+// Steered by $XDG_*, which `directories` reads on Linux only — see `xdg`.
 #[test]
+#[cfg(unix)]
 fn the_backup_lands_in_the_state_directory_and_nowhere_near_the_list() {
     let dir = TempDir::new("clean");
     let path = dir.file("todo.md");
@@ -502,7 +514,9 @@ fn a_cancelled_task_is_neither_open_nor_overdue_nor_matchable() {
 
 /// The `.ics` is for work still to do. A cancelled task is not that, and neither
 /// is a finished one.
+// Steered by $XDG_*, which `directories` reads on Linux only — see `xdg`.
 #[test]
+#[cfg(unix)]
 fn only_open_tasks_reach_the_calendar() {
     let dir = TempDir::new("ics-states");
     let path = dir.file("todo.md");
@@ -718,7 +732,9 @@ fn control_characters_from_the_file_do_not_reach_the_terminal() {
 /// The XDG deviation from docs/format.md, asserted rather than assumed: the
 /// list lives under the *config* directory, because that is what ends up in
 /// somebody's dotfiles.
+// Steered by $XDG_*, which `directories` reads on Linux only — see `xdg`.
 #[test]
+#[cfg(unix)]
 fn the_default_path_is_the_config_directory() {
     let dir = TempDir::new("xdg");
     let out = xdg(&mut Command::new(BIN))
@@ -1277,7 +1293,9 @@ fn an_edit_from_outside_reaches_the_open_screen() {
 
 /// The `.ics` is derived, so it goes under `$XDG_DATA_HOME` and never next to
 /// the list. Capturing regenerates it without being asked.
+// Steered by $XDG_*, which `directories` reads on Linux only — see `xdg`.
 #[test]
+#[cfg(unix)]
 fn the_calendar_is_written_beside_no_one_and_kept_up_to_date() {
     let dir = TempDir::new("ics");
     let path = dir.file("todo.md");
@@ -1395,7 +1413,9 @@ fn a_dumped_theme_is_a_theme_file_ratodo_accepts() {
     assert_eq!(String::from_utf8_lossy(&again.stdout), text);
 }
 
+// Steered by $XDG_*, which `directories` reads on Linux only — see `xdg`.
 #[test]
+#[cfg(unix)]
 fn the_theme_flag_overrides_the_file() {
     let dir = TempDir::new("theme-flag");
     plant_theme(&dir, "accent = #ff0000\n");
@@ -1414,7 +1434,9 @@ fn the_theme_flag_overrides_the_file() {
 }
 
 /// Invariant 8, end to end: whatever is in that file, the program still runs.
+// Steered by $XDG_*, which `directories` reads on Linux only — see `xdg`.
 #[test]
+#[cfg(unix)]
 fn a_broken_theme_file_warns_and_never_stops_anything() {
     let dir = TempDir::new("theme-broken");
     let path = dir.file("todo.md");

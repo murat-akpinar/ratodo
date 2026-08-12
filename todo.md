@@ -125,18 +125,19 @@ and a box split into fields.
       commits after the `v0.2.0` tag include a breaking one — the `d`/`X` swap —
       and publishing `0.2.0` from a tree the tag does not point at would have
       been permanently wrong on crates.io
-- [ ] **The six integration tests that steer the binary with `$XDG_*`** — a
-      decision before any work. `tests/cli.rs` points ratodo at a scratch
-      directory by setting `XDG_CONFIG_HOME` and friends; `directories` ignores
-      those off Linux and answers from the Known Folder API, so on Windows those
-      six cases read the developer's *real* config and data directories. Same
-      class as `which_files_count_as_lists`. Either `#[cfg(unix)]` on the six —
-      one line each, honest, and CI is Linux so nothing is really lost — or give
-      the config directory the `Derived` treatment: `dirs()` is read deep inside
-      `lists`, `default_path`, `active_theme`, `backup_dir` and `ics_path`, and
-      resolving it once in `main` would make all six portable. The second is the
-      argument `src/main.rs` already makes for the backup and calendar paths, and
-      it is a refactor rather than a fix, which is why v0.7.2 shipped without it
+- [x] **The six integration tests that steer the binary with `$XDG_*`** —
+      `#[cfg(unix)]` on each, the maintainer's call on 2026-08-12. `tests/cli.rs`
+      points ratodo at a scratch directory by setting `XDG_CONFIG_HOME` and
+      friends; `directories` ignores those off Linux and answers from the Known
+      Folder API, so on Windows those six read the developer's *real* config and
+      data directories. Same class as `which_files_count_as_lists`. **The gate is
+      a gate, not a fix** — the rejected alternative was giving the config
+      directory the `Derived` treatment (`dirs()` is read deep inside `lists`,
+      `default_path`, `active_theme`, `backup_dir` and `ics_path`; resolving it
+      once in `main` would make all six portable, which is the argument
+      `src/main.rs` already makes for the backup and calendar paths). That is a
+      refactor, and the six keep no Windows coverage of where the files land
+      until somebody does it
 - [ ] **Thunderbird** — the third and last calendar data point. Its Tasks view is
       a different code path from the month grid and is where a VTODO would land.
       `todoman` displays the file correctly and `khal` ignores it; Thunderbird is
