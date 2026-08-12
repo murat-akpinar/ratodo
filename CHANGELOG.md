@@ -10,6 +10,8 @@ The five mockups drawn against ratodo are answered one at a time in docs/redesig
 - Name the four rules and the two files the redesign owes ([2419de7](https://github.com/murat-akpinar/ratodo/commit/2419de71cf505c9759db59043e49502b83a27e79))
 The first pass named one reversal (design.md:108, no split panes) and missed three more in the same rules list: the blank line between groups that the box eats, "a rule between two columns and nowhere else", and "no modal" against a centred form. Plus the ASCII forms for the new glyphs, which is where the whole-buffer is_ascii assertions go red first; where stats lives, since architecture.md says eleven files flat; the slot s needs in a full help overlay and a fixed hint-bar order; what the stats screen does in a ten-row pane; and the demo gif.
 - Measure the redesign against the code, and unhedge step 4 ([3ba577e](https://github.com/murat-akpinar/ratodo/commit/3ba577e5db2dd069c289a855fc7ce2b9c8a8dc81))
+- Map the code, not only the decisions ([e6aa99d](https://github.com/murat-akpinar/ratodo/commit/e6aa99d943f014cc7cf91975869128c80cb774c0))
+docs/README.md indexes the decision record; nothing indexed the source. Eleven files, 12k lines, and 60% of ui.rs is its own test module — knowing which file to open was the undocumented half.
 
 ### 🧪 Testing
 
