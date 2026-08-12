@@ -4,7 +4,7 @@
 
 **A todo TUI, built with ratatui — one Markdown file, no cloud, no account.**
 
-[![crates.io](https://img.shields.io/badge/crates.io-v0.7.1-green)](https://crates.io/crates/ratodo)
+[![crates.io](https://img.shields.io/badge/crates.io-v0.7.2-green)](https://crates.io/crates/ratodo)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.88%2B-orange)](https://www.rust-lang.org)
 
@@ -14,7 +14,7 @@
 
 </div>
 
-> **v0.7.1, on crates.io.** `cargo install ratodo`. The command line and the TUI
+> **v0.7.2, on crates.io.** `cargo install ratodo`. The command line and the TUI
 > are built and tested — capture, editing, undo, folding, themes, the `.ics`
 > export, several lists in one agenda, `$work` to say which one a capture goes
 > to, `tab` for a date field that cannot hold a day the calendar does not,
@@ -347,7 +347,7 @@ Rust 1.88 or newer, and no other build dependency. From source instead:
 
 ```console
 $ git clone https://github.com/murat-akpinar/ratodo && cd ratodo
-$ git checkout v0.7.1
+$ git checkout v0.7.2
 $ cargo install --path .        # → ~/.cargo/bin/ratodo
 ```
 
