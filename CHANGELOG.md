@@ -51,6 +51,7 @@ The order CLAUDE.md asks for: the reversal goes in first, the way $work and the 
 All four steps are in. redesign.md's status says so, and names the two things that came out different from the write-up: COLUMNS_AT moved 76 to 71 because the group box takes five columns off every row, and Screen 4's splice never reached model.rs because the form edits the line in place.
 - *(docs)* The readme shows the screen it ships, and a new demo ([656ca5f](https://github.com/murat-akpinar/ratodo/commit/656ca5f9bea2a500e4c79ae33712967094913768))
 The GIF was the old screen — no band, no boxes, no footer, and a one-line box where a opens a form — and it is the first thing on the README and on crates.io. Re-recorded off the current build, with the form and the stats screen in the run.
+- *(docs)* Tick the demo and record what the maintainer's look changed ([8f9aa4f](https://github.com/murat-akpinar/ratodo/commit/8f9aa4f8cb5874f943f4d4745de0d134ffc11fd5))
 
 ### 🧪 Testing
 
