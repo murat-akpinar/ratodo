@@ -3782,11 +3782,21 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
     // that separates the two screens, because it is all that separates the two
     // jobs: docs/redesign.md#screen-4--the-edit-form.
     let editing = form.input.purpose.raw().is_some();
-    let create = match editing {
+    let cancel = "[ esc cancel ]";
+    let verb = match editing {
+        true => "save",
+        false => "create",
+    };
+    let mut create = match editing {
         true => format!("[ {} save changes ]", render.glyphs.enter()),
         false => format!("[ {} create task ]", render.glyphs.enter()),
     };
-    let cancel = "[ esc cancel ]";
+    // The noun is what the narrowest pane gives up. A button wide enough to run
+    // into the frame loses its own `]` and stops being a button — and this row
+    // is the one place in the form with nothing to truncate against.
+    if columns(cancel) + columns(&create) + 2 > inner {
+        create = format!("[ {} {verb} ]", render.glyphs.enter());
+    }
     let gap = inner.saturating_sub(columns(cancel) + columns(&create) + 2);
     let buttons_at = lines.len();
     lines.push(Line::from(vec![
@@ -3837,7 +3847,16 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
                     .centered(),
                 )
                 .title_bottom(Span::styled(
-                    format!(" tab {} next field ", render.glyphs.punctuation().1),
+                    {
+                        // `shift-tab` is the one key here nobody finds by
+                        // pressing keys — a form you can only walk forwards
+                        // through is walked forwards eight times instead.
+                        let sep = render.glyphs.punctuation().1;
+                        match width >= 39 {
+                            true => format!(" tab {sep} next field {sep} shift-tab {sep} back "),
+                            false => format!(" tab {sep} next field "),
+                        }
+                    },
                     dim,
                 )),
         ),
@@ -5519,6 +5538,13 @@ mod tests {
             tab(&mut form, 1);
             assert_eq!(form.focus, *want);
         }
+
+        // Backwards, which is the half a form only walked forwards makes you
+        // do eight presses for — the border says `shift-tab` because of this.
+        for want in order.iter().rev() {
+            form.press(press(KeyCode::BackTab));
+            assert_eq!(form.focus, *want);
+        }
     }
 
     /// A form that half-fits is worse than a box that always fits, and the box
@@ -5528,6 +5554,60 @@ mod tests {
         assert!(Form::fits(Rect::new(0, 0, 40, 15)));
         assert!(!Form::fits(Rect::new(0, 0, 39, 15)));
         assert!(!Form::fits(Rect::new(0, 0, 40, 14)));
+    }
+
+    /// The narrowest pane the form is drawn in at all — forty columns, thirty
+    /// of content — where two things are wider than the box and both give way
+    /// rather than run into the frame: the border label drops `shift-tab`, and
+    /// the button drops its noun. A button that has lost its own `]` has
+    /// stopped being a button.
+    #[test]
+    fn the_border_label_gives_the_back_key_up_before_it_runs_off_the_corner() {
+        let tasks = tasks(&["late @2026-08-01"]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        // The add form rather than the edit one: `[ ⏎ create task ]` is the
+        // wider of the two buttons and the one that overran.
+        let form = Form::adding(today(), &[]);
+
+        let mut terminal = Terminal::new(TestBackend::new(40, 15)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    Counts::of(&tasks, today()),
+                    render(crate::theme::MOCHA),
+                    &Notice::Hints,
+                    View::List,
+                    Open::Form(&form),
+                )
+            })
+            .unwrap();
+        let drawn: Vec<String> = terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(40)
+            .map(|r| r.iter().map(|c| c.symbol()).collect())
+            .collect();
+
+        let foot = drawn
+            .iter()
+            .find(|row| row.contains("tab"))
+            .unwrap_or_else(|| panic!("{drawn:?}"));
+        assert!(foot.contains(" tab · next field "), "{foot:?}");
+        assert!(!foot.contains("shift-tab"), "{foot:?}");
+        assert!(foot.trim_end().ends_with('╯'), "{foot:?}");
+
+        let buttons = drawn
+            .iter()
+            .find(|row| row.contains("esc cancel"))
+            .unwrap_or_else(|| panic!("{drawn:?}"));
+        assert!(buttons.contains("[ ⏎ create ]"), "{buttons:?}");
+        // Two of margin and the form's own border still to the right of it,
+        // which is what says it did not run into anything.
+        assert!(buttons.ends_with("]  │ │"), "{buttons:?}");
     }
 
     /// The whole screen, exactly, and the preview is its conclusion: a form
@@ -5580,7 +5660,7 @@ mod tests {
                 "│ │  - [ ] call the accountant @2026-08-12 #home     │ │",
                 "│ │                                                  │ │",
                 "│ │  [ esc cancel ]              [ ⏎ save changes ]  │ │",
-                "│ ╰ tab · next field ────────────────────────────────╯ │",
+                "│ ╰ tab · next field · shift-tab · back ─────────────╯ │",
                 "│                                                      │",
                 "╰──────────────────────────────────────────────────────╯",
                 " ⏎ save   esc cancel                                    ",

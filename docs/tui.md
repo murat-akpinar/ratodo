@@ -623,7 +623,7 @@ bought. See [decisions.md](decisions.md#settled).
 │  - [ ] call the accountant @2026-08-12 #home │
 │                                            │
 │  [ esc cancel ]        [ ⏎ create task ]   │
-╰─ tab · next field ─────────────────────────╯
+╰─ tab · next field · shift-tab · back ──────╯
 ```
 
 **The line is the model, and that is the whole design.** There is one string —
@@ -681,10 +681,16 @@ rather than a second copy of the field above it.
   so both survive `NO_COLOR`. Same marker and same colour as the selected row on
   the list.
 - **The buttons carry their key.** `[ ⏎ create task ]` is both the button and the
-  keybinding, so it is honest on a keyboard and still looks like a button.
-- **`tab` is *next field* here** — one key, one job per screen. Inside the
-  one-line box `tab` is still the date picker, because there are no fields there
-  to walk.
+  keybinding, so it is honest on a keyboard and still looks like a button. In the
+  narrowest pane the form is drawn in it gives up its noun — `[ ⏎ create ]` —
+  because the row has nothing else to truncate against, and a button wide enough
+  to reach the frame loses its own `]`.
+- **`tab` is *next field* here and `shift-tab` is the way back**, and the border
+  names both — one key, one job per screen. The back key is the one nobody finds
+  by pressing keys, so a form that only advertises `tab` gets walked forwards
+  eight times to go back one; below about forty columns the border has no room
+  for it and names `tab` alone. Inside the one-line box `tab` is still the date
+  picker, because there are no fields there to walk.
 - **`Time` is not in the tab order without a date.** The format cannot hold a
   time without one, so a row that accepted one would be a field the file cannot
   keep.
