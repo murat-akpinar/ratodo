@@ -14,6 +14,8 @@ Screen 0's two additions, and the only two things on the main screen that are ab
 The empty screen already named the file and already drew the box a opens with @tomorrow resolved by the real parser. What it did not have is the greeting, and the greeting is two centred lines. No ASCII-art logo: this is a pane somebody leaves open beside their work and a banner is charming exactly once.
 - *(ui)* S opens the stats screen ([7722afe](https://github.com/murat-akpinar/ratodo/commit/7722afe08c5882ea4560fa27f5fe727352cb28b5))
 The second screen, and the answer to 'there is only one screen'. Every number on it is already in the file: the completion stamps are what it reads.
+- *(ui)* A opens a form, o keeps the one-line box ([67deeb3](https://github.com/murat-akpinar/ratodo/commit/67deeb33bb5549eb2476fdca5e40269f5dc4407d))
+Six fields, and they are the six the format already carries. The line is the model: the text box holds the whole line exactly as the one-line box does, and Due, Time, Priority, Tags and List are views of it — each reads capture::parts to know what is selected and writes back by replacing the span that tokenizer claimed. One string, one tokenizer, one truth, which is what lets the form exist at all: the labelled-field box was rejected for needing either a join back into a line or a second parser.
 
 ### 📚 Documentation
 
@@ -28,6 +30,8 @@ The first pass named one reversal (design.md:108, no split panes) and missed thr
 - Map the code, not only the decisions ([e6aa99d](https://github.com/murat-akpinar/ratodo/commit/e6aa99d943f014cc7cf91975869128c80cb774c0))
 docs/README.md indexes the decision record; nothing indexed the source. Eleven files, 12k lines, and 60% of ui.rs is its own test module — knowing which file to open was the undocumented half.
 - *(docs)* Tick the dashboard step ([f2d4f7d](https://github.com/murat-akpinar/ratodo/commit/f2d4f7d73cdaf18d144b9a8d91560ed8ac347dc6))
+- *(docs)* Reverse the one-field box before the form is built ([652fe68](https://github.com/murat-akpinar/ratodo/commit/652fe6829be5e3891a6b5c3172a2c4cd16dec787))
+The order CLAUDE.md asks for: the reversal goes in first, the way $work and the date field did.
 
 ### 🧪 Testing
 
