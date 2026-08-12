@@ -74,8 +74,16 @@ the difference between the newest key being on the bar and being findable only
 in `?`. `X`
 and `e` are not on it at any width — delete and `$EDITOR` are both a keystroke
 away in `?`, and neither is what somebody glancing at a side pane is about to
-press. Below the wide threshold the bar drops to bare keys, `j k  spc  a  d  p
-?  q`.
+press. Below the wide threshold the bar drops to bare keys, `[j k] [spc] [a] [d] [p]
+[?] [q]`.
+
+**The keys look like keys.** `[a] add`, not `a add` — brackets, so it reads as a
+keycap the way lazygit's and k9s's bars do and survives `NO_COLOR`, where a key
+that is only a key because it is mauve is not one. They cost two columns an
+entry against a bar that is a greedy fill, so the separator went from two spaces
+to one — the brackets already tell one entry from the next. What that buys and
+what it costs was measured rather than assumed: at eighty columns `[p] later`
+still fits and `[y] copy` does not, and `[y] copy` comes back at eighty-eight.
 
 This replaced a fixed list of six, which had to be re-argued every time a key
 was added and was wrong at both ends: clipped on a narrow pane, and wasting
@@ -84,26 +92,26 @@ twenty columns on a wide one.
 ## Main screen
 
 ```
-┌ ratodo — 5 open · 1 overdue ───────────────── ▰▰▰▱▱▱▱▱ 3/8 ┐
-│  ╭─ OVERDUE ────────────────────────────────────────────╮  │
+╭ ratodo — 5 open · 1 overdue ───────────────── ▰▰▰▱▱▱▱▱ 3/8 ╮
+│  ╭─ OVERDUE · 1 ────────────────────────────────────────╮  │
 │▌ │ ! rotate the backup keys                 2d ago  #ops│  │
 │  ╰──────────────────────────────────────────────────────╯  │
-│  ╭─ TODAY ──────────────────────────────────────────────╮  │
+│  ╭─ TODAY · 2 ──────────────────────────────────────────╮  │
 │  │ ○ pay the invoice                               #home│  │
 │  │ ○ review the deploy PR                   16:00  #work│  │
 │  ╰──────────────────────────────────────────────────────╯  │
-│  ╭─ THIS WEEK ──────────────────────────────────────────╮  │
+│  ╭─ THIS WEEK · 3 ──────────────────────────────────────╮  │
 │  │ ○ book a dentist appointment       Thu 09:30  #health│  │
 │  │ ✓ migrate the server                           Mon   │  │
 │  │ ✗ rewrite the docs                              #docs│  │
 │  ╰──────────────────────────────────────────────────────╯  │
-│  ╭─ ## Someday ─────────────────────────────────────────╮  │
+│  ╭─ ## Someday · 1 ─────────────────────────────────────╮  │
 │  │ ○ finish chapter 13 of the Rust book             !low│  │
 │  ╰──────────────────────────────────────────────────────╯  │
-│  LATER (3) ───────────────────────────────────────── l     │
-└────────────────────────────────────────────────────────────┘
+│  LATER · 3 ───────────────────────────────────────── l     │
+╰────────────────────────────────────────────────────────────╯
 
- j k move  spc done  a add  ⏎ edit  d cancel  ? keys  q quit
+ [j k] move [spc] done [a] add [⏎] edit [d] cancel [?] keys [q] quit
 ```
 
 Details that are decisions, not drawing:
@@ -141,7 +149,11 @@ Details that are decisions, not drawing:
 - **A folded group is a bare rule, not a box.** An empty two-row box to say a
   group is closed is exactly backwards: the difference between a container and
   a line *is* the open/closed signal.
-- **`LATER (3)` stays collapsed** and shows its count and its key. A collapsed
+- **Every heading carries its count** — `TODAY · 2`. `LATER (3)` already did
+  this when it was folded, and there was never a reason the open ones stayed
+  silent; a group with no *name* gets no count either, because `· 2` on its own
+  says nothing that counting the rows under it does not.
+- **`LATER · 3` stays collapsed** and shows its count and its key. A collapsed
   group that does not say how to open it is a dead end.
 
   A collapsed group is also **selectable** — the cursor lands on it, the way it
@@ -749,16 +761,16 @@ row was already gone at this width, so the bottom edge is a row per group that
 the pane has to find.
 
 ```
-┌ ratodo — 5 · 1! ─────────────────┐
-│  ╭─ OVERDUE ──────────────────╮  │
+╭ ratodo — 5 · 1! ─────────────────╮
+│  ╭─ OVERDUE · 1 ──────────────╮  │
 │▌ │ ! rotate the backup k…  2d │  │
 │  ╰────────────────────────────╯  │
-│  ╭─ TODAY ────────────────────╮  │
+│  ╭─ TODAY · 2 ────────────────╮  │
 │  │ ○ pay the invoice     today│  │
 │  │ ○ review the deploy…  16:00│  │
 │  ╰────────────────────────────╯  │
-└──────────────────────────────────┘
- j k  spc  a  d  ?
+╰──────────────────────────────────╯
+ [j k] [spc] [a] [d] [?]
 ```
 
 **Very narrow (< 34 columns)** — the frame is dropped entirely, and the boxes

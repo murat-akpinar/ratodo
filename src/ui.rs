@@ -647,10 +647,17 @@ pub fn typing(key: KeyEvent) -> Typed {
 pub enum Row {
     Header {
         title: String,
-        /// How many tasks are hidden under it, when it is folded. A collapsed
-        /// group that does not say how much it is hiding is a dead end —
-        /// docs/tui.md.
-        hidden: Option<usize>,
+        /// How many tasks are in the group. On every heading and not only on a
+        /// folded one: `LATER (3)` already said it when it was closed, and
+        /// there was never a reason the open ones stayed silent — docs/tui.md.
+        ///
+        /// One number rather than two. It used to be `hidden: Option<usize>`,
+        /// counted a second time during the fold, and two counters of the same
+        /// thing eventually disagree.
+        count: usize,
+        /// A collapsed group that does not say how much it is hiding, and which
+        /// key opens it, is a dead end — docs/tui.md.
+        folded: bool,
     },
     Task(Task),
     /// The row that closes a group. It was a blank spacer between two groups
@@ -660,10 +667,11 @@ pub enum Row {
 }
 
 impl Row {
-    fn header(title: &str) -> Self {
+    fn header(title: &str, count: usize) -> Self {
         Row::Header {
             title: title.to_string(),
-            hidden: None,
+            count,
+            folded: false,
         }
     }
 }
@@ -700,7 +708,7 @@ pub fn rows(groups: &[Group<'_>]) -> Vec<Row> {
         // A group with no name is still a group. It gets a nameless box rather
         // than a "(no section)" nobody wrote, and rather than rows left floating
         // beside the boxed ones.
-        out.push(Row::header(&header.unwrap_or_default()));
+        out.push(Row::header(&header.unwrap_or_default(), group.tasks.len()));
         out.extend(group.tasks.iter().map(|t| Row::Task((*t).clone())));
         out.push(Row::GroupEnd);
     }
@@ -757,40 +765,33 @@ impl Screen {
         let was_at = self.state.selected().unwrap_or(0);
 
         self.rows = Vec::with_capacity(self.all.len());
-        let mut skipping: Option<usize> = None;
+        let mut skipping = false;
 
         for row in &self.all {
             match row {
-                Row::Header { title, .. } if self.folded.contains(title) => {
-                    skipping = Some(0);
+                Row::Header {
+                    title,
+                    count,
+                    folded: _,
+                } => {
+                    skipping = self.folded.contains(title);
                     self.rows.push(Row::Header {
                         title: title.clone(),
-                        hidden: Some(0),
+                        count: *count,
+                        folded: skipping,
                     });
                 }
-                Row::Header { title, .. } => {
-                    skipping = None;
-                    self.rows.push(Row::header(title));
-                }
                 Row::Task(t) => match skipping {
-                    Some(_) => {
-                        // Count it against the header that is hiding it.
-                        if let Some(Row::Header {
-                            hidden: Some(n), ..
-                        }) = self.rows.last_mut()
-                        {
-                            *n += 1;
-                        }
-                    }
-                    None => self.rows.push(Row::Task(t.clone())),
+                    true => {}
+                    false => self.rows.push(Row::Task(t.clone())),
                 },
                 // A folded group is a bare rule, not an empty two-row box: the
                 // difference between a container and a line *is* the open
                 // signal — docs/redesign.md. So the closing row goes with the
                 // tasks it was closing over.
-                Row::GroupEnd => match skipping.take() {
-                    Some(_) => {}
-                    None => self.rows.push(Row::GroupEnd),
+                Row::GroupEnd => match std::mem::take(&mut skipping) {
+                    true => {}
+                    false => self.rows.push(Row::GroupEnd),
                 },
             }
         }
@@ -868,11 +869,9 @@ impl Screen {
             self.refresh();
             // Land on the header that just swallowed the group. Anywhere else
             // and there is no way back: `l` needs a cursor on the thing it opens.
-            if let Some(at) = self
-                .rows
-                .iter()
-                .position(|r| matches!(r, Row::Header { title: t, hidden: Some(_) } if *t == title))
-            {
+            if let Some(at) = self.rows.iter().position(
+                |r| matches!(r, Row::Header { title: t, folded: true, .. } if *t == title),
+            ) {
                 self.state.select(Some(at));
             }
         } else {
@@ -915,11 +914,7 @@ impl Screen {
     fn is_selectable(&self, i: usize) -> bool {
         matches!(
             self.rows.get(i),
-            Some(Row::Task(_))
-                | Some(Row::Header {
-                    hidden: Some(_),
-                    ..
-                })
+            Some(Row::Task(_)) | Some(Row::Header { folded: true, .. })
         )
     }
 
@@ -1034,8 +1029,8 @@ impl Glyphs {
     }
 
     /// A group box's four corners — top left, top right, bottom left, bottom
-    /// right. Rounded, which the outer frame is not: the outer one is the pane
-    /// and the inner ones are inside it, and the softer corner is what says so.
+    /// right. The same rounded set the outer frame uses, because they are the
+    /// same kind of thing one inside the other.
     ///
     /// `+` in ASCII, like every other joint in the fallback. A box-drawing
     /// character left in a fallback is not a fallback.
@@ -1117,9 +1112,14 @@ impl Glyphs {
     /// The frame too. A fallback that leaves box-drawing characters in the
     /// border is not a fallback — it is the same broken screen with tidier
     /// checkboxes.
+    ///
+    /// **Rounded**, and so are the group boxes inside it: one constant, and the
+    /// highest ratio of *looks finished* to *lines changed* in the redesign.
+    /// The corner is the only thing on the frame that was ever going to say it,
+    /// because everything else about a frame is decided by the pane.
     fn border(self) -> ratatui::symbols::border::Set<'static> {
         match self {
-            Glyphs::Unicode => ratatui::symbols::border::PLAIN,
+            Glyphs::Unicode => ratatui::symbols::border::ROUNDED,
             Glyphs::Ascii => ratatui::symbols::border::Set {
                 top_left: "+",
                 top_right: "+",
@@ -1548,9 +1548,29 @@ fn task_line(
     Line::from(spans)
 }
 
-/// A group heading with a rule after it. In a narrow pane the eye needs a
-/// horizontal anchor to find where a group starts; a bare word does not give it
-/// — docs/tui.md.
+/// A group's name and how many tasks are in it — `TODAY · 2`. On every heading,
+/// open or folded: a collapsed group already had to say how much it was hiding,
+/// and there was never a reason the open ones stayed silent — docs/tui.md.
+///
+/// A group with no name gets no count either. `· 2` on its own says nothing that
+/// counting the rows under it does not.
+fn heading(title: &str, count: usize, glyphs: Glyphs) -> String {
+    let name = text::plain(title);
+    if name.is_empty() {
+        return name;
+    }
+    let (_, dot) = glyphs.punctuation();
+    format!("{name} {dot} {count}")
+}
+
+/// A group heading with a rule after it — what a **folded** group is drawn as,
+/// and what every group is drawn as below 34 columns. In a narrow pane the eye
+/// needs a horizontal anchor to find where a group starts; a bare word does not
+/// give it — docs/tui.md.
+///
+/// A line and not a box, on purpose: an empty two-row box to say a group is
+/// closed is exactly backwards, and the difference between a container and a
+/// line *is* the open/closed signal.
 ///
 /// Where the rule **stops** is the title column once there is one: past
 /// `COLUMNS_AT` a rule to the right edge is the heaviest thing on the screen
@@ -1558,18 +1578,16 @@ fn task_line(
 /// instead. Below it there is no column to end at, so it runs to the edge.
 fn header_line(
     title: &str,
-    hidden: Option<usize>,
+    count: usize,
+    folded: bool,
     width: usize,
     cols: Columns,
     render: Render<'_>,
 ) -> Line<'static> {
-    // A collapsed group says how much it is hiding and which key opens it.
-    // One that does not is a dead end — docs/tui.md.
-    let name = match hidden {
-        Some(n) => format!("{} ({n})", text::plain(title)),
-        None => text::plain(title),
-    };
-    let tail = if hidden.is_some() { " l" } else { "" };
+    let name = heading(title, count, render.glyphs);
+    // A collapsed group says which key opens it. One that does not is a dead
+    // end — docs/tui.md.
+    let tail = if folded { " l" } else { "" };
 
     // Plus the mark the tasks below carry, so the rule ends with their titles
     // rather than short of them — and it is `[ ]` under the ASCII fallback,
@@ -1616,6 +1634,7 @@ const BOX_MARGIN: usize = 2;
 fn group_edge(
     top: bool,
     title: &str,
+    count: usize,
     width: usize,
     cols: Columns,
     render: Render<'_>,
@@ -1652,15 +1671,16 @@ fn group_edge(
         }
     }
 
-    if title.is_empty() {
+    let name = heading(title, count, glyphs);
+    if name.is_empty() {
         return Line::from(Span::styled(cells.concat(), border));
     }
 
-    // `╭─ NAME ` and then whatever is left of the edge. A name long enough to
-    // reach the closing corner is cut rather than allowed to push one off, and
-    // a junction under the name is simply covered by it.
+    // `╭─ NAME · n ` and then whatever is left of the edge. A name long enough
+    // to reach the closing corner is cut rather than allowed to push one off,
+    // and a junction under the name is simply covered by it.
     const LEAD: usize = 3;
-    let name = shorten(&text::plain(title), width.saturating_sub(LEAD + 2), glyphs);
+    let name = shorten(&name, width.saturating_sub(LEAD + 2), glyphs);
     let after = LEAD + columns(&name) + 1;
     Line::from(vec![
         Span::styled(format!("{open}{} ", glyphs.rule()), border),
@@ -1703,8 +1723,12 @@ pub enum Notice {
 /// often a key is reached for — and the bar stops being a list that has to be
 /// re-argued every time a key is added.
 fn hints(width: usize, glyphs: Glyphs) -> String {
-    const SEP: &str = "  ";
-    let tail = format!("{SEP}? keys{SEP}q quit");
+    // One space, not two. The two existed because nothing else told `a add`
+    // from `spc done`; the brackets do that now, and at eighty columns the
+    // second space is the difference between `p later  y copy` being on the bar
+    // and not.
+    const SEP: &str = " ";
+    let tail = format!("{SEP}[?] keys{SEP}[q] quit");
     let keys: [(&str, &str); 7] = [
         ("j k", "move"),
         ("spc", "done"),
@@ -1721,7 +1745,12 @@ fn hints(width: usize, glyphs: Glyphs) -> String {
 
     let mut out = String::new();
     for (key, what) in keys {
-        let entry = format!("{SEP}{key} {what}");
+        // Brackets, so it reads as a keycap the way lazygit's and k9s's bars do
+        // and survives `NO_COLOR` — the alternative is a colour, and a key that
+        // is only a key because it is mauve is not one on half the terminals it
+        // runs on. Two columns an entry, which is what decides how many of them
+        // fit; the greedy fill below is what spends them.
+        let entry = format!("{SEP}[{key}] {what}");
         // The leading space every message on this line carries.
         if 1 + columns(&out) + columns(&entry) + columns(&tail) > width {
             break;
@@ -1749,7 +1778,7 @@ impl Notice {
             // Keys only, no words. `X` and `e` gave up their slots here: delete
             // and `$EDITOR` are both reachable from `?`, and neither is what
             // somebody glancing at a narrow pane is about to press.
-            Notice::Hints => (" j k  spc  a  d  p  ?  q".to_string(), colours.dim),
+            Notice::Hints => (" [j k] [spc] [a] [d] [p] [?] [q]".to_string(), colours.dim),
             Notice::Said(text) => (format!(" {text}"), colours.dim),
             Notice::Warned(text) => {
                 let mark = match glyphs {
@@ -2121,16 +2150,20 @@ pub fn draw(
                         false => line,
                     })
                 }
-                Row::Header { title, hidden } => {
-                    inside = boxes && hidden.is_none();
+                Row::Header {
+                    title,
+                    count,
+                    folded,
+                } => {
+                    inside = boxes && !folded;
                     ListItem::new(match inside {
-                        true => group_edge(true, title, box_width, cols, render),
-                        false => header_line(title, *hidden, width, cols, render),
+                        true => group_edge(true, title, *count, box_width, cols, render),
+                        false => header_line(title, *count, *folded, width, cols, render),
                     })
                 }
                 Row::GroupEnd => {
                     inside = false;
-                    ListItem::new(group_edge(false, "", box_width, cols, render))
+                    ListItem::new(group_edge(false, "", 0, box_width, cols, render))
                 }
             })
             .collect();
@@ -2726,7 +2759,7 @@ mod tests {
         assert_eq!(
             rows,
             [
-                "┌ ra┌ keys ────────────────────────────────┐───┐",
+                "╭ ra╭ keys ────────────────────────────────╮───╮",
                 "│  ╭│  j k  ↓ ↑       move                 │╮  │",
                 "│▌ ││  g G            top / bottom         ││  │",
                 "│  ╰│  ctrl-d ctrl-u  half page            │╯  │",
@@ -2737,9 +2770,9 @@ mod tests {
                 "│   │  h l  z         fold this group      │   │",
                 "│   │  e  r           $EDITOR / re-read    │   │",
                 "│   │  q  ctrl-c      quit                 │   │",
-                "│   └───────── esc or ? to close ──────────┘   │",
-                "└──────────────────────────────────────────────┘",
-                " j k  spc  a  d  p  ?  q                        ",
+                "│   ╰───────── esc or ? to close ──────────╯   │",
+                "╰──────────────────────────────────────────────╯",
+                " [j k] [spc] [a] [d] [p] [?] [q]                ",
             ]
         );
     }
@@ -2893,7 +2926,7 @@ mod tests {
     #[test]
     fn the_first_group_gets_no_spacer_above_it() {
         let tasks = tasks(&["a @2026-08-10"]);
-        assert_eq!(rows(&agenda(&tasks, today()))[0], Row::header("TODAY"));
+        assert_eq!(rows(&agenda(&tasks, today()))[0], Row::header("TODAY", 1));
     }
 
     /// An untitled group is the run of tasks above the file's first heading. It
@@ -3142,16 +3175,16 @@ mod tests {
         assert_eq!(
             rendered(62, 10, &tasks),
             [
-                "┌ ratodo — 2 open · 1 overdue ───────────────────────────────┐",
-                "│  ╭─ OVERDUE ────────────────────────────────────────────╮  │",
+                "╭ ratodo — 2 open · 1 overdue ───────────────────────────────╮",
+                "│  ╭─ OVERDUE · 1 ────────────────────────────────────────╮  │",
                 "│▌ │ ! late                                   1d ago  #ops│  │",
                 "│  ╰──────────────────────────────────────────────────────╯  │",
-                "│  ╭─ ## Work ────────────────────────────────────────────╮  │",
+                "│  ╭─ ## Work · 1 ────────────────────────────────────────╮  │",
                 "│  │ ○ write the plan                                     │  │",
                 "│  ╰──────────────────────────────────────────────────────╯  │",
                 "│                                                            │",
-                "└────────────────────────────────────────────────────────────┘",
-                " j k move  spc done  a add  ⏎ edit  d cancel  ? keys  q quit  ",
+                "╰────────────────────────────────────────────────────────────╯",
+                " [j k] move [spc] done [a] add [⏎] edit [?] keys [q] quit     ",
             ]
         );
     }
@@ -3167,10 +3200,10 @@ mod tests {
         assert_eq!(
             rendered(62, 5, &tasks),
             [
-                "┌ ratodo — 1 open · 1 overdue ───────────────── ▰▰▰▰▱▱▱▱ 1/2 ┐",
-                "│  ╭─ OVERDUE ────────────────────────────────────────────╮  │",
+                "╭ ratodo — 1 open · 1 overdue ───────────────── ▰▰▰▰▱▱▱▱ 1/2 ╮",
+                "│  ╭─ OVERDUE · 1 ────────────────────────────────────────╮  │",
                 "│▌ │ ! late                                   1d ago  #ops│  │",
-                "└────────────────────────────────────────────────────────────┘",
+                "╰────────────────────────────────────────────────────────────╯",
                 " ?                                                            ",
             ]
         );
@@ -3196,7 +3229,7 @@ mod tests {
 
         let narrow = rendered(46, 5, &tasks);
         assert!(
-            narrow[0].starts_with("┌ ratodo — 1 · 1! · 1✓"),
+            narrow[0].starts_with("╭ ratodo — 1 · 1! · 1✓"),
             "{narrow:?}"
         );
         assert!(!narrow[0].contains('▰'), "the bar did not fit: {narrow:?}");
@@ -3348,10 +3381,10 @@ mod tests {
         assert_eq!(
             rendered(50, 5, &[long]),
             [
-                "┌ ratodo — 1 · 1! ───────────────────────────────┐",
-                "│  ╭─ OVERDUE ────────────────────────────────╮  │",
+                "╭ ratodo — 1 · 1! ───────────────────────────────╮",
+                "│  ╭─ OVERDUE · 1 ────────────────────────────╮  │",
                 "│▌ │ ! an extremely long task title t…  1d ago│  │",
-                "└────────────────────────────────────────────────┘",
+                "╰────────────────────────────────────────────────╯",
                 " ?                                                ",
             ]
         );
@@ -3370,14 +3403,14 @@ mod tests {
         assert_eq!(
             rendered(46, 9, &tasks),
             [
-                "┌ ratodo — 2 · 1! ───────────────────────────┐",
-                "│  ╭─ OVERDUE ────────────────────────────╮  │",
+                "╭ ratodo — 2 · 1! ───────────────────────────╮",
+                "│  ╭─ OVERDUE · 1 ────────────────────────╮  │",
                 "│▌ │ ! late                         1d ago│  │",
                 "│  ╰──────────────────────────────────────╯  │",
-                "│  ╭─ ## Work ────────────────────────────╮  │",
+                "│  ╭─ ## Work · 1 ────────────────────────╮  │",
                 "│  │ ○ write the plan                     │  │",
                 "│  ╰──────────────────────────────────────╯  │",
-                "└────────────────────────────────────────────┘",
+                "╰────────────────────────────────────────────╯",
                 " ?                                            ",
             ]
         );
@@ -3396,7 +3429,10 @@ mod tests {
             screen[0].contains("ratodo — 3 open · 1 overdue"),
             "{screen:?}"
         );
-        assert!(screen[1].starts_with("│  ╭─ OVERDUE ────"), "{screen:?}");
+        assert!(
+            screen[1].starts_with("│  ╭─ OVERDUE · 1 ────"),
+            "{screen:?}"
+        );
         assert!(screen[2].contains("▌ │ ! late"), "{screen:?}");
         assert!(screen[2].contains("9d ago"), "{screen:?}");
         assert!(screen[4].contains("TODAY"), "{screen:?}");
@@ -3885,7 +3921,7 @@ mod tests {
         // The group rule ends with the titles, so it has to follow the mark
         // too — under ASCII it would otherwise stop two columns short.
         let rule = |cols: Columns, render: Render<'_>| {
-            columns(&header_line("Work", None, 86, cols, render).to_string())
+            columns(&header_line("Work", 2, false, 86, cols, render).to_string())
         };
         assert_eq!(
             rule(wider, ascii),
@@ -3928,7 +3964,7 @@ mod tests {
         assert!(narrow.iter().any(|r| r.contains("late")), "{narrow:?}");
 
         let bare = rendered(30, 8, &tasks);
-        assert!(!bare[0].contains('┌'), "the frame survived: {bare:?}");
+        assert!(!bare[0].contains('╭'), "the frame survived: {bare:?}");
         assert!(bare.iter().any(|r| r.contains("late")), "{bare:?}");
     }
 
@@ -3970,7 +4006,7 @@ mod tests {
         for row in &screen[1..frame] {
             assert!(row.ends_with('│'), "the right edge broke: {screen:?}");
         }
-        assert!(screen[0].ends_with('┐') && screen[frame].ends_with('┘'));
+        assert!(screen[0].ends_with('╮') && screen[frame].ends_with('╯'));
         // The box's own right side, the margin it holds back, and then the
         // frame — three edges that all have to land, not one.
         assert!(screen[2].ends_with("9d ago│  │"), "{screen:?}");
@@ -4001,7 +4037,7 @@ mod tests {
 
         assert!(text.contains("> | [!] late"), "{text}");
         assert!(text.contains("| [ ] fine"), "{text}");
-        assert!(text.contains("+- OVERDUE --"), "{text}");
+        assert!(text.contains("+- OVERDUE / 1 --"), "{text}");
         // The strong form: not "the checkboxes are ASCII" but "the screen is".
         // A fallback that leaves the frame in box-drawing characters is the same
         // broken screen with tidier checkboxes.
@@ -4280,10 +4316,10 @@ mod tests {
         };
 
         assert!(
-            shown(&Notice::Hints, Size::Wide, 60, 20, Glyphs::Unicode).contains("spc done"),
+            shown(&Notice::Hints, Size::Wide, 60, 20, Glyphs::Unicode).contains("[spc] done"),
             "the hints have to name the keys"
         );
-        assert!(shown(&Notice::Hints, Size::Wide, 60, 20, Glyphs::Unicode).contains("a add"));
+        assert!(shown(&Notice::Hints, Size::Wide, 60, 20, Glyphs::Unicode).contains("[a] add"));
         // Sixty columns is the narrowest pane that still counts as wide, and the
         // bar has to fit it — in both alphabets, `ret` being the longer of the
         // two. A hint bar that gets clipped is advertising half a key.
@@ -4306,25 +4342,37 @@ mod tests {
                 assert!(columns(&bar) <= width, "{width}: {bar}");
                 // Whatever else goes, these two stay — the way to the rest of
                 // the keymap, and the way out.
-                assert!(bar.contains("? keys"), "{width}: {bar}");
-                assert!(bar.contains("q quit"), "{width}: {bar}");
+                assert!(bar.contains("[?] keys"), "{width}: {bar}");
+                assert!(bar.contains("[q] quit"), "{width}: {bar}");
             }
         }
 
-        // The three states, the date and the copy, at eighty columns — the
-        // width a terminal opens at unless somebody moved it. A user who never
-        // opens `?` finds a key here or not at all, so every one of these
-        // fitting at eighty is the thing being pinned, not a rendering detail.
+        // What eighty columns buys — the width a terminal opens at unless
+        // somebody moved it. A user who never opens `?` finds a key here or not
+        // at all, so what is on the bar at eighty is pinned rather than left to
+        // a rendering detail.
+        //
+        // **`[y] copy` is what the keycaps cost.** Brackets are two columns an
+        // entry and the bar is a greedy fill, so the last one no longer fits at
+        // eighty; it is back at eighty-eight. That was measured rather than
+        // assumed, and it is why the separator went from two spaces to one —
+        // the brackets already tell one entry from the next, and the space they
+        // gave back is `[p] later` still being here.
         let wide = shown(&Notice::Hints, Size::Wide, 80, 20, Glyphs::Unicode);
-        for named in ["spc done", "d cancel", "p later", "y copy"] {
+        for named in ["[spc] done", "[d] cancel", "[p] later"] {
             assert!(wide.contains(named), "{named} is not on the bar: {wide}");
         }
+        assert!(!wide.contains("[y] copy"), "{wide}");
+        assert!(
+            shown(&Notice::Hints, Size::Wide, 88, 20, Glyphs::Unicode).contains("[y] copy"),
+            "the copy key never comes back"
+        );
 
         // And they go in that order as the pane narrows, rather than the bar
         // being clipped mid-word.
         let sixty = shown(&Notice::Hints, Size::Wide, 60, 20, Glyphs::Unicode);
-        assert!(sixty.contains("spc done"), "{sixty}");
-        assert!(!sixty.contains("y copy"), "{sixty}");
+        assert!(sixty.contains("[spc] done"), "{sixty}");
+        assert!(!sixty.contains("[d] cancel"), "{sixty}");
 
         assert_eq!(
             shown(
@@ -4775,16 +4823,16 @@ mod tests {
         assert_eq!(
             with_input(70, 11, &tasks, &input, Glyphs::Unicode),
             [
-                "┌ ratodo — 4 open · 0 overdue ───────────────────────────────────────┐",
-                "│  ╭─ TODAY ──────────────────────────────────────────────────────╮  │",
-                "│▌┌────────────────────────────────────────────────────────────────┐ │",
+                "╭ ratodo — 4 open · 0 overdue ───────────────────────────────────────╮",
+                "│  ╭─ TODAY · 1 ──────────────────────────────────────────────────╮  │",
+                "│▌╭────────────────────────────────────────────────────────────────╮ │",
                 "│ │ ADD ▏call the accountant @thu !high                            │ │",
                 "│ ├────────────────────────────────────────────────────────────────┤ │",
                 "│ │      due Thursday (2026-08-13) │ !high                         │ │",
-                "│ └────────────────────────────────────────────────────────────────┘ │",
+                "│ ╰────────────────────────────────────────────────────────────────╯ │",
                 "│  │ ○ d                                                          │  │",
                 "│  ╰──────────────────────────────────────────────────────────────╯  │",
-                "└────────────────────────────────────────────────────────────────────┘",
+                "╰────────────────────────────────────────────────────────────────────╯",
                 " ⏎ save   esc cancel   tab date                                       ",
             ]
         );
@@ -5425,7 +5473,7 @@ mod tests {
         assert_eq!(quiet[..2], busy[..2], "the list shifted under the reader");
         assert_eq!(quiet[7..9], busy[7..9], "the list shifted under the reader");
         assert!(
-            busy[8].starts_with('└'),
+            busy[8].starts_with('╰'),
             "the frame lost its foot: {busy:?}"
         );
         assert!(
@@ -5537,7 +5585,8 @@ mod tests {
             matches!(
                 &screen.rows[0],
                 Row::Header {
-                    hidden: Some(2),
+                    count: 2,
+                    folded: true,
                     ..
                 }
             ),
@@ -5596,13 +5645,13 @@ mod tests {
         assert_eq!(
             rows,
             [
-                "┌ ratodo — 3 · 0! ─────────────────────────┐",
-                "│▌ ## Work (2) ───────────────────────── l │",
-                "│  ╭─ ## Home ──────────────────────────╮  │",
+                "╭ ratodo — 3 · 0! ─────────────────────────╮",
+                "│▌ ## Work · 2 ───────────────────────── l │",
+                "│  ╭─ ## Home · 1 ──────────────────────╮  │",
                 "│  │ ○ plumber                          │  │",
                 "│  ╰────────────────────────────────────╯  │",
                 "│                                          │",
-                "└──────────────────────────────────────────┘",
+                "╰──────────────────────────────────────────╯",
                 " ?                                          ",
             ]
         );
@@ -5646,11 +5695,11 @@ mod tests {
         assert_eq!(
             rows,
             [
-                "┌ ratodo — 3 open · 0 overdue ─────────────────────────────────────────────────────┐",
-                "│▌ ## Work (2)  l                                                                  │",
-                "│  ╭─ ## Home ──────────────────────────────────────────────────────────────────╮  │",
+                "╭ ratodo — 3 open · 0 overdue ─────────────────────────────────────────────────────╮",
+                "│▌ ## Work · 2  l                                                                  │",
+                "│  ╭─ ## Home · 1 ──────────────────────────────────────────────────────────────╮  │",
                 "│  │ ○ plumber                                                                  │  │",
-                "└──────────────────────────────────────────────────────────────────────────────────┘",
+                "╰──────────────────────────────────────────────────────────────────────────────────╯",
                 " ?                                                                                  ",
             ]
         );
@@ -5714,7 +5763,8 @@ mod tests {
         assert!(matches!(
             screen.rows[screen.selected().unwrap()],
             Row::Header {
-                hidden: Some(2),
+                count: 2,
+                folded: true,
                 ..
             }
         ));
@@ -5759,7 +5809,8 @@ mod tests {
             matches!(
                 &screen.rows[0],
                 Row::Header {
-                    hidden: Some(3),
+                    count: 3,
+                    folded: true,
                     ..
                 }
             ),
@@ -5805,7 +5856,7 @@ mod tests {
             "the shorthand was left unresolved: {text}"
         );
         assert!(
-            screen.iter().filter(|r| r.contains('┌')).count() == 2,
+            screen.iter().filter(|r| r.contains('╭')).count() == 2,
             "the box did not draw inside the frame: {screen:?}"
         );
 
@@ -5893,7 +5944,7 @@ mod tests {
     /// one — but a document of nothing but prose has nothing to show.
     #[test]
     fn a_document_with_no_tasks_at_all_gets_the_empty_screen() {
-        let with_headers = Screen::new(vec![Row::header("Work"), Row::GroupEnd]);
+        let with_headers = Screen::new(vec![Row::header("Work", 0), Row::GroupEnd]);
         let counts = Counts::default();
         let mut screen = with_headers;
         let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
@@ -5938,7 +5989,7 @@ mod tests {
         // One row goes to the list, not to the hint bar: what fits there is the
         // frame and its counts, which is more use than " ?" on its own.
         assert!(
-            rendered(40, 1, &tasks)[0].starts_with('┌'),
+            rendered(40, 1, &tasks)[0].starts_with('╭'),
             "the notice took the only row: {:?}",
             rendered(40, 1, &tasks)
         );

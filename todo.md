@@ -105,9 +105,15 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   — `2d ago` under `OVERDUE`, the **time or nothing** under
                   `TODAY`, the day under `THIS WEEK`, the date under a `##`
                   section. Amends the date rule in [docs/tui.md](docs/tui.md)
-            - [ ] **Counts on every heading**, `BorderType::Rounded`, and keycaps
+            - [x] **Counts on every heading**, `BorderType::Rounded`, and keycaps
                   on the hint bar — `[a] add`, in brackets so it survives
-                  `NO_COLOR` and reads as a keycap the way lazygit's bar does
+                  `NO_COLOR` and reads as a keycap the way lazygit's bar does —
+                  **done.** The count is one number now, not two:
+                  `hidden: Option<usize>` became `count` plus `folded`, so the
+                  fold stopped re-counting what `rows` already knew. A group
+                  with no name gets no count. The keycaps cost `[y] copy` at
+                  eighty columns and the separator went from two spaces to one
+                  to pay for `[p] later` — measured, not assumed
             - [ ] **The footer: the selected task's line from the file, raw.** One
                   row, and it is the row that says *this is a file and this is
                   your line in it* on the screen somebody stares at all day. It is
@@ -214,12 +220,14 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   ordered by how often a key is reached for, so `("s", "stats")`
                   goes on the **end** and the existing fill decides the rest:
                   no new logic at all
-            - [ ] **Keycaps are not free on that bar.** `[a] add` is two columns
-                  more than `a add`, times seven or eight entries — and the bar
-                  is exactly a width-driven `break`. At sixty columns it gets
-                  through `⏎ edit` today; measure what it gets through after,
-                  because the answer decides whether `p later` and `y copy`
-                  survive the width most panes are actually opened at
+            - [x] **Keycaps are not free on that bar.** **Measured on
+                  2026-08-12, before `s` was added to it.** With two-space
+                  separators eighty columns lost `[p] later` *and* `[y] copy`;
+                  with one space it keeps `[p] later`, and `[y] copy` returns at
+                  eighty-eight. Sixty columns gets through `[⏎] edit` and loses
+                  `[d] cancel`. Pinned in `the_bottom_line`, so adding
+                  `("s", "stats")` to the array will move a number a test is
+                  watching rather than something nobody notices
             - [ ] **What the screen does in a short pane.** Drawn at 80 and at 44
                   in [docs/redesign.md](docs/redesign.md#all-of-it-at-40-columns)
                   — both about twenty rows tall, and **neither says what happens
