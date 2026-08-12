@@ -9,6 +9,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 
 use crate::agenda::{Counts, Group, Kind, Period, Stats};
+use crate::capture::Part;
 use crate::model::{Priority, State, Task};
 use crate::text;
 use crate::theme::Theme;
@@ -22,9 +23,13 @@ pub enum Action {
     Top,
     Bottom,
     Toggle,
-    /// `a` `o` — open the input on an empty line. `o` because a vim user will
-    /// reach for it to open a new one.
+    /// `a` — the add form, wherever the pane has room for it, and the one-line
+    /// box where it does not — docs/decisions.md.
     Add,
+    /// `o` — the one-line box, always. A vim user reaches for `o` to open a new
+    /// line, which is the fast path, so it keeps being the fast path rather than
+    /// following `a` onto a screen.
+    Quick,
     /// `⏎` — the same input, pre-filled with the selected task.
     Change,
     /// `y` — the same input again, pre-filled with a *copy* of the selected
@@ -102,7 +107,8 @@ pub fn action(key: KeyEvent) -> Action {
         KeyCode::Char('d') => Action::Cancel,
         KeyCode::Char('u') => Action::Undo,
         KeyCode::Char(' ') => Action::Toggle,
-        KeyCode::Char('a') | KeyCode::Char('o') => Action::Add,
+        KeyCode::Char('a') => Action::Add,
+        KeyCode::Char('o') => Action::Quick,
         KeyCode::Enter => Action::Change,
         KeyCode::Char('h') | KeyCode::Left => Action::Fold(Fold::Close),
         KeyCode::Char('l') | KeyCode::Right => Action::Fold(Fold::Open),
@@ -590,6 +596,461 @@ fn replace_date(text: &str, with: &str) -> String {
         Some((at, word)) => format!("{}{with}{}", &text[..at], &text[at + word.len()..]),
         None if text.trim().is_empty() => with.to_string(),
         None => format!("{} {with}", text.trim_end()),
+    }
+}
+
+/// Replaces whatever `capture::parts` claims as one of `wanted` with `to`, and
+/// removes it when `to` is `None`.
+///
+/// **The form never guesses where a field is in the line.** It asks the same
+/// tokenizer the live preview reads, so the screen and the parse cannot disagree
+/// about what is going to be written — which is the invariant the labelled-field
+/// box was rejected for breaking, kept here rather than argued around:
+/// docs/decisions.md.
+///
+/// A removal takes **one adjacent space** with it. Without that a line loses a
+/// field and keeps a double space, and does it again on the next edit.
+fn set_parts(text: &str, today: NaiveDate, wanted: &[Part], to: Option<&str>) -> String {
+    let to = to.filter(|t| !t.is_empty());
+    let claimed: Vec<std::ops::Range<usize>> = crate::capture::parts(text, today)
+        .into_iter()
+        .filter(|(_, part)| wanted.contains(part))
+        .map(|(range, _)| range)
+        .collect();
+
+    let Some(first) = claimed.first().cloned() else {
+        // Nothing to replace, so the only case left is adding one — and that is
+        // the one place the tool chooses a position. The end of the line, which
+        // is where `capture` puts a new task's fields anyway.
+        return match (to, text.trim_end().is_empty()) {
+            (None, _) => text.to_string(),
+            (Some(to), true) => to.to_string(),
+            (Some(to), false) => format!("{} {to}", text.trim_end()),
+        };
+    };
+
+    let mut out = String::with_capacity(text.len() + 16);
+    let mut at = 0;
+    for range in &claimed {
+        let keep = &text[at..range.start];
+        match to.filter(|_| *range == first) {
+            Some(word) => {
+                out.push_str(keep);
+                out.push_str(word);
+                at = range.end;
+            }
+            // The word goes, and one space with it: the following one where
+            // there is one, the preceding one otherwise.
+            None => {
+                let trailing = text[range.end..].starts_with(' ');
+                out.push_str(match (trailing, keep.ends_with(' ')) {
+                    (false, true) => &keep[..keep.len() - 1],
+                    _ => keep,
+                });
+                at = range.end + usize::from(trailing);
+            }
+        }
+    }
+    out.push_str(&text[at.min(text.len())..]);
+    out
+}
+
+/// A time goes **directly after the date**, because that is the only place
+/// `capture` reads one: on its own it is words in a title, and `09:30 standup`
+/// is a title somebody typed. `text` has no time in it — the caller took it out.
+fn after_date(text: &str, today: NaiveDate, time: &str) -> String {
+    if time.is_empty() {
+        return text.to_string();
+    }
+    match crate::capture::parts(text, today)
+        .into_iter()
+        .find(|(_, part)| *part == Part::Date)
+    {
+        Some((range, _)) => format!(
+            "{}{} {time}{}",
+            &text[..range.start],
+            &text[range.clone()],
+            &text[range.end..]
+        ),
+        // Unreachable through the form — `Time` is not in the tab order without
+        // a date — and appending is the only honest answer if it ever is.
+        None => format!("{} {time}", text.trim_end()),
+    }
+}
+
+/// The tags, which are a set rather than a token and so get their own function:
+/// the whole set is cleared and written back as one word run.
+fn set_tags(text: &str, today: NaiveDate, tags: &str) -> String {
+    let written = tags
+        .split_whitespace()
+        .map(|word| match word.starts_with('#') {
+            true => word.to_string(),
+            false => format!("#{word}"),
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let cleared = set_parts(text, today, &[Part::Tag], None);
+    match (written.is_empty(), cleared.trim_end().is_empty()) {
+        (true, _) => cleared,
+        (false, true) => written,
+        // On the end rather than where the first one was: an emptied set has no
+        // position of its own, and the end is the one place this tool chooses.
+        (false, false) => format!("{} {written}", cleared.trim_end()),
+    }
+}
+
+/// What the line currently says, read back through the same tokenizer. The form
+/// stores none of this: every radio and every sub-field is a **view** of the one
+/// string, which is what keeps one tokenizer and one truth — docs/decisions.md.
+fn part_of(text: &str, today: NaiveDate, want: Part) -> Option<String> {
+    crate::capture::parts(text, today)
+        .into_iter()
+        .find(|(_, part)| *part == want)
+        .map(|(range, _)| text[range].to_string())
+}
+
+/// Every tag in the line, space separated and with their `#`.
+fn tags_of(text: &str, today: NaiveDate) -> String {
+    crate::capture::parts(text, today)
+        .into_iter()
+        .filter(|(_, part)| *part == Part::Tag)
+        .map(|(range, _)| &text[range])
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Which control has the keyboard.
+///
+/// Six fields, and they are exactly the six the format already carries — title,
+/// date, time, tags, priority and which list. There is no seventh, because there
+/// is nowhere in a one-line format to put one: no Description, no Project and no
+/// Section picker — docs/redesign.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Field {
+    Title,
+    Due,
+    Time,
+    Priority,
+    Tags,
+    List,
+    Cancel,
+    Create,
+}
+
+impl Field {
+    fn label(self) -> &'static str {
+        match self {
+            Field::Title => "",
+            Field::Due => "Due",
+            Field::Time => "Time",
+            Field::Priority => "Priority",
+            Field::Tags => "Tags",
+            Field::List => "List",
+            Field::Cancel => "",
+            Field::Create => "",
+        }
+    }
+
+    /// Whether it is typed into rather than chosen from.
+    fn typed(self) -> bool {
+        matches!(self, Field::Time | Field::Tags)
+    }
+}
+
+/// The add screen. **The line is the model**: the text box holds the whole line
+/// exactly as the one-line box does, and every row under it is a view of that
+/// one string — each reads `capture::parts` to know what is selected and writes
+/// back by replacing the span the tokenizer claimed.
+///
+/// That is what lets the form exist at all. The labelled-field box was rejected
+/// because five fields mean either joining them back into a line, which makes
+/// the boundaries decoration, or a second parser, which eventually disagrees
+/// with the first about what is going to be written. This is neither —
+/// docs/decisions.md.
+#[derive(Debug)]
+pub struct Form {
+    pub input: Input,
+    pub focus: Field,
+    today: NaiveDate,
+    /// The open lists, so `List` knows its options. One list or none means the
+    /// row is not drawn and `tab` steps over it, exactly as `$list` is only
+    /// offered when there is more than one — docs/tui.md#which-list--work.
+    lists: Vec<String>,
+    /// What is being typed into `Time` or `Tags` right now, seeded from the line
+    /// when the focus lands and written back into it on every keystroke.
+    ///
+    /// The one piece of state that is not the line, and it is only ever what is
+    /// *mid-typing*: a trailing space is a second tag on its way and the line
+    /// cannot hold one. Leaving the field throws it away, because by then the
+    /// line has it.
+    typing: String,
+    /// The line **without** whatever the focused sub-field owns, taken when the
+    /// focus lands on it. Every keystroke rebuilds from this rather than editing
+    /// what the last one left behind.
+    ///
+    /// It has to work this way because half a time is not a time: `capture`
+    /// claims `09:30` and has never heard of `0`, `09` or `09:`, so a sync that
+    /// looked for the token it wrote a keystroke ago would find nothing and
+    /// append a second one. Five keystrokes, five words in the line.
+    base: String,
+}
+
+impl Form {
+    /// The pane the form needs. Under this `a` opens the one-line box instead —
+    /// a form that half-fits is worse than a box that always fits, and the box
+    /// is already built and already tested. docs/decisions.md.
+    pub fn fits(area: Rect) -> bool {
+        area.height >= 15 && area.width >= 40
+    }
+
+    pub fn adding(today: NaiveDate, lists: &[String]) -> Self {
+        Form {
+            input: Input::adding(today),
+            focus: Field::Title,
+            today,
+            lists: lists.to_vec(),
+            typing: String::new(),
+            base: String::new(),
+        }
+    }
+
+    /// The tab order, with the rows that have nothing to offer left out.
+    ///
+    /// `Time` goes when there is no date: the format cannot hold a time without
+    /// one, so a row that accepted a time there would be a field the file cannot
+    /// keep — docs/format.md.
+    fn order(&self) -> Vec<Field> {
+        let mut out = vec![Field::Title, Field::Due];
+        if part_of(&self.input.text, self.today, Part::Date).is_some() {
+            out.push(Field::Time);
+        }
+        out.extend([Field::Priority, Field::Tags]);
+        if self.lists.len() > 1 {
+            out.push(Field::List);
+        }
+        out.extend([Field::Cancel, Field::Create]);
+        out
+    }
+
+    fn step_focus(&mut self, by: isize) {
+        let order = self.order();
+        let at = order.iter().position(|f| *f == self.focus).unwrap_or(0) as isize;
+        let next = (at + by).rem_euclid(order.len() as isize) as usize;
+        self.focus = order[next];
+        // Seeded on arrival and thrown away on leaving: the line is where it
+        // lives the rest of the time.
+        let (text, today) = (self.input.text.clone(), self.today);
+        let (typing, owns) = match self.focus {
+            Field::Time => (
+                part_of(&text, today, Part::Time).unwrap_or_default(),
+                &[Part::Time][..],
+            ),
+            Field::Tags => (tags_of(&text, today), &[Part::Tag][..]),
+            _ => (String::new(), &[][..]),
+        };
+        self.typing = typing;
+        self.base = set_parts(&text, today, owns, None);
+    }
+
+    /// The options on the focused row, and which one is on. Built from the line
+    /// every time rather than held: a radio that remembers what it was told is
+    /// a second model of the same fact.
+    fn choices(&self) -> Vec<(String, bool)> {
+        self.choices_for(self.focus)
+    }
+
+    /// What is being typed into the focused sub-field right now.
+    fn typed_text(&self) -> String {
+        self.typing.clone()
+    }
+
+    fn choices_for(&self, field: Field) -> Vec<(String, bool)> {
+        let text = &self.input.text;
+        let today = self.today;
+        match field {
+            Field::Due => {
+                let has = part_of(text, today, Part::Date);
+                let named = |d: NaiveDate| format!("@{d}");
+                let tomorrow = today.succ_opt().unwrap_or(today);
+                let mut out = vec![
+                    ("none".to_string(), has.is_none()),
+                    ("today".to_string(), has.as_deref() == Some(&named(today))),
+                    (
+                        "tomorrow".to_string(),
+                        has.as_deref() == Some(&named(tomorrow)),
+                    ),
+                ];
+                // A date that is neither shows itself rather than nothing: the
+                // form has to be able to say what the line already holds.
+                if let Some(word) = has.filter(|w| *w != named(today) && *w != named(tomorrow)) {
+                    out.push((word.trim_start_matches('@').to_string(), true));
+                }
+                // `pick` and not `pick…`: the ellipsis would be the one
+                // character on this screen with no ASCII form, and plumbing the
+                // glyph set into a model that is otherwise only the line is a
+                // lot of wire for one dot.
+                out.push(("pick".to_string(), false));
+                out
+            }
+            Field::Priority => {
+                let has = part_of(text, today, Part::Priority);
+                let mut out = vec![("none".to_string(), has.is_none())];
+                out.extend(["!high", "!med", "!low"].map(|p| {
+                    (
+                        p.trim_start_matches('!').to_string(),
+                        has.as_deref() == Some(p),
+                    )
+                }));
+                out
+            }
+            Field::List => {
+                let has = crate::capture::list_of(text);
+                self.lists
+                    .iter()
+                    .enumerate()
+                    .map(|(n, name)| {
+                        let on = match has {
+                            Some(word) => crate::capture::names_list(word, name),
+                            // No `$word` means the capture target, which is the
+                            // first list — cli.md#several-lists rule 4.
+                            None => n == 0,
+                        };
+                        (name.clone(), on)
+                    })
+                    .collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Turns the *n*th choice on, by writing it into the line.
+    fn choose(&mut self, n: usize) {
+        let text = self.input.text.clone();
+        let today = self.today;
+        let choices = self.choices();
+        let Some((label, _)) = choices.get(n) else {
+            return;
+        };
+        self.input.text = match self.focus {
+            Field::Due => match label.as_str() {
+                "none" => set_parts(&text, today, &[Part::Date, Part::Time], None),
+                "today" => set_parts(&text, today, &[Part::Date], Some(&format!("@{today}"))),
+                "tomorrow" => set_parts(
+                    &text,
+                    today,
+                    &[Part::Date],
+                    Some(&format!("@{}", today.succ_opt().unwrap_or(today))),
+                ),
+                // The date field the box already has, opened on the date the
+                // line already means. `tab` is what opens it there; here the
+                // radio is, which is the same key doing one job per screen.
+                "pick" => {
+                    self.input.toggle_field(today);
+                    text
+                }
+                own => set_parts(&text, today, &[Part::Date], Some(&format!("@{own}"))),
+            },
+            Field::Priority => match label.as_str() {
+                "none" => set_parts(&text, today, &[Part::Priority], None),
+                name => set_parts(&text, today, &[Part::Priority], Some(&format!("!{name}"))),
+            },
+            Field::List => set_parts(
+                &text,
+                today,
+                &[Part::List],
+                Some(&format!("${}", label.trim_end_matches(".md"))),
+            ),
+            _ => text,
+        };
+        self.input.at = self.input.text.len();
+        // The date row can appear or vanish under the cursor, so the focus is
+        // re-seated on a row that still exists.
+        if !self.order().contains(&self.focus) {
+            self.focus = Field::Due;
+        }
+    }
+
+    /// `←` and `→` on a chosen row: one step, applied at once. No `⏎` to
+    /// confirm — the preview at the bottom is the confirmation, and it is
+    /// already there.
+    fn nudge(&mut self, by: isize) {
+        let choices = self.choices();
+        if choices.is_empty() {
+            return;
+        }
+        let at = choices.iter().position(|(_, on)| *on).unwrap_or(0) as isize;
+        let next = (at + by).rem_euclid(choices.len() as isize) as usize;
+        self.choose(next);
+    }
+
+    /// Writes whatever is being typed in `Time` or `Tags` back into the line,
+    /// rebuilding from `base` rather than editing the last keystroke's work.
+    fn sync(&mut self) {
+        let (base, today, typing) = (self.base.clone(), self.today, self.typing.clone());
+        self.input.text = match self.focus {
+            Field::Time => after_date(&base, today, typing.trim()),
+            Field::Tags => set_tags(&base, today, &typing),
+            _ => base,
+        };
+        self.input.at = self.input.text.len();
+    }
+
+    /// One keypress. Everything the form does to itself happens in here, so the
+    /// event loop only ever hears the two answers it has to act on.
+    pub fn press(&mut self, key: KeyEvent) -> Typed {
+        let what = typing(key);
+        // The date picker has the keyboard while it is open, whatever the focus
+        // is — one `esc` per thing that is open, the same rule the box has.
+        if self.input.field.is_some() {
+            match what {
+                Typed::Left => self.input.left(),
+                Typed::Right => self.input.right(),
+                Typed::Step(by) => self.input.step(by),
+                Typed::Char(c) => self.input.insert(c),
+                Typed::Field | Typed::Save => {
+                    self.input.apply_field();
+                }
+                Typed::Cancel => {
+                    self.input.close_field();
+                }
+                _ => {}
+            }
+            return Typed::Ignore;
+        }
+
+        match (what, self.focus) {
+            (Typed::Cancel, _) => return Typed::Cancel,
+            (Typed::Save, Field::Cancel) => return Typed::Cancel,
+            (Typed::Save, _) => return Typed::Save,
+            // `tab` is *next field* in here, and the date picker is reached
+            // through `Due · pick…` instead. One key, one job per screen —
+            // docs/tui.md#adding.
+            (Typed::Field, _) => {
+                let back = key.code == crossterm::event::KeyCode::BackTab
+                    || key.modifiers.contains(KeyModifiers::SHIFT);
+                self.step_focus(if back { -1 } else { 1 });
+            }
+            (Typed::Step(by), _) => self.step_focus(-by as isize),
+            (Typed::Char(c), Field::Title) => self.input.insert(c),
+            (Typed::Back, Field::Title) => self.input.back(),
+            (Typed::Delete, Field::Title) => self.input.delete(),
+            (Typed::Left, Field::Title) => self.input.left(),
+            (Typed::Right, Field::Title) => self.input.right(),
+            (Typed::Home, Field::Title) => self.input.home(),
+            (Typed::End, Field::Title) => self.input.end(),
+            (Typed::Char(c), field) if field.typed() => {
+                self.typing.push(c);
+                self.sync();
+            }
+            (Typed::Back, field) if field.typed() => {
+                self.typing.pop();
+                self.sync();
+            }
+            (Typed::Left, _) => self.nudge(-1),
+            (Typed::Right, _) => self.nudge(1),
+            _ => {}
+        }
+        Typed::Ignore
     }
 }
 
@@ -2094,6 +2555,18 @@ pub enum View<'a> {
     Stats(&'a Stats, Period),
 }
 
+/// What is open over the list. One parameter rather than two `Option`s that
+/// must never both be `Some`.
+#[derive(Debug, Clone, Copy)]
+pub enum Open<'a> {
+    Nothing,
+    /// The one-line box — still what `p` and `y` open at every width, and what
+    /// `a` opens when the pane is too small for the form.
+    Box(&'a Input),
+    /// The form. `a`, wherever there is room for it — docs/decisions.md.
+    Form(&'a Form),
+}
+
 pub fn draw(
     frame: &mut Frame,
     screen: &mut Screen,
@@ -2101,7 +2574,7 @@ pub fn draw(
     render: Render<'_>,
     notice: &Notice,
     view: View<'_>,
-    input: Option<&Input>,
+    open: Open<'_>,
 ) {
     let whole = frame.area();
     // One row held back, always. The screen never changes shape now: the input
@@ -2310,20 +2783,22 @@ pub fn draw(
     if let View::Help = view {
         help(frame, area, render);
     }
-    if let Some(input) = input {
-        input_box(frame, area, input, render);
+    match open {
+        Open::Nothing => {}
+        Open::Box(input) => input_box(frame, area, input, render),
+        Open::Form(form) => form_box(frame, area, form, render),
     }
 
     let Some(bottom) = bottom else { return };
     // While the input is open the line names the two keys that end it, and
     // nothing else: the list keys under it are letters until `esc`, so
     // advertising them there would be a lie.
-    let line = match input {
+    let line = match open {
         // The third key is only named while it does something. `tab` opens the
         // date field, and once it is open the line says what ends *it* — the
         // two keys that end the box are the same two either way, and the row
         // has to be read at a glance rather than decoded.
-        Some(open) => Line::from(Span::styled(
+        Open::Box(open) => Line::from(Span::styled(
             match (open.field.is_some(), size == Size::Wide) {
                 (true, _) => format!(" {} date   esc back", render.glyphs.enter()),
                 (false, true) => format!(" {} save   esc cancel   tab date", render.glyphs.enter()),
@@ -2331,7 +2806,16 @@ pub fn draw(
             },
             Style::default().fg(render.colours.dim),
         )),
-        None => notice.line(
+        // The form names `tab` on its own bottom border, where the eye already
+        // is, so this line says the two keys that end it and nothing else.
+        Open::Form(form) => Line::from(Span::styled(
+            match form.input.field.is_some() {
+                true => format!(" {} date   esc back", render.glyphs.enter()),
+                false => format!(" {} create   esc cancel", render.glyphs.enter()),
+            },
+            Style::default().fg(render.colours.dim),
+        )),
+        Open::Nothing => notice.line(
             size,
             whole.width as usize,
             whole.height,
@@ -2840,6 +3324,283 @@ fn stats_screen(frame: &mut Frame, area: Rect, stats: &Stats, period: Period, re
         Paragraph::new(lines).style(Style::default().bg(render.colours.background)),
         inner,
     );
+}
+
+/// The line as it is being typed, coloured by what the tokenizer **took** — a
+/// `@notaday` stays plain here exactly as it will in the file. The window is
+/// anchored on the caret, so a line longer than the box scrolls under it.
+///
+/// Returns the caret's column as well, because it is the same arithmetic.
+fn typed_line(input: &Input, width: usize, render: Render<'_>) -> (Line<'static>, usize) {
+    let plain = Style::default().fg(render.colours.foreground);
+    let before = tail(&input.text[..input.at], width);
+    let after = lead(
+        &input.text[input.at..],
+        width.saturating_sub(columns(&before)),
+    );
+    let (from, to) = (input.at - before.len(), input.at + after.len());
+    let parsed = crate::capture::capture(&input.text, render.today);
+
+    let mut spans = Vec::new();
+    let mut cut = from;
+    for (word, part) in crate::capture::parts(&input.text, render.today) {
+        if part == Part::Text || word.end <= from || word.start >= to {
+            continue;
+        }
+        let (start, end) = (word.start.max(from), word.end.min(to));
+        if start > cut {
+            spans.push(Span::styled(input.text[cut..start].to_string(), plain));
+        }
+        spans.push(Span::styled(
+            input.text[start..end].to_string(),
+            paint(part, parsed.priority, plain, render),
+        ));
+        cut = end;
+    }
+    spans.push(Span::styled(input.text[cut..to].to_string(), plain));
+    (Line::from(spans), columns(&before))
+}
+
+/// `◉` against `○`, and `(o)` against `( )` in ASCII. A difference in **shape**,
+/// so the selection survives `NO_COLOR=1` and the fallback: `[ MED ]` with the
+/// choice carried by colour alone breaks the rule in docs/design.md.
+fn radios(choices: &[(String, bool)], glyphs: Glyphs) -> String {
+    let (on, off) = match glyphs {
+        Glyphs::Unicode => ("◉", "○"),
+        Glyphs::Ascii => ("(o)", "( )"),
+    };
+    choices
+        .iter()
+        .map(|(label, chosen)| format!("{} {label}", if *chosen { on } else { off }))
+        .collect::<Vec<_>>()
+        .join("  ")
+}
+
+/// `a`, the add screen — the form. Screens 2 and 3 of docs/redesign.md, and the
+/// reversal it rests on is docs/decisions.md.
+///
+/// A centred overlay, and the pane comes back the moment it closes. Under
+/// `Form::fits` it is not drawn at all and `a` opens the one-line box instead:
+/// a form that half-fits is worse than a box that always fits.
+fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
+    let width = 64.min(area.width.saturating_sub(4));
+    // Two of block border, and two of margin either side of the content so that
+    // nothing inside closes flush against the frame — the same two the group
+    // boxes on the list hold back.
+    let inner = (width as usize).saturating_sub(6);
+    let dim = Style::default().fg(render.colours.dim);
+    let plain = Style::default().fg(render.colours.foreground);
+    let accent = Style::default().fg(render.colours.accent);
+    let border = Style::default().fg(render.colours.border);
+
+    // `▌` sits beside the **control** that has the keyboard, not beside its
+    // label: the marker points at what the keys are going to reach, and the
+    // label is not it. Same marker and same colour as the selected row on the
+    // list — docs/redesign.md.
+    let mark = |field: Field| -> Span<'static> {
+        match form.focus == field {
+            true => Span::styled(render.glyphs.cursor().trim_end().to_string(), accent),
+            false => Span::raw(" "),
+        }
+    };
+    let row = |field: Field, body: Vec<Span<'static>>| -> Line<'static> {
+        let mut spans = vec![mark(field), Span::raw(" ")];
+        if !field.label().is_empty() {
+            spans.push(Span::styled(format!("{:<10}", field.label()), dim));
+        }
+        spans.extend(body);
+        Line::from(spans)
+    };
+
+    // The text box is drawn by hand rather than with a `Block`, so the focus
+    // marker can sit in the column to its left: a block owns its whole
+    // rectangle and there is nowhere outside it to put one.
+    let (typed, caret) = typed_line(&form.input, inner.saturating_sub(4), render);
+    let [top_left, top_right, bottom_left, bottom_right] = render.glyphs.corners();
+    let side = render.glyphs.divider();
+    let edge = match form.focus == Field::Title {
+        true => accent,
+        false => border,
+    };
+    let rule = render
+        .glyphs
+        .rule()
+        .to_string()
+        .repeat(inner.saturating_sub(2));
+    let mut lines: Vec<Line<'static>> = vec![
+        // Their question, and it is better than `Title`: in a form there is room
+        // for a sentence, and it replaces the syntax-by-example hint that only
+        // ever had that job because there was nowhere else to put one.
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled("What needs to be done?", plain),
+        ]),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(format!("{top_left}{rule}{top_right}"), edge),
+        ]),
+        Line::from({
+            // The marker takes the gutter column and the box starts where its
+            // own corners do, or the row slides one column out from under them.
+            let mut spans = vec![
+                mark(Field::Title),
+                Span::raw(" "),
+                Span::styled(format!("{side} "), edge),
+            ];
+            let pad = inner.saturating_sub(4 + typed.width());
+            spans.extend(typed.spans);
+            spans.push(Span::raw(" ".repeat(pad + 1)));
+            spans.push(Span::styled(side.to_string(), edge));
+            spans
+        }),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(format!("{bottom_left}{rule}{bottom_right}"), edge),
+        ]),
+    ];
+
+    let fields_at = lines.len();
+    for field in form.order() {
+        let body: Vec<Span<'static>> = match field {
+            Field::Title | Field::Cancel | Field::Create => continue,
+            Field::Time | Field::Tags => {
+                let shown = match (field, form.focus == field) {
+                    (_, true) => form.typed_text(),
+                    (Field::Time, false) => {
+                        part_of(&form.input.text, render.today, Part::Time).unwrap_or_default()
+                    }
+                    _ => tags_of(&form.input.text, render.today),
+                };
+                let room = inner.saturating_sub(14); // label, brackets, marker
+                vec![Span::styled(
+                    format!("[ {:<room$} ]", shorten(&shown, room, render.glyphs)),
+                    plain,
+                )]
+            }
+            // `Due · pick…` opens the three-part date field the box already
+            // has, and it takes the row over while it is up: the radios and the
+            // picker are two answers to one question and only one of them can
+            // be the live one — docs/tui.md#the-date-field--tab.
+            Field::Due if form.input.field.is_some() => {
+                let open = form.input.field.as_ref().expect("just checked");
+                let mut spans = Vec::new();
+                for (part, text) in open.cells() {
+                    spans.push(Span::styled(
+                        text,
+                        match part == open.part {
+                            true => accent.bold(),
+                            false => plain,
+                        },
+                    ));
+                }
+                spans.push(Span::styled(
+                    format!(" {}", render.glyphs.arrows()),
+                    Style::default().fg(render.colours.dim),
+                ));
+                spans
+            }
+            _ => vec![Span::styled(
+                shorten(
+                    &radios(&form.choices_for(field), render.glyphs),
+                    inner.saturating_sub(10),
+                    render.glyphs,
+                ),
+                plain,
+            )],
+        };
+        lines.push(row(field, body));
+    }
+
+    // `PREVIEW`, with its own label and its own rule above it. The difference
+    // between a form that happens to show a line and a form whose *conclusion*
+    // is a line: this one saves into your file, so the file is the last word on
+    // the screen — docs/redesign.md.
+    let preview_at = lines.len();
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(render.glyphs.rule().to_string().repeat(inner), border),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            "PREVIEW",
+            Style::default().fg(render.colours.foreground).bold(),
+        ),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            shorten(
+                &crate::capture::capture(&form.input.text, render.today).line(),
+                inner,
+                render.glyphs,
+            ),
+            dim,
+        ),
+    ]));
+
+    // The buttons stay, and they carry their key: `[ ⏎ create task ]` is both
+    // the button the mockups drew and the keybinding, so it is honest on a
+    // keyboard and still looks like a button.
+    let create = format!("[ {} create task ]", render.glyphs.enter());
+    let cancel = "[ esc cancel ]";
+    let gap = inner.saturating_sub(columns(cancel) + columns(&create) + 2);
+    let buttons_at = lines.len();
+    lines.push(Line::from(vec![
+        mark(Field::Cancel),
+        Span::raw(" "),
+        Span::styled(cancel.to_string(), plain),
+        Span::raw(" ".repeat(gap)),
+        mark(Field::Create),
+        Span::raw(" "),
+        Span::styled(create, plain),
+    ]));
+
+    // Blank rows are the give. They go in between the four blocks — question,
+    // fields, preview, buttons — one at a time from the bottom up, and the form
+    // is not drawn at all below `Form::fits`.
+    let mut spare = (area.height as usize).saturating_sub(lines.len() + 2);
+    for at in [buttons_at, preview_at, fields_at].into_iter() {
+        if spare == 0 {
+            break;
+        }
+        spare -= 1;
+        lines.insert(at, Line::default());
+    }
+
+    let height = (lines.len() as u16 + 2).min(area.height);
+    let box_area = Rect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    );
+
+    frame.render_widget(Clear, box_area);
+    frame.render_widget(
+        Paragraph::new(lines.clone()).block(
+            Block::bordered()
+                .border_set(render.glyphs.border())
+                .border_style(Style::default().fg(render.colours.accent))
+                .style(Style::default().bg(render.colours.background))
+                .title(Line::from(Span::styled(" NEW TASK ", accent.bold())).centered())
+                .title_bottom(Span::styled(
+                    format!(" tab {} next field ", render.glyphs.punctuation().1),
+                    dim,
+                )),
+        ),
+        box_area,
+    );
+
+    // The terminal's own cursor, and only where there is text to type: on a
+    // radio row it would blink at a control that does not take characters.
+    if form.focus == Field::Title {
+        let at = lines
+            .iter()
+            .position(|line| line.spans.len() > 1 && line.spans[1].content.starts_with(side))
+            .unwrap_or(2);
+        frame.set_cursor_position((box_area.x + 3 + caret as u16, box_area.y + 1 + at as u16));
+    }
 }
 
 /// The input, in a box over the middle of the list.
@@ -3364,7 +4125,7 @@ mod tests {
                             true => View::Help,
                             false => View::List,
                         },
-                        None,
+                        Open::Nothing,
                     )
                 })
                 .unwrap();
@@ -3411,7 +4172,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     View::Help,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -3467,7 +4228,7 @@ mod tests {
                         render(crate::theme::MOCHA),
                         &Notice::Hints,
                         View::Help,
-                        None,
+                        Open::Nothing,
                     )
                 })
                 .unwrap();
@@ -3501,7 +4262,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     View::Help,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -3818,7 +4579,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     notice,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -3984,7 +4745,7 @@ mod tests {
                     render,
                     &Notice::Hints,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -4018,7 +4779,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     View::Stats(&stats, period),
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -4186,7 +4947,7 @@ mod tests {
                     render,
                     &Notice::Hints,
                     View::Stats(&stats, Period::Week),
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -4199,6 +4960,346 @@ mod tests {
             .collect();
 
         assert!(text.contains("DONE THIS WEEK"), "{text}");
+        assert!(
+            text.is_ascii(),
+            "something non-ASCII reached the screen: {text}"
+        );
+    }
+
+    fn form(text: &str, lists: &[&str]) -> Form {
+        let names: Vec<String> = lists.iter().map(|s| s.to_string()).collect();
+        let mut form = Form::adding(today(), &names);
+        form.input = Input::new(text.to_string(), Purpose::Add);
+        form
+    }
+
+    fn tab(form: &mut Form, times: usize) {
+        for _ in 0..times {
+            form.press(press(KeyCode::Tab));
+        }
+    }
+
+    /// **The line is the model.** Every row is a view of one string, so a form
+    /// that opened on a line already carrying fields shows them without being
+    /// told — and this is the whole reason the labelled-field box could be
+    /// reversed without bringing back the second parser that killed it:
+    /// docs/decisions.md.
+    #[test]
+    fn every_row_is_a_view_of_the_one_line() {
+        let form = form(
+            "call the accountant @2026-08-14 09:30 #home #work !high",
+            &[],
+        );
+        let on = |field: Field| -> Vec<String> {
+            form.choices_for(field)
+                .into_iter()
+                .filter(|(_, chosen)| *chosen)
+                .map(|(label, _)| label)
+                .collect()
+        };
+
+        assert_eq!(on(Field::Due), ["2026-08-14"]);
+        assert_eq!(on(Field::Priority), ["high"]);
+        assert_eq!(tags_of(&form.input.text, today()), "#home #work");
+        assert_eq!(
+            part_of(&form.input.text, today(), Part::Time).as_deref(),
+            Some("09:30")
+        );
+    }
+
+    /// A radio writes into the line and nothing else. What is around the token
+    /// it replaced is the user's and stays where they put it.
+    #[test]
+    fn choosing_a_radio_replaces_one_word_and_leaves_the_rest_alone() {
+        let mut form = form("#ops rotate the keys !high @2026-08-14", &[]);
+        tab(&mut form, 3); // Title -> Due -> Time -> Priority
+        assert_eq!(form.focus, Field::Priority);
+
+        // none, high, med, low — so one step right of `high` is `med`.
+        form.press(press(KeyCode::Right));
+        assert_eq!(form.input.text, "#ops rotate the keys !med @2026-08-14");
+        form.press(press(KeyCode::Right));
+        assert_eq!(form.input.text, "#ops rotate the keys !low @2026-08-14");
+        // And round to `none`, which takes the word out with one adjacent space.
+        form.press(press(KeyCode::Right));
+        assert_eq!(
+            form.input.text, "#ops rotate the keys @2026-08-14",
+            "clearing takes one adjacent space with it"
+        );
+    }
+
+    /// The four cases a span rewrite has to get right, and the space either
+    /// side of a removed word is the one that is easy to get wrong twice.
+    #[test]
+    fn a_span_is_replaced_added_or_removed_and_never_smeared() {
+        let day = today();
+        let line = "rotate #ops the keys !high @2026-08-14";
+
+        // Changed in place: position, order and the whitespace are the user's.
+        assert_eq!(
+            set_parts(line, day, &[Part::Priority], Some("!low")),
+            "rotate #ops the keys !low @2026-08-14"
+        );
+        // Removed, with one space and not two.
+        assert_eq!(
+            set_parts(line, day, &[Part::Priority], None),
+            "rotate #ops the keys @2026-08-14"
+        );
+        // Removed from the end: the space in front of it goes instead.
+        assert_eq!(
+            set_parts(line, day, &[Part::Date], None),
+            "rotate #ops the keys !high"
+        );
+        // Added where there was none — the end, which is the one position this
+        // tool ever chooses.
+        assert_eq!(
+            set_parts("rotate the keys", day, &[Part::Priority], Some("!med")),
+            "rotate the keys !med"
+        );
+        // And nothing at all is still nothing at all.
+        assert_eq!(set_parts("", day, &[Part::Date], None), "");
+        assert_eq!(
+            set_parts("  ", day, &[Part::Priority], Some("!low")),
+            "!low"
+        );
+    }
+
+    /// Tags are a set, so they are cleared and written back together — and a
+    /// word typed without its `#` gets one, because the field is a place to
+    /// name tags rather than a place to remember punctuation.
+    #[test]
+    fn the_tag_field_is_a_set_and_puts_the_hash_back() {
+        let day = today();
+        assert_eq!(
+            set_tags("buy milk #home #work @2026-08-14", day, "kitchen"),
+            "buy milk @2026-08-14 #kitchen"
+        );
+        assert_eq!(set_tags("buy milk #home", day, "#a #b"), "buy milk #a #b");
+        assert_eq!(set_tags("buy milk #home", day, ""), "buy milk");
+    }
+
+    /// Half a time is not a time — `capture` has never heard of `09:` — so the
+    /// sync rebuilds from the line as it was when the field was focused rather
+    /// than looking for a token it wrote a keystroke ago. Five keystrokes used
+    /// to leave five words in the line.
+    #[test]
+    fn typing_a_time_writes_one_word_and_not_one_per_keystroke() {
+        let mut form = form("standup @2026-08-12", &[]);
+        tab(&mut form, 2);
+        assert_eq!(form.focus, Field::Time);
+
+        for c in "09:30".chars() {
+            form.press(press(KeyCode::Char(c)));
+        }
+        assert_eq!(form.input.text, "standup @2026-08-12 09:30");
+
+        // And back out again, one character at a time.
+        for _ in 0..5 {
+            form.press(press(KeyCode::Backspace));
+        }
+        assert_eq!(form.input.text, "standup @2026-08-12");
+    }
+
+    /// The format cannot hold a time without a date, so the row is not in the
+    /// tab order without one: a field the file cannot keep is worse than a
+    /// field that is not there.
+    #[test]
+    fn the_time_row_is_not_offered_without_a_date() {
+        let mut undated = form("buy milk", &[]);
+        tab(&mut undated, 2);
+        assert_eq!(undated.focus, Field::Priority);
+
+        let mut dated = form("buy milk @2026-08-12", &[]);
+        tab(&mut dated, 2);
+        assert_eq!(dated.focus, Field::Time);
+    }
+
+    /// `List` appears only when there is more than one list to address, exactly
+    /// as `$list` does — docs/tui.md#which-list--work.
+    #[test]
+    fn the_list_row_appears_only_when_there_is_a_choice() {
+        let one = form("buy milk", &["todo.md"]);
+        assert!(!one.order().contains(&Field::List));
+
+        let two = form("buy milk", &["todo.md", "work.md"]);
+        assert!(two.order().contains(&Field::List));
+
+        // Title, Due, Priority, Tags, List — no `Time` row, because the line
+        // has no date for one to hang off.
+        let mut two = two;
+        tab(&mut two, 4);
+        assert_eq!(two.focus, Field::List);
+        two.press(press(KeyCode::Right));
+        assert_eq!(two.input.text, "buy milk $work");
+    }
+
+    /// Typing still works. `@thu`, `#home` and `!high` in the question field
+    /// parse as they always did and light the matching radio as they are typed
+    /// — one tokenizer, one truth, and the day there are two the form and the
+    /// box disagree about what gets written.
+    #[test]
+    fn typing_the_syntax_lights_the_radio() {
+        let mut form = form("", &[]);
+        for c in "pay the invoice !high".chars() {
+            form.press(press(KeyCode::Char(c)));
+        }
+        assert_eq!(form.focus, Field::Title, "the keys went to the text");
+        assert_eq!(
+            form.choices_for(Field::Priority)
+                .into_iter()
+                .find(|(_, on)| *on)
+                .map(|(label, _)| label),
+            Some("high".to_string())
+        );
+    }
+
+    /// `esc` cancels from anywhere, `⏎` creates from anywhere except the button
+    /// that says otherwise, and the buttons carry their own key.
+    #[test]
+    fn the_two_keys_that_end_the_form() {
+        let mut form = form("buy milk", &[]);
+        assert_eq!(form.press(press(KeyCode::Enter)), Typed::Save);
+        assert_eq!(form.press(press(KeyCode::Esc)), Typed::Cancel);
+
+        // On the cancel button `⏎` means what the button says.
+        while form.focus != Field::Cancel {
+            tab(&mut form, 1);
+        }
+        assert_eq!(form.press(press(KeyCode::Enter)), Typed::Cancel);
+        tab(&mut form, 1);
+        assert_eq!(form.focus, Field::Create);
+        assert_eq!(form.press(press(KeyCode::Enter)), Typed::Save);
+    }
+
+    /// `tab` is *next field* in here and the date picker is reached through
+    /// `Due · pick…` instead: one key, one job per screen. And it wraps, so
+    /// there is no end of the form to fall off.
+    #[test]
+    fn tab_walks_the_fields_and_comes_back_round() {
+        let mut form = form("buy milk @2026-08-12", &[]);
+        let order = form.order();
+        for want in order.iter().skip(1).chain(order.iter().take(1)) {
+            tab(&mut form, 1);
+            assert_eq!(form.focus, *want);
+        }
+    }
+
+    /// A form that half-fits is worse than a box that always fits, and the box
+    /// is already built and already tested — docs/decisions.md.
+    #[test]
+    fn the_form_gives_way_to_the_one_line_box_in_a_small_pane() {
+        assert!(Form::fits(Rect::new(0, 0, 40, 15)));
+        assert!(!Form::fits(Rect::new(0, 0, 39, 15)));
+        assert!(!Form::fits(Rect::new(0, 0, 40, 14)));
+    }
+
+    /// The whole screen, exactly, and the preview is its conclusion: a form
+    /// that saves into your file puts the file last.
+    #[test]
+    fn the_form_screen_exactly() {
+        let tasks = tasks(&["late @2026-08-01"]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let mut form = Form::adding(today(), &[]);
+        form.input = Input::new("call the accountant @2026-08-12 #home".into(), Purpose::Add);
+
+        let mut terminal = Terminal::new(TestBackend::new(56, 20)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    Counts::of(&tasks, today()),
+                    render(crate::theme::MOCHA),
+                    &Notice::Hints,
+                    View::List,
+                    Open::Form(&form),
+                )
+            })
+            .unwrap();
+        let rows: Vec<String> = terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(56)
+            .map(|r| r.iter().map(|c| c.symbol()).collect())
+            .collect();
+
+        assert_eq!(
+            rows,
+            [
+                "╭ ratodo — 1 · 1! ─────────────────────────────────────╮",
+                "│ ╭──────────────────── NEW TASK ────────────────────╮ │",
+                "│▌│  What needs to be done?                          │ │",
+                "│ │  ╭────────────────────────────────────────────╮  │ │",
+                "│ │▌ │ call the accountant @2026-08-12 #home      │  │ │",
+                "│ │  ╰────────────────────────────────────────────╯  │ │",
+                "│ │                                                  │ │",
+                "│ │  Due       ○ none  ○ today  ○ tomorrow  ◉ 2026…  │ │",
+                "│ │  Time      [                                  ]  │ │",
+                "│ │  Priority  ◉ none  ○ high  ○ med  ○ low          │ │",
+                "│ │  Tags      [ #home                            ]  │ │",
+                "│ │                                                  │ │",
+                "│ │  ──────────────────────────────────────────────  │ │",
+                "│ │  PREVIEW                                         │ │",
+                "│ │  - [ ] call the accountant @2026-08-12 #home     │ │",
+                "│ │                                                  │ │",
+                "│ │  [ esc cancel ]               [ ⏎ create task ]  │ │",
+                "│ ╰ tab · next field ────────────────────────────────╯ │",
+                "╰──────────────────────────────────────────────────────╯",
+                " ⏎ create   esc cancel                                  ",
+            ]
+        );
+    }
+
+    /// A form full of new furniture, under a C locale. The radios are the one
+    /// that matters: `◉` against `○` is a difference in **shape**, so the
+    /// choice survives both the fallback and `NO_COLOR`.
+    #[test]
+    fn the_form_is_ascii_under_a_c_locale() {
+        assert_eq!(
+            radios(&[("a".into(), true), ("b".into(), false)], Glyphs::Ascii),
+            "(o) a  ( ) b"
+        );
+        assert_eq!(
+            radios(&[("a".into(), true), ("b".into(), false)], Glyphs::Unicode),
+            "◉ a  ○ b"
+        );
+
+        let tasks = tasks(&["late @2026-08-01"]);
+        let groups = agenda(&tasks, today());
+        let mut screen = Screen::new(rows(&groups));
+        let mut form = Form::adding(today(), &[]);
+        form.input = Input::new("call the accountant #home".into(), Purpose::Add);
+        let render = Render {
+            glyphs: Glyphs::Ascii,
+            ..render(crate::theme::MOCHA)
+        };
+
+        let mut terminal = Terminal::new(TestBackend::new(64, 20)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    Counts::of(&tasks, today()),
+                    render,
+                    &Notice::Hints,
+                    View::List,
+                    Open::Form(&form),
+                )
+            })
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+
+        assert!(text.contains("NEW TASK"), "{text}");
+        assert!(text.contains("PREVIEW"), "{text}");
         assert!(
             text.is_ascii(),
             "something non-ASCII reached the screen: {text}"
@@ -4350,7 +5451,7 @@ mod tests {
                     render,
                     &Notice::Hints,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -4397,7 +5498,7 @@ mod tests {
                     render,
                     &Notice::Hints,
                     View::Help,
-                    Some(&input),
+                    Open::Box(&input),
                 )
             })
             .unwrap();
@@ -5156,7 +6257,7 @@ mod tests {
                     render,
                     &Notice::Hints,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -5277,7 +6378,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -5311,7 +6412,7 @@ mod tests {
                     render(colours),
                     &Notice::Hints,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -5393,7 +6494,7 @@ mod tests {
                     render(plain),
                     &Notice::Hints,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -5545,10 +6646,14 @@ mod tests {
     #[test]
     fn the_keys_that_open_the_input() {
         assert_eq!(action(press(KeyCode::Char('a'))), Action::Add);
+        // The two doors part company here. `a` opens the form wherever there is
+        // room for it; `o` is the vim hand reaching to open a new line, which
+        // is the fast path, so it keeps being the fast path — the one-line box,
+        // at every width. docs/decisions.md.
         assert_eq!(
             action(press(KeyCode::Char('o'))),
-            Action::Add,
-            "a vim user reaches for `o` to open a new line"
+            Action::Quick,
+            "`o` is the fast path and stays the box"
         );
         assert_eq!(action(press(KeyCode::Enter)), Action::Change);
     }
@@ -5932,7 +7037,7 @@ mod tests {
                     render,
                     &Notice::Hints,
                     View::List,
-                    Some(input),
+                    Open::Box(input),
                 )
             })
             .unwrap();
@@ -6641,7 +7746,7 @@ mod tests {
                         render(crate::theme::MOCHA),
                         &Notice::Hints,
                         View::List,
-                        Some(&input),
+                        Open::Box(&input),
                     )
                 })
                 .unwrap();
@@ -6762,7 +7867,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -6812,7 +7917,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -7039,7 +8144,7 @@ mod tests {
                     },
                     &Notice::Hints,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -7075,7 +8180,7 @@ mod tests {
                     },
                     &Notice::Hints,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();
@@ -7112,7 +8217,7 @@ mod tests {
                     render(crate::theme::MOCHA),
                     &Notice::Hints,
                     View::List,
-                    None,
+                    Open::Nothing,
                 )
             })
             .unwrap();

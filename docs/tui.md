@@ -284,8 +284,20 @@ Details that are decisions, not drawing:
 
 ## Adding
 
-`a` opens the input in a box over the middle of the list. Nothing scrolls,
-nothing is given up, and the box lands where the eye already is:
+**`a` opens a form. `o` opens the one-line box.** Two doors into the same file,
+and both were already bound to the same one, so giving each a behaviour costs a
+key nobody has to learn: the vim hand that reaches for `o` to open a new line is
+the one that wanted the fast path anyway.
+
+The form is [below](#the-form--a); the box is the rest of this section, and it is
+still what `o`, `p` and `y` open at every width — and what `a` opens when the
+pane is under **15 rows or 40 columns**. A form that half-fits is worse than a
+box that always fits.
+
+### The one-line box — `o`
+
+It opens over the middle of the list. Nothing scrolls, nothing is given up, and
+the box lands where the eye already is:
 
 ```
 ┌─ ratodo ────────────────────────────── 5 open · 1 overdue ─┐
@@ -592,6 +604,76 @@ and "paste there" would have been the same key doing the same thing. One key
 that copies the task under the cursor is the whole of what the two would have
 bought. See [decisions.md](decisions.md#settled).
 
+### The form — `a`
+
+```
+╭───────────────── NEW TASK ─────────────────╮
+│  What needs to be done?                    │
+│  ╭────────────────────────────────────╮    │
+│▌ │ call the accountant @2026-08-12     │    │
+│  ╰────────────────────────────────────╯    │
+│                                            │
+│  Due       ○ none  ◉ today  ○ tomorrow  ○ pick │
+│  Time      [ 09:30                    ]    │
+│  Priority  ◉ none  ○ high  ○ med  ○ low    │
+│  Tags      [ #home #work              ]    │
+│  List      ◉ todo.md  ○ work.md            │
+│                                            │
+│  ──────────────────────────────────────    │
+│  PREVIEW                                   │
+│  - [ ] call the accountant @2026-08-12 #home │
+│                                            │
+│  [ esc cancel ]        [ ⏎ create task ]   │
+╰─ tab · next field ─────────────────────────╯
+```
+
+**The line is the model, and that is the whole design.** The text box holds the
+whole line exactly as the one-line box does; every row under it is a *view* of
+that one string. Each reads `capture::parts` to know what is selected and writes
+back by replacing the span that tokenizer claimed. There is one string, one
+tokenizer and one truth — which is what lets the form exist at all, since the
+labelled-field box was rejected for needing either a join back into a line or a
+second parser ([decisions.md](decisions.md#reversed)).
+
+- **Six fields and no seventh:** title, date, time, tags, priority and which
+  list — exactly the six a one-line format carries. No Description, no Project,
+  no Section picker.
+- **`PREVIEW`, with its own label and its own rule above it.** The difference
+  between a form that happens to show a line and a form whose *conclusion* is a
+  line. A form that saves into a database can tell you nothing; this one saves
+  into your file, so the file is the last word on the screen.
+- **Typing still works.** `@thu`, `#home` and `!high` in the question field parse
+  as they always did and light the matching radio as you type. The day there are
+  two tokenizers is the day the form and the box disagree about what gets
+  written.
+- **Radios are `◉` against `○`**, and `(o)` against `( )` in ASCII: a difference
+  in *shape*, so the choice survives `NO_COLOR=1` and the fallback. `←` and `→`
+  move one, and it applies at once — the preview is the confirmation and it is
+  already on the screen.
+- **`▌` sits beside the control that has the keyboard**, not beside its label.
+  Same marker and same colour as the selected row on the list.
+- **The buttons carry their key.** `[ ⏎ create task ]` is both the button and the
+  keybinding, so it is honest on a keyboard and still looks like a button.
+- **`tab` is *next field* here**, and the date picker is reached through
+  `Due · pick` instead — one key, one job per screen. Inside the box `tab` is
+  still the picker, because there are no fields there to walk.
+- **`Time` is not in the tab order without a date.** The format cannot hold a
+  time without one, so a row that accepted one would be a field the file cannot
+  keep.
+- **`List` appears only when more than one list is open**, exactly as `$list`
+  does.
+- **No Section picker**, and this is worth being explicit about: a capture lands
+  below everything, outside every `##`. Letting the form choose a section means
+  teaching the writer to *insert* into the middle of the file rather than append
+  to the end — a change to the write path, which is the one place fidelity is won
+  or lost. It can be done; it must not be smuggled in as a dropdown.
+
+**What happens to the two-second capture:** nothing. The fast path was never the
+TUI — [product.md](product.md) says `ratodo add 'pay the invoice @tomorrow'`
+writes and exits, and that *"the second one is the reason this product exists"*.
+`a` is for when the pane is already open and you are already looking at it, and
+that moment can afford a form. `o` is there for when it cannot.
+
 ## Editing
 
 `⏎` on a selected task opens the same input, pre-filled with the task's text as
@@ -791,7 +873,8 @@ it is already in the file: `✓2026-08-11` completion stamps are what it reads.
 | `g` / `G` | top / bottom | A vim user typing `gg` gets the top on the first `g` and a harmless no-op on the second — so no pending-key state machine is needed |
 | `ctrl-d` / `ctrl-u` | half page | |
 | `spc` | toggle done | |
-| `a` / `o` | add | `o` because a vim user will reach for it to open a new line |
+| `a` | add, in the [form](#the-form--a) | Falls back to the one-line box under 15 rows or 40 columns |
+| `o` | add, in the [one-line box](#the-one-line-box--o) | Always the box. A vim user reaches for `o` to open a new line, which is the fast path, so it stays the fast path |
 | `⏎` | edit the selected task | |
 | `d` | cancel — decided against | `- [-]` in the file; `d` again takes it back, the same way `spc` does. Out of the counts, never overdue, not exported. See [format.md](format.md#the-three-states) |
 | `u` | undo the last change | |

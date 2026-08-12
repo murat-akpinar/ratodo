@@ -975,8 +975,11 @@ fn run(
     let mut showing: Option<agenda::Period> = None;
     let mut period = agenda::Period::default();
     // The other mode. `Some` for exactly as long as a line is being typed, and
-    // only ever put there by `a`, `o` or `⏎`.
+    // only ever put there by `a`, `o`, `y`, `p` or `⏎`.
     let mut input: Option<ui::Input> = None;
+    // The same mode with a screen round it. `a` opens this one wherever there is
+    // room; `o`, `y` and `p` never do — docs/decisions.md.
+    let mut form: Option<ui::Form> = None;
     // Drawing is still driven by events, not by the timer: a wake-up that finds
     // nothing to do draws nothing.
     let mut redraw = true;
@@ -1001,7 +1004,11 @@ fn run(
                     render,
                     &notice,
                     view,
-                    input.as_ref(),
+                    match (&form, &input) {
+                        (Some(form), _) => ui::Open::Form(form),
+                        (None, Some(input)) => ui::Open::Box(input),
+                        (None, None) => ui::Open::Nothing,
+                    },
                 )
             })?;
             redraw = false;
@@ -1014,7 +1021,26 @@ fn run(
                 // While the input is open the small keymap has the keyboard, and
                 // that is what makes "nothing else can open it" true: an `a` in
                 // there is a letter. `ctrl-c` cancels and never quits.
-                if let Some(typing) = input.as_mut() {
+                // The form has its own keymap and keeps it to itself: every key
+                // it answers is handled inside it, and the loop only hears the
+                // two answers it has to act on.
+                if let Some(open) = form.as_mut() {
+                    match open.press(key) {
+                        ui::Typed::Cancel => {
+                            form = None;
+                            notice = ui::Notice::Hints;
+                        }
+                        ui::Typed::Save => {
+                            let typed = form.take().expect("the form was open a line ago");
+                            notice = live.save_typed(paths, today, &typed.input)?;
+                            // A refusal keeps the form, and the sentence in it.
+                            if matches!(notice, ui::Notice::Warned(_)) {
+                                form = Some(typed);
+                            }
+                        }
+                        _ => {}
+                    }
+                } else if let Some(typing) = input.as_mut() {
                     match ui::typing(key) {
                         ui::Typed::Char(c) => typing.insert(c),
                         ui::Typed::Back => typing.back(),
@@ -1081,7 +1107,29 @@ fn run(
                         // The overlay comes down with it: a box over the list
                         // while a line is being typed covers the thing the line
                         // is about.
+                        // `a` opens the form and `o` opens the box. Both are
+                        // doors into the same file and both were already bound
+                        // to the same one, so giving each a behaviour costs a
+                        // key nobody has to learn: the vim hand that reaches for
+                        // `o` is the one that wanted the fast path anyway —
+                        // docs/tui.md#adding.
                         ui::Action::Add => {
+                            let pane = terminal.size()?;
+                            // One row is the bottom line, and the form is drawn
+                            // in what is left.
+                            let area = ratatui::layout::Rect::new(
+                                0,
+                                0,
+                                pane.width,
+                                pane.height.saturating_sub(1),
+                            );
+                            match ui::Form::fits(area) {
+                                true => form = Some(ui::Form::adding(today, render.lists)),
+                                false => input = Some(ui::Input::adding(today)),
+                            }
+                            helping = false;
+                        }
+                        ui::Action::Quick => {
                             input = Some(ui::Input::adding(today));
                             helping = false;
                         }

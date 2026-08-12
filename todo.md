@@ -175,41 +175,49 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   exactly the width it was given and every frame closes on both
                   sides or is not drawn at all
 
-      - [ ] **2 · `a` opens a form.** Screens 2 and 3. Six fields, which are
+      - [x] **2 · `a` opens a form.** **Done 2026-08-12.** Screens 2 and 3. Six fields, which are
             exactly the six the format already carries — title, date, time, tags,
             priority and which list — and no seventh, because there is nowhere in
             a one-line format to put one.
-            - [ ] **The reversal goes into
+            - [x] **The reversal goes into
                   [docs/decisions.md](docs/decisions.md) first**, before a line of
                   code, the way `$work` and the date field did. It **narrows**
                   rather than dies: "one field, not five labelled ones" still
                   governs the 34-column pane, which is the case its arithmetic was
                   always about
-            - [ ] **`PREVIEW`, with its own label and its own rule above it.** The
+            - [x] **`PREVIEW`, with its own label and its own rule above it.** The
                   difference between a form that happens to show a line and a form
                   whose *conclusion* is a line. It is the same tokenizer read
                   backwards — `capture` builds a task from text, this renders text
                   from a task, and `Task::line()` is most of it already
-            - [ ] **Typing still works.** `@thu`, `#home` and `!high` in the
+            - [x] **Typing still works.** `@thu`, `#home` and `!high` in the
                   question field parse as they always did and light the matching
                   radio as you type. One tokenizer, one truth — the day there are
                   two, the form and the box disagree about what gets written
-            - [ ] **Radios `◉`/`○`, ASCII `(o)`/`( )`** — a difference in *shape*,
+            - [x] **Radios `◉`/`○`, ASCII `(o)`/`( )`** — a difference in *shape*,
                   so the selection survives `NO_COLOR=1`. `▌` sits beside the
                   **control** that has the keyboard, not beside its label. Buttons
                   carry their own key: `[ ⏎ create task ]`
-            - [ ] **The one-line box stays**, and this is what lets the form be as
+            - [x] **The one-line box stays**, and this is what lets the form be as
                   big as it is. Under **15 rows or 40 columns** `a` opens the box
                   instead — a form that half-fits is worse than a box that always
                   fits, and the box is already built and already tested. `p` and
                   `y` keep it at every width: a form for one question is a form
                   nobody wants
-            - [ ] **Three loose ends to settle while building it**, from
-                  [docs/redesign.md](docs/redesign.md#still-open): whether `o`
-                  stays the fast box while `a` becomes the form, whether the `p`
-                  and `y` boxes want a different label now that the box is no
-                  longer what `a` opens, and `tab` meaning *next field* in the
-                  form and *date picker* in the box
+            - [x] **Three loose ends, settled while building it**, from
+                  [docs/redesign.md](docs/redesign.md#still-open):
+                  **1. `o` stays the fast box** — it and `a` were bound to the
+                  same action, so giving each one a behaviour costs a key nobody
+                  has to learn, and the vim hand reaching for `o` is the one that
+                  wanted the fast path.
+                  **2. `p` and `y` keep their labels.** `PUT OFF` and `COPY` name
+                  what the box is for, not which key opened it, and neither ever
+                  becomes the form: each asks one question.
+                  **3. `tab` is *next field* in the form and the picker in the
+                  box.** One key, one job per screen — there are no fields to
+                  walk inside the box, and the picker is `Due · pick` in the
+                  form. Where the picker is open it takes the row over, because
+                  the radios and the picker are two answers to one question
 
       - [x] **3 · `s` — the stats screen.** **Done 2026-08-12.** The one mockup that takes nothing
             away, and the answer to "there is only one screen". Every number is
@@ -367,16 +375,20 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   its own then [docs/theming.md](docs/theming.md) grows a key and
                   every built-in theme grows a line, which is a much bigger
                   change than it looks from the screen
-      - [ ] **`src/ui.rs` is 5,654 lines and this adds three screens to it.**
+      - [x] **`src/ui.rs` is 5,654 lines and this adds three screens to it.**
             [docs/architecture.md](docs/architecture.md#module-layout) says
             eleven files, flat, and `ui.rs` is already three times the next
             largest. Flat is the rule and a `ui/` directory is the pyramid that
             document forbids — but **one more flat file is not a pyramid**, and
             the form is the natural seam: it has its own state machine, its own
             fields and its own keymap, and it is the one part of this work that
-            can be read without the list. Either way `architecture.md`'s file
-            list changes, so decide it at step 2 rather than discovering it at
-            seven thousand lines
+            can be read without the list. **Decided at step 2: no new file.**
+            The form is not separable — it reads the same tokenizer, glyph set,
+            width arithmetic and `Input` as the box it falls back to, and a file
+            that imports eight private items from its neighbour is one file
+            wearing two names. The length is in the tests, which live with their
+            code by Rust convention: `ui.rs` is about 3,400 lines of code and
+            4,600 of tests. `architecture.md`'s file list does not move
       - [ ] **`assets/demo.gif` shows the old screen**, and it is the first thing
             on the README and on crates.io. `scripts/demo.py` re-records it but
             needs kitty, menyoki, ffmpeg and X11, so it is the maintainer's

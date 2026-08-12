@@ -1082,21 +1082,22 @@ fn the_input_mode_captures_a_task_and_ctrl_c_only_cancels_it() {
         )
     };
 
-    // Mid-sentence: `a` opened a field and `@tomorrow` resolved to a date under
-    // it, while the file was still untouched.
+    // Mid-sentence: `a` opened the **form** and `@tomorrow` lit the matching
+    // radio as it was typed, while the file was still untouched.
     //
     // Read from the stream, not the replayed screen. `esc` is the only way back
-    // out of the input and it repaints the two rows in question, so "was drawn"
-    // is the honest question here — and each keystroke redraws one cell, so what
-    // is contiguous in the stream is what a frame painted in one go.
+    // out and it repaints the rows in question, so "was drawn" is the honest
+    // question here — and each keystroke redraws one cell, so what is contiguous
+    // in the stream is what a frame painted in one go.
     let (raw, _, file) = run(b"amilk @tomorrow #home\x1bq");
-    // The label and the caret are two spans and no longer contiguous in the
-    // stream: the label is bold, so the reset sits between them.
-    assert!(raw.contains(" ADD"), "no input field opened: {raw:?}");
-    assert!(raw.contains("▏"), "no input field opened: {raw:?}");
+    assert!(raw.contains("NEW TASK"), "no form opened: {raw:?}");
     assert!(
-        raw.contains("due tomorrow ("),
-        "the preview never resolved the shorthand: {raw:?}"
+        raw.contains("PREVIEW"),
+        "the form has no conclusion: {raw:?}"
+    );
+    assert!(
+        raw.contains("tomorrow"),
+        "the radio never lit for the typed date: {raw:?}"
     );
     // The way out is on the bottom line under the box, painted over the hint bar
     // that was already there — so the stream repaints only the cells that differ
@@ -1105,7 +1106,7 @@ fn the_input_mode_captures_a_task_and_ctrl_c_only_cancels_it() {
     // says, exactly, is pinned by `the_input_screen_exactly` in `ui.rs`, where a
     // buffer can be read directly. Here the question is only whether it was
     // drawn at all.
-    assert!(raw.contains("save"), "no way out was drawn: {raw:?}");
+    assert!(raw.contains("creat"), "no way out was drawn: {raw:?}");
     assert!(raw.contains("canc"), "no way out was drawn: {raw:?}");
     assert_eq!(
         file, "- [ ] pay the invoice\n",
