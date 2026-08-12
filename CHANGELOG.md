@@ -7,6 +7,8 @@ Every section landed: the backup name and the AltGr chord are fixed, the cfg(uni
 - Make the github release a step of the release, not an option ([7773a44](https://github.com/murat-akpinar/ratodo/commit/7773a441bdda85464777bba23740163dfb126e00))
 - Plan the v0.8.0 screen redesign ([93ea108](https://github.com/murat-akpinar/ratodo/commit/93ea1082de9d4b6e232e73f6279067e493b30b0a))
 The five mockups drawn against ratodo are answered one at a time in docs/redesign.md, redrawn with real data at real widths so the split pane and the Description field are turned down from a picture rather than from a rule. todo.md carries the four steps: the dashboard, the add form, stats, and the edit form conditional on its splice test.
+- Name the four rules and the two files the redesign owes ([2419de7](https://github.com/murat-akpinar/ratodo/commit/2419de71cf505c9759db59043e49502b83a27e79))
+The first pass named one reversal (design.md:108, no split panes) and missed three more in the same rules list: the blank line between groups that the box eats, "a rule between two columns and nowhere else", and "no modal" against a centred form. Plus the ASCII forms for the new glyphs, which is where the whole-buffer is_ascii assertions go red first; where stats lives, since architecture.md says eleven files flat; the slot s needs in a full help overlay and a fixed hint-bar order; what the stats screen does in a ten-row pane; and the demo gif.
 
 ### 🧪 Testing
 
