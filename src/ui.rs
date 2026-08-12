@@ -2664,7 +2664,19 @@ fn empty(frame: &mut Frame, area: Rect, block: Option<Block<'_>>, render: Render
     }
 
     let dim = Style::default().fg(render.colours.dim);
-    let mut lines = vec![
+    // The welcome, and it is two lines. **No ASCII-art logo**: this is a pane
+    // somebody leaves open beside their work, and a banner is charming exactly
+    // once — docs/redesign.md#first-run. They go only where there is height to
+    // spare, because on a short pane the thing that teaches is the box below.
+    let mut lines = Vec::new();
+    if inner.height >= 14 {
+        lines.push(Line::raw(""));
+        lines.push(
+            Line::styled("ratodo", Style::default().fg(render.colours.accent).bold()).centered(),
+        );
+        lines.push(Line::styled("a todo list that is still just a file", dim).centered());
+    }
+    lines.extend([
         Line::raw(""),
         Line::styled(
             "  Nothing here yet.",
@@ -2687,8 +2699,8 @@ fn empty(frame: &mut Frame, area: Rect, block: Option<Block<'_>>, render: Render
             dim,
         ),
         Line::raw(""),
-    ];
-    // Five rows for the box under the six above it. Where they do not fit, the
+    ]);
+    // Five rows for the box under the rows above it. Where they do not fit, the
     // example stays a line of text: it is the part that teaches, so it is the
     // last thing a short pane is allowed to lose.
     let room = inner.height >= 11 && inner.width >= 34;
@@ -2699,13 +2711,17 @@ fn empty(frame: &mut Frame, area: Rect, block: Option<Block<'_>>, render: Render
         ));
     }
 
+    let below = lines.len() as u16;
     frame.render_widget(
         Paragraph::new(lines).style(Style::default().bg(render.colours.background)),
         inner,
     );
 
     if room {
-        example(frame, inner, render);
+        // Directly under the rows just written, whether or not the welcome is
+        // one of them: a box positioned by a constant slides behind the text the
+        // moment anything above it changes length.
+        example(frame, inner, below, render);
     }
 }
 
@@ -2718,9 +2734,9 @@ const EXAMPLE: &str = "buy milk @tomorrow #home";
 ///
 /// The frame's own colour rather than the accent, because the accent border is
 /// what marks the box that has the keyboard — this one is a picture of it.
-fn example(frame: &mut Frame, inner: Rect, render: Render<'_>) {
+fn example(frame: &mut Frame, inner: Rect, below: u16, render: Render<'_>) {
     let width = 48.min(inner.width.saturating_sub(4));
-    let area = Rect::new(inner.x + 2, inner.y + 6, width, 5);
+    let area = Rect::new(inner.x + 2, inner.y + below, width, 5);
     let (lines, _) = input_lines(
         &Input::new(EXAMPLE.to_string(), Purpose::Add),
         (width as usize).saturating_sub(2),
@@ -4080,6 +4096,47 @@ mod tests {
         assert_eq!(top.len(), 3, "{screen:?}");
         assert_eq!(top, bottom, "the box does not close on its own junctions");
         assert_eq!(top, inner, "a junction is not on its rule: {screen:?}");
+    }
+
+    /// The four widths the redesign was drawn at, swept: every row exactly the
+    /// width it was given, every frame closing, and nothing non-ASCII on the
+    /// screen under a C locale. The box-drawing set is new furniture and the
+    /// fallback has escaped through new furniture twice before — todo.md.
+    #[test]
+    fn every_row_closes_at_every_width_the_redesign_was_drawn_at() {
+        let tasks = a_week_of_work();
+        for width in [80u16, 60, 44, 34] {
+            for height in [24u16, 18, 14, 10] {
+                let screen = rendered(width, height, &tasks);
+                assert_eq!(screen.len(), height as usize, "{width}x{height}");
+                for row in &screen {
+                    assert_eq!(
+                        columns(row),
+                        width as usize,
+                        "{width}x{height} row is not the width it was given: {row:?}"
+                    );
+                }
+
+                // The frame either closes on both sides of every row it draws,
+                // or it is not drawn at all — never half of one.
+                let framed = screen[0].starts_with('╭');
+                if framed {
+                    assert!(screen[0].ends_with('╮'), "{width}x{height}: {screen:?}");
+                    let foot = screen.len() - 2;
+                    assert!(
+                        screen[foot].starts_with('╰') && screen[foot].ends_with('╯'),
+                        "{width}x{height}: {screen:?}"
+                    );
+                    for row in &screen[1..foot] {
+                        assert!(
+                            row.starts_with('│') || row.starts_with('├'),
+                            "{width}x{height}: {row:?}"
+                        );
+                    }
+                }
+                assert_eq!(framed, width >= 34, "{width}x{height}");
+            }
+        }
     }
 
     /// Below 34 columns the frame goes, and the box goes with it: two columns of
@@ -6320,6 +6377,28 @@ mod tests {
             "the worked example is what actually teaches the syntax: {text}"
         );
         assert!(text.contains("$EDITOR"), "{text}");
+    }
+
+    /// The two lines that are the whole of the welcome, and where they stop
+    /// being worth their rows. **No ASCII-art logo** — this is a pane somebody
+    /// leaves open beside their work, and a banner is charming exactly once.
+    #[test]
+    fn the_first_run_screen_says_hello_in_two_lines_and_no_more() {
+        let tall = rendered(66, 18, &[]).join("\n");
+        assert!(
+            tall.contains("a todo list that is still just a file"),
+            "{tall}"
+        );
+        // Centred, both of them, and nothing above them but one blank row.
+        let rows = rendered(66, 18, &[]);
+        assert_eq!(rows[2].trim_matches(['│', ' ']), "ratodo");
+        assert!(rows[2].starts_with("│    "), "not centred: {rows:?}");
+
+        // On a short pane the greeting is the first thing to go: the box below
+        // it is the part that teaches.
+        let short = rendered(66, 13, &[]).join("\n");
+        assert!(!short.contains("still just a file"), "{short}");
+        assert!(short.contains("Nothing here yet"), "{short}");
     }
 
     /// The example sits in the box it will be typed into, and the line under it

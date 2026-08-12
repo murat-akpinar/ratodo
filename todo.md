@@ -131,12 +131,19 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   file's own line reads as one more task row. A task edited this
                   session shows the line that *will* be written, since `raw` is
                   only authoritative while `dirty` is false
-            - [ ] **First run** — two centred lines over the box `a` already
+            - [x] **First run** — two centred lines over the box `a` already
                   draws. **No ASCII-art logo**: this is a pane left open beside
-                  the work, and a banner is charming exactly once
-            - [ ] **The widths, which are the part that gets skipped.** Band down
+                  the work, and a banner is charming exactly once. **Done**, and
+                  the greeting is the first thing a short pane gives up: under
+                  fourteen rows the box below it is what teaches. The box moved
+                  from a hard-coded row to *under whatever was written above it*,
+                  which is what a constant there was always going to cost
+            - [x] **The widths, which are the part that gets skipped.** Band down
                   to one line of counts under 20 rows and gone under 16, footer
-                  with it; boxes and frame gone under 34 columns. Drawn at 44 in
+                  with it; boxes and frame gone under 34 columns. **Done and
+                  pinned**, band drop order included; the band also needs 60
+                  columns to lay tiles across and is not drawn below that at any
+                  height. Drawn at 44 in
                   [docs/redesign.md](docs/redesign.md#all-of-it-at-40-columns),
                   with one question left open there: at that width three of the
                   row's columns are furniture, and a **left spine only** marks the
@@ -157,10 +164,13 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
                   that a seven-cell bar chart made of ASCII is not a bar chart —
                   **it goes, like the columns go below 80.** Decide it here rather
                   than at the assertion
-            - [ ] Buffer tests at 80 / 60 / 44 / 34, and `LC_ALL=C` still putting
+            - [x] Buffer tests at 80 / 60 / 44 / 34, and `LC_ALL=C` still putting
                   nothing non-ASCII on the screen — the box-drawing set is new
                   furniture and the ASCII fallback has escaped through new
-                  furniture twice before
+                  furniture twice before. **Done** as a sweep over those four
+                  widths crossed with four heights, asserting every row is
+                  exactly the width it was given and every frame closes on both
+                  sides or is not drawn at all
 
       - [ ] **2 · `a` opens a form.** Screens 2 and 3. Six fields, which are
             exactly the six the format already carries — title, date, time, tags,
