@@ -1,8 +1,25 @@
-## [unreleased]
+## [0.7.2] - 2026-08-12
+
+### 🐛 Bug Fixes
+
+- *(write)* Flatten the backup name to what a filesystem accepts ([942547d](https://github.com/murat-akpinar/ratodo/commit/942547d3782f62f319faf4dc008188bc40749d53))
+canonicalize on Windows answers with a verbatim path, so the slug kept the ? and the : that NTFS refuses. Every write past the first — which is the first that takes a backup — died on os error 123, and in the TUI that unwound out of the program on the first key that changed anything.
+- *(ui)* Read altgr as a layout rather than a ctrl chord ([975fb94](https://github.com/murat-akpinar/ratodo/commit/975fb940752585e0cb302fc6745270c429741b93))
+Windows reports AltGr as ctrl+alt, and on the Turkish, German and Polish layouts AltGr is how # @ and $ are typed at all. Dropping them as chords left the three characters the syntax is made of untypeable in the capture bar, and made altgr-c quit the program.
+- *(docs)* Compare the skip prefix on a normalised separator ([8c1b6f3](https://github.com/murat-akpinar/ratodo/commit/8c1b6f3d454bdecb88c863d378f210f7411b647c))
+
+### 📚 Documentation
+
+- Name the windows paths and the xdg test decision ([cfe55b1](https://github.com/murat-akpinar/ratodo/commit/cfe55b1d5a6977fbd6816ee81245720150365859))
+
+### 🧪 Testing
+
+- *(cli)* Gate the read-only directory case on unix ([7e30cdf](https://github.com/murat-akpinar/ratodo/commit/7e30cdf4d5c072663a18ac8e5b5c5e50d3e28dca))
 
 ### ⚙️ Miscellaneous Tasks
 
 - Point the PKGBUILD at v0.7.1 ([24958c1](https://github.com/murat-akpinar/ratodo/commit/24958c1ffb2f19c45d51eed31bc910c36ae2ab6a))
+- *(release)* V0.7.2 ([1c9a99b](https://github.com/murat-akpinar/ratodo/commit/1c9a99b5a9f85f624b9a50aea407e002b0f63134))
 ## [0.7.1] - 2026-08-11
 
 ### 📚 Documentation
