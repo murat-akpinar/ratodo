@@ -1,6 +1,17 @@
 # TUI redesign
 
-> Status: **accepted 2026-08-12, building as v0.8.0.** All five screens are the
+> Status: **built 2026-08-12, waiting on the maintainer's own terminal.** All
+> four steps are in and the tag is not cut: [CLAUDE.md](../CLAUDE.md) stops a
+> release for a human look, and this whole document is about whether the screen
+> *reads*, which is the half a publish cannot take back.
+>
+> Two things came out different from the write-up and are marked where they
+> happened: `COLUMNS_AT` moved 76 → 71, because the group box takes five columns
+> off every row and eighty columns of terminal had to keep the columns it had;
+> and Screen 4's splice never went into `model.rs`, because the form edits the
+> line in place and the only thing re-ordering an edit was the *write*.
+>
+> Originally: **accepted 2026-08-12, building as v0.8.0.** All five screens are the
 > work. Screen 4 was accepted *conditionally* and then unconditionally the same
 > day, on three things read out of the code rather than assumed — `Task::splice`
 > already implements its four cases and has since v0.2.0, `parts` claims title

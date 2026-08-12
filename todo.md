@@ -7,22 +7,31 @@ loose ends live in [notes.md](notes.md).
 `v0.3.0`, the date field as `v0.4.0` and the ruled columns as `v0.5.0` — all on
 2026-08-11. The input box opening on today's date is `v0.6.0` and the colour
 scheme — one colour, one job — is `v0.7.0`, tidied into `v0.7.1` and `v0.7.2`,
-all 2026-08-12. The screen redesign is `v0.8.0` and is what is being built now.**
+all 2026-08-12. The screen redesign is `v0.8.0`: **all four steps are built as
+of 2026-08-12 and the tag is not cut** — it is installed and waiting for the
+maintainer to run it in their own terminal, which is what
+[CLAUDE.md](CLAUDE.md) stops a release for.**
 Steps 0–8 below are the record of how that was built and are kept for the
 reasoning in them, not because there is anything left to do in them. The work
 that is actually open is the short list directly under this line.
 
 ## What is left
 
-Three open. Two are packaging and block nothing; the third is the screen, and it
-is the release. Order inside the redesign is by dependency — every step after
+**The screen is built.** What is left of it is one thing that needs a real
+machine — `assets/demo.gif` — and the maintainer's own look before the tag. The
+other two open items are packaging and block nothing.
+
+The paragraph below is how the work was ordered while it was being done, and is
+kept because the reasoning in it is what the ticks are against. Order inside the redesign is by dependency — every step after
 the first is drawn on top of it — and everything else here is ordered by reach.
 The ticked ones are kept here rather than moved down, because the reasoning in
 them is about things that were asked for and are **not** being built — a key,
 and a box split into fields. The second of those is the one the redesign
 reverses, and it is reversed on purpose and in writing rather than quietly.
 
-- [ ] **Improve the UI — the screen is correct and reads as unfinished.** Every
+- [ ] **Improve the UI — the screen is correct and reads as unfinished.**
+      **All four steps are built (2026-08-12). What is open is `assets/demo.gif`
+      and the maintainer's own look before the tag.** Every
       field on it is right and there is nowhere on it to go: one screen, opening
       mid-sentence, drawn in three line systems that never touch each other — a
       group rule that stops in mid-air at column 39, column separators that start
