@@ -557,6 +557,55 @@ mod tests {
         assert_eq!(s.priority, [("!high", 1), ("!med", 0), ("!low", 1)]);
     }
 
+    /// Every other stats test runs on a Monday, where the week starts today and
+    /// the subtraction that finds its Monday has nothing to subtract. Seen from
+    /// the middle of a week, that arithmetic is the whole of where the buckets
+    /// begin — and `days` stops being one, which is what divides the pace.
+    #[test]
+    fn the_week_is_measured_from_its_monday_seen_from_the_middle_of_one() {
+        let thursday = NaiveDate::from_ymd_opt(2026, 8, 13).unwrap();
+        let tasks = [
+            done_on("on the monday", 2026, 8, 10),
+            done_on("on the thursday", 2026, 8, 13),
+            // The Sunday before belongs to the week before it.
+            done_on("last week", 2026, 8, 9),
+        ];
+        let s = stats(&tasks, thursday, Period::Week);
+
+        assert_eq!(
+            s.buckets,
+            [
+                ("MON".into(), 1),
+                ("TUE".into(), 0),
+                ("WED".into(), 0),
+                ("THU".into(), 1),
+                ("FRI".into(), 0),
+                ("SAT".into(), 0),
+                ("SUN".into(), 0),
+            ]
+        );
+        // Two completions over the four days Monday to Thursday inclusive —
+        // divided by the days elapsed, not multiplied by them.
+        assert_eq!(s.per_day_x10, 5);
+    }
+
+    /// `W1` is the first seven days of the month and `W2` starts on the eighth.
+    /// A completion on the boundary belongs to one bucket, not to both.
+    #[test]
+    fn a_completion_on_a_week_boundary_lands_in_one_month_bucket() {
+        let s = stats(&[done_on("the eighth", 2026, 8, 8)], today(), Period::Month);
+        assert_eq!(
+            s.buckets,
+            [
+                ("W1".into(), 0),
+                ("W2".into(), 1),
+                ("W3".into(), 0),
+                ("W4".into(), 0),
+                ("W5".into(), 0),
+            ]
+        );
+    }
+
     /// A cancelled task is **out of the counts** — docs/format.md#the-three-states
     /// — and the stats screen is a screen of counts.
     ///
