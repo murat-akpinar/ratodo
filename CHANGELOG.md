@@ -15,11 +15,22 @@ Input is flexible, storage is strict — docs/format.md — and the capture path
 The date and time rows wrote whatever was in them straight into the line, so `0930` landed in the user's title as a word and `2026-08-12thu` landed in their file as one. Both rows ask the tokenizer that draws the preview whether what they are holding is a token yet, and the line waits until it is.
 - *(theme)* Let each warning name its own source ([7a5d63c](https://github.com/murat-akpinar/ratodo/commit/7a5d63c49ba6a29627aec07ad181a030537ecf82))
 `--theme solarized` was reported under a `theme.conf:` heading, which sent people to a file they may not have had. The file's own warnings say the file and the line; the flag's says the flag, and what to run to see the names.
+- *(agenda)* Leave cancelled tasks out of the stats screen's counts ([96b5222](https://github.com/murat-akpinar/ratodo/commit/96b52226ab89afb92c20b0c0b87959556cf3b392))
+A cancelled task is out of the counts — docs/format.md — and this is a screen of counts. It was in the total and in the priority and section tallies but in neither `done` nor `open`, so `5 tasks · 1 done · 3 open` did not add up and the screen read 20% where the title bar over the same file read 25%. Dropped once, at the top, as what is counted rather than as what is not.
 
 ### 🚜 Refactor
 
 - *(ui)* One caret window rather than three copies of its arithmetic ([fe99cbf](https://github.com/murat-akpinar/ratodo/commit/fe99cbfbb601d020e1069f965f5f77771caba62c))
 The box, the sentence field and the typed rows each anchored their own view on the caret with the same four lines. They ask `window` now.
+
+### 📚 Documentation
+
+- *(docs)* Record what the v0.8.1 sweep found and what it left ([74a993e](https://github.com/murat-akpinar/ratodo/commit/74a993e0f6355c67dbbd9af219d69619e15bae35))
+
+### 🧪 Testing
+
+- *(agenda)* Pin the week's start, the month's bucket edge and the pace ([9adc708](https://github.com/murat-akpinar/ratodo/commit/9adc70880827891473ec3c974463a862f6851e28))
+Every stats test ran on a Monday, where the subtraction that finds the week's Monday has nothing to subtract and `days` is one — so neither the week's start nor the division behind `avg / day` was ever exercised, and cargo-mutants walked through both. A month bucket's far edge was open the same way.
 
 ### ⚙️ Miscellaneous Tasks
 
