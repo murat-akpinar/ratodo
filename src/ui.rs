@@ -1968,6 +1968,17 @@ fn lead(text: &str, limit: usize) -> String {
     out
 }
 
+/// The `room` columns of `text` that keep the caret at `at` on screen: what is
+/// before it fills from the right, and whatever room is left shows what follows.
+///
+/// The window is anchored on the caret rather than on the end of the line —
+/// three fields draw themselves this way and the arithmetic is the same one.
+fn window(text: &str, at: usize, room: usize) -> (String, String) {
+    let before = tail(&text[..at], room);
+    let after = lead(&text[at..], room.saturating_sub(columns(&before)));
+    (before, after)
+}
+
 /// What the open date field answers to, in whatever room the row has left.
 ///
 /// The brackets say which of the three parts has the cursor and nothing said how
@@ -2628,11 +2639,7 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
     // before it fills the field from the right, and whatever room is left shows
     // what comes after.
     let room = width.saturating_sub(columns(&head));
-    let before = tail(&input.text[..input.at], room);
-    let after = lead(
-        &input.text[input.at..],
-        room.saturating_sub(columns(&before)),
-    );
+    let (before, after) = window(&input.text, input.at, room);
     let at = columns(&head) + columns(&before);
 
     // What is on screen, as byte offsets into the whole line, so the colouring
@@ -3653,11 +3660,7 @@ fn stats_screen(frame: &mut Frame, area: Rect, stats: &Stats, period: Period, re
 /// Returns the caret's column as well, because it is the same arithmetic.
 fn typed_line(input: &Input, width: usize, render: Render<'_>) -> (Line<'static>, usize) {
     let plain = Style::default().fg(render.colours.foreground);
-    let before = tail(&input.text[..input.at], width);
-    let after = lead(
-        &input.text[input.at..],
-        width.saturating_sub(columns(&before)),
-    );
+    let (before, after) = window(&input.text, input.at, width);
     let (from, to) = (input.at - before.len(), input.at + after.len());
     let parsed = crate::capture::capture(&input.text, render.today);
 
@@ -3763,14 +3766,7 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
         // caret the way the sentence field's is; unfocused there is no caret to
         // anchor on and the field reads from the start, like a label.
         let (before, after) = match form.focus == field {
-            true => {
-                let before = tail(&text[..form.typing.at], room);
-                let after = lead(
-                    &text[form.typing.at..],
-                    room.saturating_sub(columns(&before)),
-                );
-                (before, after)
-            }
+            true => window(text, form.typing.at, room),
             false => (shorten(text, room, render.glyphs), String::new()),
         };
         let caret = match form.focus == field {
