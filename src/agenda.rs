@@ -174,6 +174,22 @@ pub struct Stats {
 /// parameter, and a function that asks the calendar what day it is cannot be
 /// tested on any other day.
 pub fn stats(tasks: &[Task], today: NaiveDate, period: Period) -> Stats {
+    // A cancelled task is out of the counts — docs/format.md#the-three-states —
+    // and this is a screen of counts. It used to be in `total` and in the
+    // priority and section tallies but in neither `done` nor `open`, so the top
+    // line did not add up and the percentage disagreed with the title bar's
+    // over the same file. Dropped once, here, rather than remembered at each of
+    // the four places that count something.
+    //
+    // Written as what *is* counted rather than as what is not: `open + done` is
+    // the population the title bar puts its `1/4` over, and a fourth state
+    // would have to join it by saying so rather than by being forgotten here.
+    let tasks: Vec<Task> = tasks
+        .iter()
+        .filter(|t| t.open() || t.done())
+        .cloned()
+        .collect();
+    let tasks = &tasks[..];
     let counts = Counts::of(tasks, today);
     let done: Vec<(NaiveDate, &Task)> = tasks
         .iter()
@@ -539,6 +555,40 @@ mod tests {
         assert_eq!(s.per_day_x10, 20);
         assert_eq!(s.streak, 1);
         assert_eq!(s.priority, [("!high", 1), ("!med", 0), ("!low", 1)]);
+    }
+
+    /// A cancelled task is **out of the counts** — docs/format.md#the-three-states
+    /// — and the stats screen is a screen of counts.
+    ///
+    /// It used to be in `total` alone, which made `5 tasks · 1 done · 3 open`
+    /// a line that does not add up, and gave the screen a percentage the title
+    /// bar disagreed with: `20%` against `25%` over the same file.
+    #[test]
+    fn a_cancelled_task_is_out_of_every_number_on_the_stats_screen() {
+        let mut cancelled = capture("dropped @2026-08-01 !high", today());
+        cancelled.set_state(State::Cancelled, today());
+        cancelled.section = Some("todo".to_string());
+
+        let mut finished = done_on("finished", 2026, 8, 10);
+        finished.section = Some("todo".to_string());
+
+        let tasks = [
+            finished,
+            in_section("open one @2026-08-20", "todo"),
+            in_section("open two @2026-08-20", "todo"),
+            in_section("open three @2026-08-20", "todo"),
+            cancelled,
+        ];
+        let s = stats(&tasks, today(), Period::Week);
+
+        // The total is what the title bar's `1/4` is over, and the three
+        // numbers beside it add up to it.
+        assert_eq!((s.total, s.done, s.open, s.overdue), (4, 1, 3, 0));
+        assert_eq!(s.done + s.open, s.total);
+        // Its `!high` is out too — the task is not waiting for anyone.
+        assert_eq!(s.priority, [("!high", 0), ("!med", 0), ("!low", 0)]);
+        // And it is not a fifth task under its heading.
+        assert_eq!(s.sections, [("## todo".to_string(), 4)]);
     }
 
     /// Nothing at all is a real answer and has to come back as one rather than
