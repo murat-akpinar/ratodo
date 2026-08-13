@@ -38,6 +38,20 @@ things, all built and tested, and the first is the one a user reported:
 - [x] Every stats test ran on a Monday, so the week's start and the division
       behind `avg / day` were never exercised — three `cargo mutants` misses,
       now pinned.
+- [x] **The form drew its caret two columns left of where the sentence ends.**
+      `asdasda` read as `asdasd|a` — a letter to the right of a cursor that had
+      nothing to its right — so `→` looked broken when it had simply arrived.
+      The row is the marker, a space, `│` and a space, and the placement counted
+      three of those four. The line search above it never matched and was right
+      only through its fallback; both are constants now, pinned against the
+      buffer by `the_drawn_caret_sits_where_the_sentence_ends`.
+
+      **Worth remembering how it was missed.** Every check compared the app
+      against itself — the text on screen, the bytes in the file — and the one
+      thing that cannot catch is the cursor, which is not in the buffer at all.
+      A screen can be drawn perfectly and still point somewhere else. The two
+      caret tests read the frame *and* the cursor out of the same draw, which
+      is the only shape of test that can see it.
 
 **What the sweep found and did *not* change — the maintainer's call, because
 each is a look rather than a rule:**

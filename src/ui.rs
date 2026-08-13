@@ -4047,11 +4047,24 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
     // The terminal's own cursor, and only where there is text to type: on a
     // radio row it would blink at a control that does not take characters.
     if form.focus == Field::Title {
-        let at = lines
-            .iter()
-            .position(|line| line.spans.len() > 1 && line.spans[1].content.starts_with(side))
-            .unwrap_or(2);
-        frame.set_cursor_position((box_area.x + 3 + caret as u16, box_area.y + 1 + at as u16));
+        // Both numbers are fixed by how the rows above are built: the question,
+        // the box's top edge, then the sentence — and on that row the marker, a
+        // space, `│` and a space before the text. The blank rows the form spends
+        // its spare height on all go in at `fields_at` or below, so none of them
+        // lands above this one.
+        //
+        // The search that used to stand here looked for a line whose *second*
+        // span opened with `│` and never matched one — the sentence row's second
+        // span is the space after the marker — so it fell through to its `2` and
+        // was right for the wrong reason. The column was three where the row
+        // draws four, which put the caret two columns inside the sentence: a
+        // letter to the right of a cursor with nothing to its right, and `→`
+        // doing nothing because there was nothing to do.
+        // `the_drawn_caret_sits_where_the_sentence_ends` pins both against the
+        // buffer.
+        const ROW: u16 = 2;
+        const INDENT: u16 = 4;
+        frame.set_cursor_position((box_area.x + 1 + INDENT + caret as u16, box_area.y + 1 + ROW));
     }
 }
 
@@ -5735,6 +5748,97 @@ mod tests {
         tags.press(press(KeyCode::Left));
         tags.press(press(KeyCode::Delete));
         assert_eq!(tags.text(), "buy milk #work #hom");
+    }
+
+    /// Where the caret is drawn, against where the text it belongs to is drawn.
+    ///
+    /// Asserting on the buffer alone cannot see this: the sentence is in the
+    /// right place either way, and the terminal's own cursor is not in the
+    /// buffer at all. So the two are read out of the same frame and compared.
+    fn caret_against(open: Open<'_>, typed: &str) -> (usize, usize) {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut Screen::new(Vec::new()),
+                    Counts::default(),
+                    render(crate::theme::MOCHA),
+                    &Notice::Hints,
+                    View::List,
+                    open,
+                )
+            })
+            .unwrap();
+
+        let at = terminal.get_cursor_position().expect("a caret is shown");
+        let buffer = terminal.backend().buffer().clone();
+        // Cell by cell, so the search counts columns the way the caret does:
+        // `find` on a joined row counts bytes, and a `│` is three of them.
+        let cells: Vec<String> = (0..80)
+            .map(|x| buffer[(x, at.y)].symbol().to_string())
+            .collect();
+        let from = (0..cells.len())
+            .find(|&x| cells[x..].concat().starts_with(typed))
+            .unwrap_or_else(|| panic!("`{typed}` is not on the caret's row: {:?}", cells.concat()));
+        (at.x as usize, from + columns(typed))
+    }
+
+    /// **The caret the user sees has to be the caret the keys move.**
+    ///
+    /// In the form it was drawn two columns left of where the sentence ends, so
+    /// `asdasda` read as `asdasd|a`: a letter sitting to the right of a cursor
+    /// that had nothing to its right, and `→` doing nothing because there was
+    /// nothing for it to do. The row is spans of a fixed width — the marker, a
+    /// space, `│` and a space — and the placement counted three of those four.
+    ///
+    /// Both openings are pinned, because they place the cursor with two
+    /// different sums and only one of them was wrong.
+    #[test]
+    fn the_drawn_caret_sits_where_the_sentence_ends() {
+        for typed in [
+            "asdasda",
+            "a",
+            "şğü",
+            "a much longer sentence than that one",
+        ] {
+            let mut form = Form::adding(today(), &[]);
+            let mut box_ = Input::adding(today());
+            for c in typed.chars() {
+                form.press(press(KeyCode::Char(c)));
+                box_.insert(c);
+            }
+
+            let (drawn, want) = caret_against(Open::Form(&form), typed);
+            assert_eq!(drawn, want, "the form's caret, on `{typed}`");
+
+            let (drawn, want) = caret_against(Open::Box(&box_), typed);
+            assert_eq!(drawn, want, "the box's caret, on `{typed}`");
+        }
+    }
+
+    /// And it follows the keys that move it rather than only the ones that type.
+    #[test]
+    fn the_drawn_caret_follows_the_arrows_and_home() {
+        let mut form = Form::adding(today(), &[]);
+        for c in "abcdefgh".chars() {
+            form.press(press(KeyCode::Char(c)));
+        }
+
+        // Three to the left of the end is the end of `abcde`.
+        for _ in 0..3 {
+            form.press(press(KeyCode::Left));
+        }
+        let (drawn, want) = caret_against(Open::Form(&form), "abcde");
+        assert_eq!(drawn, want, "three columns back from the end");
+
+        form.press(press(KeyCode::Home));
+        let (drawn, end) = caret_against(Open::Form(&form), "abcdefgh");
+        assert_eq!(
+            drawn,
+            end - columns("abcdefgh"),
+            "`home` puts it in front of the first letter"
+        );
     }
 
     /// A pre-filled box with a caret in it invites typing, and typing into this
