@@ -824,7 +824,11 @@ pub struct Form {
     /// *mid-typing*: a trailing space is a second tag on its way and the line
     /// cannot hold one. Leaving the field throws it away, because by then the
     /// line has it.
-    typing: String,
+    ///
+    /// An `Input` for the caret alone — its `purpose` is never read here. A
+    /// field you can only append to is not a field: a mistyped tag used to have
+    /// to be backspaced out to its first wrong letter.
+    typing: Input,
     /// The time, held aside while the **date** is being typed. A time only
     /// parses directly after a date, so rewriting the date means taking both out
     /// of `base` and putting the time back after whatever the date becomes —
@@ -873,7 +877,7 @@ impl Form {
             focus: Field::Title,
             today,
             lists: lists.to_vec(),
-            typing: String::new(),
+            typing: Input::new(String::new(), Purpose::Add),
             spare: String::new(),
             base: String::new(),
         }
@@ -921,7 +925,7 @@ impl Form {
             focus: Field::Title,
             today,
             lists: lists.to_vec(),
-            typing: String::new(),
+            typing: Input::new(String::new(), Purpose::Add),
             spare: String::new(),
             base: String::new(),
         };
@@ -994,7 +998,7 @@ impl Form {
         if self.focus == Field::Title {
             self.input = Input::new(typing, self.input.purpose.clone());
         } else {
-            self.typing = typing;
+            self.typing = Input::new(typing, self.input.purpose.clone());
             // The question field holds the sentence and nothing else, and this
             // is where a word typed into it goes home. It cannot happen on the
             // keystroke — half of `@thu` is not a date, and a field that
@@ -1014,7 +1018,7 @@ impl Form {
 
     /// What is being typed into the focused sub-field right now.
     fn typed_text(&self) -> String {
-        self.typing.clone()
+        self.typing.text.clone()
     }
 
     fn choices_for(&self, field: Field) -> Vec<(String, bool)> {
@@ -1094,7 +1098,7 @@ impl Form {
         let today = self.today;
         let typing = match self.focus {
             Field::Title => self.input.text.clone(),
-            _ => self.typing.clone(),
+            _ => self.typing.text.clone(),
         };
         // The date we guessed steps aside for one they typed, and it steps aside
         // out of `base` rather than out of this one line: the next keystroke
@@ -1213,13 +1217,23 @@ impl Form {
             (Typed::Home, Field::Title) => self.input.home(),
             (Typed::End, Field::Title) => self.input.end(),
             (Typed::Char(c), field) if field.typed() => {
-                self.typing.push(c);
+                self.typing.insert(c);
                 self.sync();
             }
             (Typed::Back, field) if field.typed() => {
-                self.typing.pop();
+                self.typing.back();
                 self.sync();
             }
+            (Typed::Delete, field) if field.typed() => {
+                self.typing.delete();
+                self.sync();
+            }
+            // The same four keys the sentence field has. They move the caret and
+            // nothing else, so there is no line to write back.
+            (Typed::Left, field) if field.typed() => self.typing.left(),
+            (Typed::Right, field) if field.typed() => self.typing.right(),
+            (Typed::Home, field) if field.typed() => self.typing.home(),
+            (Typed::End, field) if field.typed() => self.typing.end(),
             // The three-part picker, on the one field it belongs to. `tab` is
             // next-field in here, so the arrows are the door — and the first
             // press only opens it. A key that edits the date on the way to
@@ -1234,8 +1248,8 @@ impl Form {
                     .unwrap_or(self.today);
                 self.picker = Some(DateField::new(from));
             }
-            // Typed fields take the arrows as nothing rather than as a nudge:
-            // there is no set of options behind them to step through.
+            // Whatever is left over a typed field is nothing rather than a
+            // nudge: there is no set of options behind one to step through.
             (_, field) if field.typed() => {}
             (Typed::Left, _) => self.nudge(-1),
             (Typed::Right, _) => self.nudge(1),
@@ -3727,16 +3741,28 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
     // them says which one the keys are going into. A shape, not a colour: `▌`
     // in the gutter marks the row and this marks the control.
     let typed_box = |field: Field, text: &str, room: usize| -> Span<'static> {
+        // Focused, `text` is `form.typing`'s own string — that is what `held`
+        // hands back — so the caret indexes it. The window is anchored on the
+        // caret the way the sentence field's is; unfocused there is no caret to
+        // anchor on and the field reads from the start, like a label.
+        let (before, after) = match form.focus == field {
+            true => {
+                let before = tail(&text[..form.typing.at], room);
+                let after = lead(
+                    &text[form.typing.at..],
+                    room.saturating_sub(columns(&before)),
+                );
+                (before, after)
+            }
+            false => (shorten(text, room, render.glyphs), String::new()),
+        };
         let caret = match form.focus == field {
             true => render.glyphs.field(),
             false => " ",
         };
-        let shown = shorten(text, room, render.glyphs);
+        let pad = room.saturating_sub(columns(&before) + columns(&after));
         Span::styled(
-            format!(
-                "[ {shown}{caret}{} ]",
-                " ".repeat(room.saturating_sub(columns(&shown)))
-            ),
+            format!("[ {before}{caret}{after}{} ]", " ".repeat(pad)),
             plain,
         )
     };
@@ -5626,6 +5652,42 @@ mod tests {
             form.press(press(KeyCode::Backspace));
         }
         assert_eq!(form.text().to_string(), "standup @2026-08-12");
+    }
+
+    /// A field you can only append to is not a field. The three typed rows
+    /// carry the same caret the sentence does — until they did not, and a
+    /// mistyped tag had to be backspaced out to its first wrong letter.
+    #[test]
+    fn the_caret_moves_in_the_typed_fields_too() {
+        let mut time = form("standup @2026-08-12", &[]);
+        tab(&mut time, 2);
+        assert_eq!(time.focus, Field::Time);
+        for c in "0930".chars() {
+            time.press(press(KeyCode::Char(c)));
+        }
+        time.press(press(KeyCode::Left));
+        time.press(press(KeyCode::Left));
+        time.press(press(KeyCode::Char(':')));
+        assert_eq!(time.text(), "standup @2026-08-12 09:30");
+
+        // `home` and `end` reach both ends of a tag set, and `delete` takes the
+        // character under the caret rather than the one behind it.
+        let mut tags = form("buy milk", &[]);
+        tab(&mut tags, 3);
+        assert_eq!(tags.focus, Field::Tags);
+        for c in "#home".chars() {
+            tags.press(press(KeyCode::Char(c)));
+        }
+        tags.press(press(KeyCode::Home));
+        for c in "#work ".chars() {
+            tags.press(press(KeyCode::Char(c)));
+        }
+        assert_eq!(tags.text(), "buy milk #work #home");
+
+        tags.press(press(KeyCode::End));
+        tags.press(press(KeyCode::Left));
+        tags.press(press(KeyCode::Delete));
+        assert_eq!(tags.text(), "buy milk #work #hom");
     }
 
     /// The format cannot hold a time without a date, so the row is not in the
