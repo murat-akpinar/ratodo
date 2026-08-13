@@ -177,6 +177,30 @@ pub fn unresolved_date(text: &str, today: NaiveDate) -> Option<&str> {
     })
 }
 
+/// The line with its `@date` written the way the file has to hold it.
+///
+/// **Input is flexible, storage is strict** — docs/format.md. `@thu` is a way
+/// of *typing* a day, not one a file can keep: next week the same three letters
+/// point at a different Thursday. The capture path has always resolved it on
+/// the way in; an edit wrote back what was typed, and `@thu` reached the file.
+///
+/// Only the one span `parts` claimed is replaced, so every other byte the user
+/// typed stays where they put it — the round-trip rule holds through an edit.
+pub fn iso_date(text: &str, today: NaiveDate) -> String {
+    let Some((range, _)) = parts(text, today)
+        .into_iter()
+        .find(|(_, part)| *part == Part::Date)
+    else {
+        return text.to_string();
+    };
+    // A word `parts` calls a date always resolves, so this cannot fail — and if
+    // it ever does, the user's own bytes are the right answer.
+    match resolve_date(text[range.clone()].trim_start_matches('@'), today) {
+        Some(date) => format!("{}@{date}{}", &text[..range.start], &text[range.end..]),
+        None => text.to_string(),
+    }
+}
+
 /// Whether more typing could still make a date of this.
 ///
 /// The question the live preview has to ask before it opens its mouth. `@2026-0`
@@ -598,6 +622,38 @@ mod tests {
         assert!(names_list("work.md", "work.md"));
         for file in ["homework.md", "work.markdown", "Work.md", "todo.md"] {
             assert!(!names_list("work", file), "{file}");
+        }
+    }
+
+    /// Input is flexible, storage is strict. `@thu` is a way of *typing* a day
+    /// and not one the file can hold — next week it points somewhere else —
+    /// and only the one word `parts` claimed is touched on the way past.
+    #[test]
+    fn shorthand_is_written_out_and_nothing_else_moves() {
+        let day = today();
+        assert_eq!(
+            iso_date("call the plumber @thu", day),
+            format!("call the plumber @{}", resolve_date("thu", day).unwrap())
+        );
+        assert_eq!(
+            iso_date("call    the  plumber   @3d   !high", day),
+            format!(
+                "call    the  plumber   @{}   !high",
+                resolve_date("3d", day).unwrap()
+            ),
+            "every other byte stays where it was put"
+        );
+        // Already strict, and so untouched to the byte.
+        for text in [
+            "call the plumber @2026-08-20 09:30 #home",
+            "call the plumber",
+            // Not a date, so it is the user's own word and not ours to rewrite.
+            "call the plumber @nextweek",
+            "call the plumber @",
+            // Only the first `@` is the date; a second is title text.
+            "call the plumber @2026-08-20 @thu",
+        ] {
+            assert_eq!(iso_date(text, day), text, "{text}");
         }
     }
 

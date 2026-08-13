@@ -884,7 +884,12 @@ impl Live {
                         if task.body() == input.text {
                             return Ok(ui::Notice::Said("unchanged".to_string()));
                         }
-                        task.retype(&input.text, fields);
+                        // Checked against what they typed and written as the
+                        // file has to hold it: `@thu` is a way of typing a day
+                        // and not one a file can keep. The capture path has
+                        // always resolved it and the edit did not —
+                        // docs/format.md#input-is-flexible-storage-is-strict.
+                        task.retype(&capture::iso_date(&input.text, today), fields);
                         ("edited", title)
                     }
                 }
