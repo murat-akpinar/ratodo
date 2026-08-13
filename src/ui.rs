@@ -2013,6 +2013,24 @@ fn window(text: &str, at: usize, room: usize) -> (String, String) {
     (before, after)
 }
 
+/// The same window, with a marker where it has scrolled past the start of the
+/// line. Returns the marker, then the two halves.
+///
+/// `tail` cuts from the front and says nothing, so a line one column too wide
+/// for the box read as a lost letter rather than as a field that has moved: `y`
+/// on `call the accountant` drew `all the accountant`. The marker is paid for
+/// **out of** the window rather than added to it, so the field keeps its width
+/// and the caret still lands where the text says it does.
+fn scrolled(text: &str, at: usize, room: usize, glyphs: Glyphs) -> (String, String, String) {
+    let (before, after) = window(text, at, room);
+    if before.len() == at {
+        return (String::new(), before, after);
+    }
+    let mark = glyphs.ellipsis().to_string();
+    let (before, after) = window(text, at, room.saturating_sub(columns(&mark)));
+    (mark, before, after)
+}
+
 /// What the open date field answers to, in whatever room the row has left.
 ///
 /// The brackets say which of the three parts has the cursor and nothing said how
@@ -2709,8 +2727,8 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
     // before it fills the field from the right, and whatever room is left shows
     // what comes after.
     let room = width.saturating_sub(columns(&head));
-    let (before, after) = window(&input.text, input.at, room);
-    let at = columns(&head) + columns(&before);
+    let (mark, before, after) = scrolled(&input.text, input.at, room, render.glyphs);
+    let at = columns(&head) + columns(&mark) + columns(&before);
 
     // What is on screen, as byte offsets into the whole line, so the colouring
     // below can be asked about the text rather than about the window.
@@ -2737,6 +2755,9 @@ fn input_lines(input: &Input, width: usize, render: Render<'_>) -> (Vec<Line<'st
     let caret = format!(" {}", render.glyphs.field());
     let named = head[..head.len() - caret.len()].to_string();
     let mut spans = vec![Span::styled(named, label), Span::styled(caret, dim)];
+    if !mark.is_empty() {
+        spans.push(Span::styled(mark, dim));
+    }
     let mut cut = from;
     for (word, part) in crate::capture::parts(&input.text, render.today) {
         if moving || part == crate::capture::Part::Text || word.end <= from || word.start >= to {
@@ -3730,11 +3751,17 @@ fn stats_screen(frame: &mut Frame, area: Rect, stats: &Stats, period: Period, re
 /// Returns the caret's column as well, because it is the same arithmetic.
 fn typed_line(input: &Input, width: usize, render: Render<'_>) -> (Line<'static>, usize) {
     let plain = Style::default().fg(render.colours.foreground);
-    let (before, after) = window(&input.text, input.at, width);
+    let (mark, before, after) = scrolled(&input.text, input.at, width, render.glyphs);
     let (from, to) = (input.at - before.len(), input.at + after.len());
     let parsed = crate::capture::capture(&input.text, render.today);
 
     let mut spans = Vec::new();
+    if !mark.is_empty() {
+        spans.push(Span::styled(
+            mark.clone(),
+            Style::default().fg(render.colours.dim),
+        ));
+    }
     let mut cut = from;
     for (word, part) in crate::capture::parts(&input.text, render.today) {
         if part == Part::Text || word.end <= from || word.start >= to {
@@ -3751,7 +3778,7 @@ fn typed_line(input: &Input, width: usize, render: Render<'_>) -> (Line<'static>
         cut = end;
     }
     spans.push(Span::styled(input.text[cut..to].to_string(), plain));
-    (Line::from(spans), columns(&before))
+    (Line::from(spans), columns(&mark) + columns(&before))
 }
 
 /// `◉` against `○`, and `(o)` against `( )` in ASCII. A difference in **shape**,
@@ -3808,7 +3835,7 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
         (true, Field::Due) => form.focus == Field::Due || form.focus == Field::Time,
         _ => form.focus == field,
     };
-    let row = |field: Field, body: Vec<Span<'static>>| -> Line<'static> {
+    let row = |field: Field, labelled: bool, body: Vec<Span<'static>>| -> Line<'static> {
         let mut spans = vec![
             match holds(field) {
                 true => Span::styled(render.glyphs.cursor().trim_end().to_string(), accent),
@@ -3816,7 +3843,7 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
             },
             Span::raw(" "),
         ];
-        if !field.label().is_empty() {
+        if labelled && !field.label().is_empty() {
             let name = match (paired, field) {
                 (false, Field::Due) => "Date",
                 _ => field.label(),
@@ -3913,6 +3940,9 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
         }
     };
     for field in form.order() {
+        // Set by the radio arm alone, which is the one control that can want the
+        // whole row — see there.
+        let mut labelled = true;
         let body: Vec<Span<'static>> = match field {
             Field::Title | Field::Cancel | Field::Create => continue,
             // Drawn on the date's row, where there is room for both.
@@ -3952,16 +3982,26 @@ fn form_box(frame: &mut Frame, area: Rect, form: &Form, render: Render<'_>) {
                 let room = inner.saturating_sub(LABEL + 7);
                 vec![typed_box(field, &held(field), room)]
             }
-            _ => vec![Span::styled(
-                shorten(
-                    &radios(&form.choices_for(field), render.glyphs),
-                    inner.saturating_sub(LABEL),
-                    render.glyphs,
-                ),
-                plain,
-            )],
+            // A radio row that does not fit beside its label gives the
+            // **label** up rather than two of its four options. At forty
+            // columns — the floor the form is drawn at — `Priority` cost the
+            // row `◉ none  ○ high  ○…`, and you could arrow onto `med` and
+            // `low` without ever being told they were there. A control you
+            // cannot see the choices in is not a control. The options name
+            // themselves, the marker in the gutter already says which row has
+            // the keys, and this is the same order the rest of the screen drops
+            // things in: the label is scenery and the choices are the answer.
+            _ => {
+                let text = radios(&form.choices_for(field), render.glyphs);
+                labelled = columns(&text) <= inner.saturating_sub(LABEL);
+                let room = match labelled {
+                    true => inner.saturating_sub(LABEL),
+                    false => inner,
+                };
+                vec![Span::styled(shorten(&text, room, render.glyphs), plain)]
+            }
         };
-        lines.push(row(field, body));
+        lines.push(row(field, labelled, body));
     }
 
     // `PREVIEW`, with its own label and its own rule above it. The difference
@@ -5818,6 +5858,57 @@ mod tests {
             .find(|&x| cells[x..].concat().starts_with(typed))
             .unwrap_or_else(|| panic!("`{typed}` is not on the caret's row: {:?}", cells.concat()));
         (at.x as usize, from + columns(typed))
+    }
+
+    /// **A control you cannot see the choices in is not a control.**
+    ///
+    /// At forty columns — the documented floor for the form — the priority row
+    /// read `◉ none  ○ high  ○…`, so two of its four options were behind an
+    /// ellipsis. You could still arrow onto `med` and `low` without ever having
+    /// been told they were there. The row gives its *label* up instead: the
+    /// options name themselves, and the marker in the gutter already says which
+    /// row has the keys.
+    #[test]
+    fn a_narrow_priority_row_keeps_all_four_choices() {
+        for width in [40u16, 48, 64, 80] {
+            let mut form = Form::adding(today(), &[]);
+            for c in "draft it".chars() {
+                form.press(press(KeyCode::Char(c)));
+            }
+            tab(&mut form, 3);
+            assert_eq!(form.focus, Field::Priority);
+
+            let mut terminal = Terminal::new(TestBackend::new(width, 24)).unwrap();
+            terminal
+                .draw(|f| {
+                    draw(
+                        f,
+                        &mut Screen::new(Vec::new()),
+                        Counts::default(),
+                        render(crate::theme::MOCHA),
+                        &Notice::Hints,
+                        View::List,
+                        Open::Form(&form),
+                    )
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer().clone();
+            let row = (0..24)
+                .map(|y| {
+                    (0..width)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .find(|line| line.contains("none"))
+                .unwrap_or_else(|| panic!("no priority row at {width} columns"));
+
+            for choice in ["none", "high", "med", "low"] {
+                assert!(
+                    row.contains(choice),
+                    "`{choice}` is not on the priority row at {width} columns: {row:?}"
+                );
+            }
+        }
     }
 
     /// **The caret the user sees has to be the caret the keys move.**
@@ -8700,6 +8791,50 @@ mod tests {
                 .trim_end_matches(['│', ' '])
                 .ends_with("at all"),
             "the end scrolled off: {screen:?}"
+        );
+    }
+
+    /// And it says that it has, rather than looking like a lost letter.
+    ///
+    /// `y` on `call the accountant about the invoice` — one column too wide for
+    /// the box — drew `all the accountant about the invoice`, which reads as the
+    /// tool having eaten a letter rather than as a field that has scrolled. The
+    /// marker is paid for out of the window rather than added to it, so the
+    /// field keeps its width and the caret still lands where the text says.
+    #[test]
+    fn a_field_that_has_scrolled_says_so() {
+        let long = "call the accountant about the invoice and then the other one";
+        let input = Input::new(long.to_string(), Purpose::Copy);
+        let screen = with_input(40, 8, &tasks(&["x"]), &input, Glyphs::Unicode);
+        let field = screen
+            .iter()
+            .find(|row| row.contains(" COPY ▏"))
+            .unwrap_or_else(|| panic!("{screen:?}"));
+
+        let shown = field
+            .split('▏')
+            .nth(1)
+            .expect("the field's text")
+            .trim_end_matches(['│', ' ']);
+        assert!(
+            shown.starts_with('…'),
+            "the front was cut with nothing to say so: {shown:?}"
+        );
+        assert!(
+            shown.ends_with("other one"),
+            "the end scrolled off: {shown:?}"
+        );
+
+        // A line that fits carries no marker — it has not scrolled.
+        let short = Input::new("call the plumber".to_string(), Purpose::Copy);
+        let screen = with_input(40, 8, &tasks(&["x"]), &short, Glyphs::Unicode);
+        let field = screen
+            .iter()
+            .find(|row| row.contains(" COPY ▏"))
+            .unwrap_or_else(|| panic!("{screen:?}"));
+        assert!(
+            !field.contains('…'),
+            "a field that fits was marked: {field:?}"
         );
     }
 

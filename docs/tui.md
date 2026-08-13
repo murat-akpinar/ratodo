@@ -257,6 +257,13 @@ Details that are decisions, not drawing:
   instead (`Aug 8`) — still a fact, and still worth seeing. The task stays in
   `OVERDUE` all the same: membership there is positional, and the list does not
   move under you.
+- **A cancelled one leaves, though**, and that is not the same question. A
+  finished task is work that happened on a day; a cancelled one "is off the
+  list, so there is nothing left to be late for" — out of the counts, out of
+  `status`, out of the calendar. `OVERDUE` was the last heading still calling it
+  late, and it put its own `· 2` over a tile reading `1`. It reads under its own
+  heading now, where an undated task does, and `d` again puts it back where its
+  date says. See [format.md](format.md#the-three-states).
 - **The priority has a colour of its own, in two weights.** `!high` is
   `priority` and bold, `!med` is `priority`, `!low` stays in the grey the rest of
   the right-hand fields sit in. It is the field the user typed to mean *how much
@@ -422,6 +429,13 @@ The typed line scrolls rather than truncating, and it scrolls with the **caret**
 rather than with the end of the line: what you are typing is always on screen,
 and a capture box that hides that is not a capture box. An empty line saves
 nothing.
+
+**A field that has scrolled says so**, with a `…` at its left edge. Without one,
+`y` on a task a column too wide for the box drew `all the accountant about the
+invoice` — which reads as the tool having eaten a letter rather than as a field
+that has moved. The marker is paid for *out of* the window rather than added to
+it, so the field keeps its width and the caret still lands where the text says.
+Added in v0.8.1.
 
 While the input is open the keyboard belongs to it. `a`, `d` and `q` are letters
 in there, which is how "you can never be in a mode you did not open" is made
@@ -667,6 +681,13 @@ rather than a second copy of the field above it.
   thought. Below about fifty columns there is not room for both boxes and they
   take a row each, which is the same fallback everything else on this screen
   has.
+- **A radio row that will not fit beside its label gives the *label* up.** At
+  forty columns — the floor the form is drawn at — `Priority` cost the row
+  `◉ none  ○ high  ○…`, and you could arrow onto `med` and `low` without ever
+  being told they were there. A control you cannot see the choices in is not a
+  control: the options name themselves, and the marker in the gutter already
+  says which row has the keys. The label comes back the moment it fits, which is
+  fifty columns. Fixed in v0.8.1.
 - **The first character typed into the date or time replaces what is in it.**
   A box with a caret in it invites typing, and typing used to *append*: `thu`
   onto `2026-08-13` came out as `2026-08-13thu`, which is not a day, so the only

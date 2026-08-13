@@ -53,8 +53,7 @@ things, all built and tested, and the first is the one a user reported:
       caret tests read the frame *and* the cursor out of the same draw, which
       is the only shape of test that can see it.
 
-**What the sweep found and did *not* change — the maintainer's call, because
-each is a look rather than a rule:**
+**What the sweep found in how the screen reads — all four now built:**
 
 - ~~One long title starves every row's tags.~~ **Fixed.** The drop order is read
   per row now: a row with space for its own title and its own tags keeps both,
@@ -64,17 +63,19 @@ each is a look rather than a rule:**
   tagged row now ends flush against the group box, `#home│` with no column of
   air, because the reservation is exactly that row's worth. Giving it slack
   costs every list a column of title.
-- **A cancelled task sits in `OVERDUE` under a `0 OVERDUE` tile.** Membership in
-  the dated groups is positional and deliberate — [tui.md](docs/tui.md) says the
-  list must not move under you — but the group's own `· 1` and the tile's `0`
-  are the same word twice on one screen with two different numbers.
-- **`y` on a task one column too wide chops its first letter** with no marker:
-  `COPY ▏all the accountant…` where the task says `call`. The field scrolls
-  rather than truncating, by design, but a leading `…` when it has scrolled
-  would stop it reading as a lost letter.
-- **The 40-column form hides two of the four priorities**: `◉ none ○ high ○…`.
-  You can still arrow onto `med` and `low` without being able to see them, and
-  40 columns is the documented floor for the form.
+- ~~A cancelled task sits in `OVERDUE` under a `0 OVERDUE` tile.~~ **Fixed.**
+  Positional membership is right for a *finished* task and the list still does
+  not move when you tick one — but a cancelled task "is off the list, so there
+  is nothing left to be late for", which the mark, the colour, the plain date,
+  `status`, the counts and the calendar all already said. `OVERDUE` was the last
+  heading calling it late. It reads under its own heading now and `d` again puts
+  it back — [format.md](docs/format.md#the-three-states).
+- ~~`y` on a task one column too wide chops its first letter.~~ **Fixed.** A
+  scrolled field carries a `…` at its left edge, paid for out of the window so
+  the caret still lands where the text says.
+- ~~The 40-column form hides two of the four priorities.~~ **Fixed.** The row
+  gives its *label* up instead; it comes back at fifty columns, the moment it
+  fits beside all four choices.
 
 **The screen itself is built and the demo is re-recorded.** The maintainer
 looked at it on 2026-08-12 and four things came out of that look, all shipped:
