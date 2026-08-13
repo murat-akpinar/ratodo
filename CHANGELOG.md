@@ -1,5 +1,26 @@
 ## [unreleased]
 
+### 🚀 Features
+
+- *(ui)* Type over a pre-filled date or time on the first character ([5cf64a0](https://github.com/murat-akpinar/ratodo/commit/5cf64a0f00cf2ee6d170ef6b4b5e914cea543fde))
+The box shows a caret and invites typing, and typing appended: `thu` onto `2026-08-13` came out `2026-08-13thu`, which is not a day, so changing the date by hand meant emptying it first — and the picker behind the arrows is the only other way and nothing on the row says so. A backspace, a delete or an arrow says edit this one instead. Tags keep what they hold: a set is something you add to.
+
+### 🐛 Bug Fixes
+
+- *(ui)* Give the date, time and tag fields a caret ([c6a5d83](https://github.com/murat-akpinar/ratodo/commit/c6a5d83852cdc203aa1cb8cb1a505cc607c0b1e1))
+The three typed rows held their text in a plain String with push and pop, and press swallowed the arrows: a mistyped tag had to be backspaced out to its first wrong letter. They reuse Input now, so left, right, home, end and delete work the way they do in the sentence field, and the window in the box is anchored on the caret rather than on the end of the text.
+- *(parse)* Write a typed shorthand date out as an ISO date on an edit ([13f4a4f](https://github.com/murat-akpinar/ratodo/commit/13f4a4f041ec67e8565eafed129f0fe72f38ec9e))
+Input is flexible, storage is strict — docs/format.md — and the capture path has always honoured it. The edit path wrote back what was typed, so `@thu` reached the file and pointed at a different Thursday every week. `iso_date` replaces the one span `parts` claimed and leaves every other byte where the user put it, so the round-trip rule holds through an edit.
+- *(ui)* Keep a half-typed date or time out of the line ([b5b0c26](https://github.com/murat-akpinar/ratodo/commit/b5b0c265179be3e2f657d3307becc093e8ae41aa))
+The date and time rows wrote whatever was in them straight into the line, so `0930` landed in the user's title as a word and `2026-08-12thu` landed in their file as one. Both rows ask the tokenizer that draws the preview whether what they are holding is a token yet, and the line waits until it is.
+- *(theme)* Let each warning name its own source ([7a5d63c](https://github.com/murat-akpinar/ratodo/commit/7a5d63c49ba6a29627aec07ad181a030537ecf82))
+`--theme solarized` was reported under a `theme.conf:` heading, which sent people to a file they may not have had. The file's own warnings say the file and the line; the flag's says the flag, and what to run to see the names.
+
+### 🚜 Refactor
+
+- *(ui)* One caret window rather than three copies of its arithmetic ([fe99cbf](https://github.com/murat-akpinar/ratodo/commit/fe99cbfbb601d020e1069f965f5f77771caba62c))
+The box, the sentence field and the typed rows each anchored their own view on the caret with the same four lines. They ask `window` now.
+
 ### ⚙️ Miscellaneous Tasks
 
 - Point the PKGBUILD at v0.8.0 ([f589be3](https://github.com/murat-akpinar/ratodo/commit/f589be3ff6f8b00e5da06d239417241a698f4b8f))
