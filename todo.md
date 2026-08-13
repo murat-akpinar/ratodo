@@ -30,6 +30,36 @@ things, all built and tested, and the first is the one a user reported:
 - [x] Typing into a pre-filled date appended to it, so `thu` was
       `2026-08-13thu` and changing the date by hand meant emptying it first. The
       first character types over it; a backspace or an arrow says *edit this*.
+- [x] A bad `--theme` was reported under a `theme.conf:` heading, which sent
+      people to a file they may not have had.
+- [x] The stats screen counted cancelled tasks in its total but in neither
+      `done` nor `open`, so its top line did not add up and its percentage
+      disagreed with the title bar's over the same file.
+- [x] Every stats test ran on a Monday, so the week's start and the division
+      behind `avg / day` were never exercised — three `cargo mutants` misses,
+      now pinned.
+
+**What the sweep found and did *not* change — the maintainer's call, because
+each is a look rather than a rule:**
+
+- **One long title starves every row's tags.** The title column takes the widest
+  title it can fit, so adding one long task drops `#ops`, `#home` and `#work`
+  from *every* row and leaves a one-column tag stub — while the long title is
+  still cut with `…`, so the width went to a title that did not fit either. A
+  62-column pane shows those tags; a 100-column one does not, which is the wrong
+  way round. `Columns::of` in `ui.rs`, and the fix is a cap on what the title may
+  take, which is a number only a look can pick.
+- **A cancelled task sits in `OVERDUE` under a `0 OVERDUE` tile.** Membership in
+  the dated groups is positional and deliberate — [tui.md](docs/tui.md) says the
+  list must not move under you — but the group's own `· 1` and the tile's `0`
+  are the same word twice on one screen with two different numbers.
+- **`y` on a task one column too wide chops its first letter** with no marker:
+  `COPY ▏all the accountant…` where the task says `call`. The field scrolls
+  rather than truncating, by design, but a leading `…` when it has scrolled
+  would stop it reading as a lost letter.
+- **The 40-column form hides two of the four priorities**: `◉ none ○ high ○…`.
+  You can still arrow onto `med` and `low` without being able to see them, and
+  40 columns is the documented floor for the form.
 
 **The screen itself is built and the demo is re-recorded.** The maintainer
 looked at it on 2026-08-12 and four things came out of that look, all shipped:
