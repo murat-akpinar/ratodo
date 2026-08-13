@@ -406,7 +406,16 @@ pub fn agenda<'a>(tasks: &'a [Task], today: NaiveDate) -> Vec<Group<'a>> {
     let mut sections: Vec<Group<'a>> = Vec::new();
 
     for task in tasks {
-        let Some(due) = task.due else {
+        // The four dated groups are a claim about work with a day on it, and a
+        // cancelled task has none — "it is off the list, so there is nothing
+        // left to be late for". Everything else already said so: the `✗`, the
+        // colour, the plain date where a late row says `12d ago`, `status`, the
+        // counts and the calendar. `OVERDUE` was the last heading still calling
+        // it late, and it put its own `· 2` over a tile reading `1`. So it
+        // reads where an undated task does, under its own heading — the file's
+        // answer rather than the clock's. docs/format.md#the-three-states.
+        let due = task.due.filter(|_| task.open() || task.done());
+        let Some(due) = due else {
             // Contiguous runs, never merged across the file: two `## Work`
             // headings stay two groups rather than one that pulls tasks upwards.
             let kind = Kind::Section {
@@ -555,6 +564,48 @@ mod tests {
         assert_eq!(s.per_day_x10, 20);
         assert_eq!(s.streak, 1);
         assert_eq!(s.priority, [("!high", 1), ("!med", 0), ("!low", 1)]);
+    }
+
+    /// **A cancelled task is not in a dated group.**
+    ///
+    /// "It is off the list, so there is nothing left to be late for" — the mark
+    /// says so, the colour says so, the date column drops `12d ago` for the
+    /// plain day, `status` leaves it out and the calendar will not export it.
+    /// The `OVERDUE` heading was the last place still calling it late, and it
+    /// put a `· 2` over a screen whose own tile said `1`.
+    ///
+    /// The four dated groups are a claim about work with a day on it. A
+    /// cancelled task has none, so it reads where an undated one does: under
+    /// its own heading, which is the file's answer rather than the clock's.
+    #[test]
+    fn a_cancelled_task_is_not_in_a_dated_group() {
+        let mut dropped = in_section("dropped @2026-08-01", "todo");
+        dropped.set_state(State::Cancelled, today());
+        let mut later = in_section("dropped later @2026-09-01", "todo");
+        later.set_state(State::Cancelled, today());
+
+        let tasks = [in_section("still late @2026-08-01", "todo"), dropped, later];
+        assert_eq!(
+            shape(&tasks, today()),
+            vec![
+                ("OVERDUE".to_string(), vec!["still late".to_string()]),
+                (
+                    "todo".to_string(),
+                    vec!["dropped".to_string(), "dropped later".to_string()]
+                ),
+            ]
+        );
+
+        // Taking it back puts it where the date says, the same key either way.
+        let mut back = tasks;
+        back[1].set_state(State::Open, today());
+        assert_eq!(
+            shape(&back, today())[0],
+            (
+                "OVERDUE".to_string(),
+                vec!["still late".to_string(), "dropped".to_string()]
+            )
+        );
     }
 
     /// Every other stats test runs on a Monday, where the week starts today and

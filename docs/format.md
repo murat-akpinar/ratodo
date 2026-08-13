@@ -31,7 +31,11 @@ cannot record *having decided against something*. A cancelled task:
 
 - is **not** open — it is out of `ratodo status`, out of the progress bar, and
   `ratodo done` will not match it
-- is **never overdue**, however far past its date
+- is **never overdue**, however far past its date — and since v0.8.1 that
+  includes where it is drawn: the four dated groups are a claim about work with
+  a day on it, so a cancelled task reads under its own heading the way an
+  undated one does, rather than under `OVERDUE` with a `· 2` above a screen
+  whose own tile said `1`. `d` again puts it back where its date says
 - is **not** exported to the calendar — the `.ics` is work still to do
 - shows as `✗` on screen (`[-]` in ASCII), in red — the same `overdue` a late
   task wears, with the symbol telling the two apart
