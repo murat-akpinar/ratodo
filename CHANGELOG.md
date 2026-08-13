@@ -17,6 +17,8 @@ The date and time rows wrote whatever was in them straight into the line, so `09
 `--theme solarized` was reported under a `theme.conf:` heading, which sent people to a file they may not have had. The file's own warnings say the file and the line; the flag's says the flag, and what to run to see the names.
 - *(agenda)* Leave cancelled tasks out of the stats screen's counts ([96b5222](https://github.com/murat-akpinar/ratodo/commit/96b52226ab89afb92c20b0c0b87959556cf3b392))
 A cancelled task is out of the counts — docs/format.md — and this is a screen of counts. It was in the total and in the priority and section tallies but in neither `done` nor `open`, so `5 tasks · 1 done · 3 open` did not add up and the screen read 20% where the title bar over the same file read 25%. Dropped once, at the top, as what is counted rather than as what is not.
+- *(ui)* Draw the form's caret where the sentence actually ends ([8c1f2e1](https://github.com/murat-akpinar/ratodo/commit/8c1f2e1cf78997898e6253554e35c9c1cb810a09))
+It sat two columns inside the text, so `asdasda` read as `asdasd|a`: a letter to the right of a cursor that had nothing to its right, and `→` looking broken when it had simply arrived. The sentence row is the marker, a space, `│` and a space, and the placement counted three of those four. The line search above it never matched anything and was right only through its fallback, so both are constants now.
 
 ### 🚜 Refactor
 
