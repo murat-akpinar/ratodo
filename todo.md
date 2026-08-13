@@ -56,13 +56,14 @@ things, all built and tested, and the first is the one a user reported:
 **What the sweep found and did *not* change — the maintainer's call, because
 each is a look rather than a rule:**
 
-- **One long title starves every row's tags.** The title column takes the widest
-  title it can fit, so adding one long task drops `#ops`, `#home` and `#work`
-  from *every* row and leaves a one-column tag stub — while the long title is
-  still cut with `…`, so the width went to a title that did not fit either. A
-  62-column pane shows those tags; a 100-column one does not, which is the wrong
-  way round. `Columns::of` in `ui.rs`, and the fix is a cap on what the title may
-  take, which is a number only a look can pick.
+- ~~One long title starves every row's tags.~~ **Fixed.** The drop order is read
+  per row now: a row with space for its own title and its own tags keeps both,
+  and the title column is held to what lets it. Where two rows want opposite
+  things the title still wins, so `tags_give_way_before_the_title_does` holds —
+  [tui.md](docs/tui.md#width). One thing left in it for a look: the widest
+  tagged row now ends flush against the group box, `#home│` with no column of
+  air, because the reservation is exactly that row's worth. Giving it slack
+  costs every list a column of title.
 - **A cancelled task sits in `OVERDUE` under a `0 OVERDUE` tile.** Membership in
   the dated groups is positional and deliberate — [tui.md](docs/tui.md) says the
   list must not move under you — but the group's own `· 1` and the tile's `0`

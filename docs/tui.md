@@ -1051,14 +1051,28 @@ Four things follow from the columns, and they are decisions:
 - **The title column is measured over the whole list, not the visible rows.** A
   column that resizes as you scroll past a long title is not a column.
 - **Tags get no column of their own.** They are last and ragged, so nothing
-  lines up after them, and reserving the widest row's worth would cut every
-  title to pay for tags most rows do not have. They spend what is left of the
-  row, and a tag that does not fit is dropped whole — `#hea…` is not a filter,
-  it is a riddle. The **rule** that opens their column is reserved, though, and
-  it has to be: it is drawn on every row once any row is tagged, so a title
-  allowed to eat the last three columns would push it off exactly the rows with
-  nothing to show there. A list where nobody tagged anything gets no rule, the
-  same way it gets no priority column.
+  lines up after them. They spend what is left of the row, and a tag that does
+  not fit is dropped whole — `#hea…` is not a filter, it is a riddle. The
+  **rule** that opens their column is reserved, though, and it has to be: it is
+  drawn on every row once any row is tagged, so a title allowed to eat the last
+  three columns would push it off exactly the rows with nothing to show there. A
+  list where nobody tagged anything gets no rule, the same way it gets no
+  priority column.
+- **The title column stops where the tags of a row that has room for them
+  begin.** The column is charged to every row, so a column sized to the longest
+  title in the list took the whole width: `#ops` went from a row with eighteen
+  columns of title because a *different* row had eighty, and the long title was
+  cut with `…` anyway, so the width bought nothing. That is this section's own
+  order backwards — a row gives up its tags when **it** runs out of width, and
+  those rows had not.
+
+  So the order is read per row. A row with space for its own title *and* its own
+  tags keeps both, and the column is held to what lets it. A row without that
+  space is the one the drop order is about: it gives up its tags first and its
+  title is cut last. Where two rows want opposite things the **title wins** —
+  the column never drops below the widest title already known to fit beside its
+  own tags, because a title cut to pay for tags is the inverse this section
+  forbids. Fixed in v0.8.1.
 
 **Wide (60–79 columns)** — the main screen above: no columns, the right-hand
 fields packed against the right edge.

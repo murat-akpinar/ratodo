@@ -2154,19 +2154,55 @@ impl Columns {
         // fallback, and budgeting the Unicode figure there spends width the row
         // does not have.
         let mark = render.glyphs.mark_width() + 1;
-        // Tags get no reservation. They are last and ragged, so nothing lines
-        // up after them, and reserving the widest row's worth would cut every
-        // title to pay for tags most rows do not have — the exact inversion of
-        // the drop order in docs/tui.md#width. task_line spends what is left.
-        //
-        // The rule that opens their column *is* reserved, and it has to be: it
-        // is drawn on every row once any row is tagged, so a title allowed to
-        // eat the last three columns would push it off the end of exactly the
-        // rows that have nothing to show there.
+        // Tags are last and ragged, so nothing lines up after them and they get
+        // no column of their own: `task_line` spends what is left of each row.
+        // The rule that opens them *is* reserved, and has to be — it is drawn on
+        // every row once any row is tagged, so a title allowed to eat the last
+        // three columns would push it off exactly the rows with nothing to show
+        // there.
         let tags = tasks().any(|t| !t.tags.is_empty());
         let room = width.saturating_sub(mark + date + prio + if tags { RULED } else { 0 });
+
+        // What is left of a row is whatever the *title column* left it, and that
+        // column is charged to every row. Sized to the longest title in the list
+        // it took the whole width, and `#ops` went from a row with eighteen
+        // columns of title because a **different** row had eighty. That is
+        // docs/tui.md#width backwards: a row gives up its tags when *it* runs
+        // out of width, and that row had not.
+        //
+        // So the rule is read per row. A row with space for its own title *and*
+        // its own tags keeps both, and the column is held to what lets it —
+        // which is what a long title in some other row must not take. A row
+        // without that space is the one the drop order is about: it gives up
+        // its tags, and its title is cut last of all.
+        //
+        // Two rows can want opposite things, and then the title wins: a row
+        // that would have to cut a title *already known to fit* is the inverse
+        // the docs forbid, so `keep` never pushes the column below the widest
+        // title that fits beside its own tags.
+        let width_of = |t: &Task| columns(&text::plain(&t.title));
+        let tag_run = |t: &Task| match t.tags.len() {
+            0 => 0,
+            n => {
+                t.tags
+                    .iter()
+                    .map(|g| columns(&text::plain(g)) + 1)
+                    .sum::<usize>()
+                    + 2 * (n - 1)
+            }
+        };
+        let fits: Vec<&Task> = tasks()
+            .filter(|t| width_of(t) + tag_run(t) <= room)
+            .collect();
+        let keep = fits.iter().map(|t| room - tag_run(t)).min().unwrap_or(room);
+        let floor = fits.iter().map(|t| width_of(t)).max().unwrap_or(0);
+
         Self {
-            title: title.min(room).max(12.min(width.saturating_sub(mark))),
+            title: title
+                .min(keep)
+                .max(floor)
+                .min(room)
+                .max(12.min(width.saturating_sub(mark))),
             date,
             prio,
             tags,
@@ -6761,6 +6797,91 @@ mod tests {
             cols.title,
             86 - 2 - (6 + RULED) - (5 + RULED),
             "the title column"
+        );
+    }
+
+    /// **One long title must not take every other row's tags.**
+    ///
+    /// The title column is charged to every row, so a column sized to the
+    /// longest title in the list took the whole width and left nothing after
+    /// the columns — and `#ops` went from a row with eighteen columns of title
+    /// because a *different* row had eighty. That is the drop order backwards:
+    /// docs/tui.md#width says a row gives up its tags when **it** runs out of
+    /// width, and those rows had not.
+    #[test]
+    fn one_long_title_does_not_take_every_row_s_tags() {
+        let short = tasks(&[
+            "renew the domain @2026-08-01 #ops",
+            "buy a present @2026-08-01 #home",
+        ]);
+        let cols = Columns::of(
+            &rows(&agenda(&short, today())),
+            100,
+            render(crate::theme::MOCHA),
+            Size::Wide,
+        );
+        let with_room = cols.title;
+
+        let mut long = short.to_vec();
+        let mut monster = capture("x @2026-08-01", today());
+        monster.title = "x".repeat(90);
+        long.push(monster);
+        let cols = Columns::of(
+            &rows(&agenda(&long, today())),
+            100,
+            render(crate::theme::MOCHA),
+            Size::Wide,
+        );
+
+        // The long title still widens the column — it is a column and it is
+        // measured over the list — but not all the way to the edge.
+        assert!(cols.title > with_room, "the column still grows");
+        let after = 100 - 2 - cols.title - cols.date - cols.prio;
+        assert!(
+            after >= RULED + columns("#home"),
+            "the widest tag set has nowhere to go: {after} columns left after the columns"
+        );
+    }
+
+    /// And the row that is actually drawn shows them.
+    #[test]
+    fn a_short_row_keeps_its_tag_beside_a_long_one() {
+        let tasks = tasks(&[
+            "renew the domain @2026-08-01 #ops",
+            &format!("{} @2026-08-01", "x".repeat(90)),
+        ]);
+        let rows = rows(&agenda(&tasks, today()));
+        let mut screen = Screen::new(rows);
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(
+                    f,
+                    &mut screen,
+                    Counts::of(&tasks, today()),
+                    render(crate::theme::MOCHA),
+                    &Notice::Hints,
+                    View::List,
+                    Open::Nothing,
+                )
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        // The list row, not the preview strip along the bottom — that one is the
+        // raw line and carries `#ops` whatever the columns did with it.
+        let row = (0..24)
+            .map(|y| {
+                (0..100)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .find(|line| line.contains("renew the domain") && !line.contains("- [ ]"))
+            .expect("the task is on the screen");
+
+        assert!(
+            row.contains("#ops"),
+            "the short row lost its tag to the long one's title: {row:?}"
         );
     }
 
