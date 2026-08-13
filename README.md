@@ -4,7 +4,7 @@
 
 **A todo TUI, built with ratatui — one Markdown file, no cloud, no account.**
 
-[![crates.io](https://img.shields.io/badge/crates.io-v0.8.0-green)](https://crates.io/crates/ratodo)
+[![crates.io](https://img.shields.io/badge/crates.io-v0.8.1-green)](https://crates.io/crates/ratodo)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.88%2B-orange)](https://www.rust-lang.org)
 
@@ -14,14 +14,17 @@
 
 </div>
 
-> **v0.8.0, on crates.io.** `cargo install ratodo`. The command line and the TUI
+> **v0.8.1, on crates.io.** `cargo install ratodo`. The command line and the TUI
 > are built and tested — capture, editing, undo, folding, themes, the `.ics`
 > export, several lists in one agenda, `$work` to say which one a capture goes
 > to, a date field that cannot hold a day the calendar does not, and ruled
-> columns on a roomy pane. This release is the screen above it: a band of counts
-> with the week off your completion stamps, every group in its own box, the
-> selected task's raw line along the bottom, a form behind `a` and a stats
-> screen behind `s`. Twelve theme roles, one job each.
+> columns on a roomy pane. The screen above is v0.8.0's: a band of counts with
+> the week off your completion stamps, every group in its own box, the selected
+> task's raw line along the bottom, a form behind `a` and a stats screen behind
+> `s`. Twelve theme roles, one job each. This release is a sweep of that form
+> and that screen — the caret works in every field and lands where you can see
+> it, a half-typed date stays out of your file, and one long title no longer
+> takes every other row's tags.
 > Reasoning behind every decision is in [`docs/`](docs/README.md), what comes
 > next in [`todo.md`](todo.md).
 
@@ -419,7 +422,7 @@ Rust 1.88 or newer, and no other build dependency. From source instead:
 
 ```console
 $ git clone https://github.com/murat-akpinar/ratodo && cd ratodo
-$ git checkout v0.8.0
+$ git checkout v0.8.1
 $ cargo install --path .        # → ~/.cargo/bin/ratodo
 ```
 
