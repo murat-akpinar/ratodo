@@ -1,6 +1,6 @@
 pkgbase = ratodo
 	pkgdesc = A todo TUI, built with ratatui — one Markdown file, no cloud, no account
-	pkgver = 0.8.0
+	pkgver = 0.8.1
 	pkgrel = 1
 	url = https://github.com/murat-akpinar/ratodo
 	arch = x86_64
@@ -9,7 +9,7 @@ pkgbase = ratodo
 	makedepends = cargo
 	depends = gcc-libs
 	depends = glibc
-	source = ratodo-0.8.0.tar.gz::https://github.com/murat-akpinar/ratodo/archive/refs/tags/v0.8.0.tar.gz
-	sha256sums = 1997e82fc31fbea67933b348634f80404e579263fc8deba5bdfbfae3a78ad5b7
+	source = ratodo-0.8.1.tar.gz::https://github.com/murat-akpinar/ratodo/archive/refs/tags/v0.8.1.tar.gz
+	sha256sums = 0846c02931bacb9ef3845a2b59e430ce32ae0e3c256b177b0b71a8f7951dac74
 
 pkgname = ratodo
