@@ -19,6 +19,8 @@ The date and time rows wrote whatever was in them straight into the line, so `09
 A cancelled task is out of the counts — docs/format.md — and this is a screen of counts. It was in the total and in the priority and section tallies but in neither `done` nor `open`, so `5 tasks · 1 done · 3 open` did not add up and the screen read 20% where the title bar over the same file read 25%. Dropped once, at the top, as what is counted rather than as what is not.
 - *(ui)* Draw the form's caret where the sentence actually ends ([8c1f2e1](https://github.com/murat-akpinar/ratodo/commit/8c1f2e1cf78997898e6253554e35c9c1cb810a09))
 It sat two columns inside the text, so `asdasda` read as `asdasd|a`: a letter to the right of a cursor that had nothing to its right, and `→` looking broken when it had simply arrived. The sentence row is the marker, a space, `│` and a space, and the placement counted three of those four. The line search above it never matched anything and was right only through its fallback, so both are constants now.
+- *(ui)* Stop one long title taking every other row's tags ([2a0536c](https://github.com/murat-akpinar/ratodo/commit/2a0536cec6122a05447d25754e0b39173c4cb20f))
+The title column is charged to every row, so a column sized to the longest title in the list took the whole width: `#ops` went from a row with eighteen columns of title because a different row had eighty — and that long title was cut with an ellipsis anyway, so the width bought nothing. A 62-column pane showed those tags where a 100-column one did not.
 
 ### 🚜 Refactor
 
