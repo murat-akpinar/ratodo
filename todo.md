@@ -7,26 +7,39 @@ loose ends live in [notes.md](notes.md).
 `v0.3.0`, the date field as `v0.4.0` and the ruled columns as `v0.5.0` — all on
 2026-08-11. The input box opening on today's date is `v0.6.0` and the colour
 scheme — one colour, one job — is `v0.7.0`, tidied into `v0.7.1` and `v0.7.2`,
-all 2026-08-12. The screen redesign is `v0.8.0`: **all four steps are built as
-of 2026-08-12 and the tag is not cut** — it is installed and waiting for the
-maintainer to run it in their own terminal, which is what
-[CLAUDE.md](CLAUDE.md) stops a release for.**
+all 2026-08-12. The screen redesign is `v0.8.0`, tagged and released
+2026-08-12.**
 Steps 0–8 below are the record of how that was built and are kept for the
 reasoning in them, not because there is anything left to do in them. The work
 that is actually open is the short list directly under this line.
 
 ## What is left
 
-**The screen is built and the demo is re-recorded.** The maintainer looked at it
-on 2026-08-12 and four things came out of that look, all shipped: the form's
-border names `shift-tab`, its create button stops at the frame in a 40-column
-pane, no key edits the date on its way to showing it, and the **stats screen is
-five boxes rather than five paragraphs** — it read as uncontained, and the
-reversal is in [docs/decisions.md](docs/decisions.md#reversed). One more went
+**`v0.8.1` — what a sweep of the shipped form turned up (2026-08-13).** Four
+things, all built and tested, and the first is the one a user reported:
+
+- [x] The date, time and tag rows had no caret — the arrows were swallowed and
+      a mistyped tag had to be backspaced out to its first wrong letter. They
+      reuse `Input` now.
+- [x] An edit wrote a typed `@thu` into the file, where it pointed at a
+      different Thursday every week. `capture::iso_date` writes the day out and
+      leaves every other byte alone — [docs/format.md](docs/format.md#input-is-flexible-storage-is-strict).
+- [x] A half-typed date or time went into the line as a word: `0930` landed in
+      the title and `2026-08-1thu` in the file. Both rows ask the tokenizer that
+      draws the preview, and the line waits.
+- [x] Typing into a pre-filled date appended to it, so `thu` was
+      `2026-08-13thu` and changing the date by hand meant emptying it first. The
+      first character types over it; a backspace or an arrow says *edit this*.
+
+**The screen itself is built and the demo is re-recorded.** The maintainer
+looked at it on 2026-08-12 and four things came out of that look, all shipped:
+the form's border names `shift-tab`, its create button stops at the frame in a
+40-column pane, no key edits the date on its way to showing it, and the **stats
+screen is five boxes rather than five paragraphs** — it read as uncontained, and
+the reversal is in [docs/decisions.md](docs/decisions.md#reversed). One more went
 with them: the question field now gives its words up to their own boxes, which
 `docs/tui.md` had promised and the code did not do.
-What is left before the tag is the maintainer's look at *this* build. The other
-two open items are packaging and block nothing.
+The two other open items are packaging and block nothing.
 
 The paragraph below is how the work was ordered while it was being done, and is
 kept because the reasoning in it is what the ticks are against. Order inside the redesign is by dependency — every step after

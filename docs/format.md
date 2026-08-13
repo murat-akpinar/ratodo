@@ -67,6 +67,12 @@ Accepted shorthand: `@today @tomorrow @mon`…`@sun @3d @2w`.
 They never appear in the file. The file has to read the same to a machine and to
 a human, next year as much as today.
 
+**Every way in, not only `add`.** An edit through `⏎` writes the day out too:
+only the one word the tokenizer claimed is replaced, so the rest of the line
+keeps its bytes and its spacing. Until v0.8.1 the edit path wrote back what was
+typed, and a `@thu` that reached the file pointed at a different Thursday every
+week.
+
 ## What the tool writes
 
 - New tasks are always written as `- [ ]`, with an ISO date.

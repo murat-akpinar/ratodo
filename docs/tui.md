@@ -667,6 +667,21 @@ rather than a second copy of the field above it.
   thought. Below about fifty columns there is not room for both boxes and they
   take a row each, which is the same fallback everything else on this screen
   has.
+- **The first character typed into the date or time replaces what is in it.**
+  A box with a caret in it invites typing, and typing used to *append*: `thu`
+  onto `2026-08-13` came out as `2026-08-13thu`, which is not a day, so the only
+  way to change the date by hand was to empty it first. Backspace, delete or an
+  arrow says *edit this one* instead, and what is there stays. Tags are the
+  exception and keep what they hold — a set is something you add to.
+- **The three rows carry the caret the sentence field does.** `←` `→` `home`
+  `end` and `delete` work in the date, the time and the tags, because a field
+  you can only backspace out of is not a field.
+- **A row writes a token or it writes nothing.** `0930` is a time on its way to
+  being one and `2026-08-1thu` is not a day at all; both used to go into the
+  line as words, which put the first in the title and the second in the file.
+  The rows keep what is being typed and the line waits for it to mean
+  something — the same tokenizer answers both, which is the whole design. What
+  the `PREVIEW` shows is what the file gets.
 - **The date is typed, not picked off a row of `today / tomorrow / thu`.** A
   smaller screen and a bigger vocabulary: the field takes anything `capture`
   resolves, so `thu`, `3d` and `2026-08-14` all work and the form invents no

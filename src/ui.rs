@@ -829,6 +829,15 @@ pub struct Form {
     /// field you can only append to is not a field: a mistyped tag used to have
     /// to be backspaced out to its first wrong letter.
     typing: Input,
+    /// Whether `typing` still holds exactly what `seed` put there.
+    ///
+    /// A date box showing `2026-08-13` with a caret in it invites typing, and
+    /// what typing did was append: `thu` came out as `2026-08-13thu`, which is
+    /// not a day, and the only way to change the date by hand was to empty it
+    /// first. So the **first** character replaces what was seeded — every
+    /// pre-filled field anyone has used works this way. A key that deletes or
+    /// moves first says they meant to edit it, and this goes false.
+    untouched: bool,
     /// The time, held aside while the **date** is being typed. A time only
     /// parses directly after a date, so rewriting the date means taking both out
     /// of `base` and putting the time back after whatever the date becomes —
@@ -878,6 +887,7 @@ impl Form {
             today,
             lists: lists.to_vec(),
             typing: Input::new(String::new(), Purpose::Add),
+            untouched: true,
             spare: String::new(),
             base: String::new(),
         }
@@ -926,6 +936,7 @@ impl Form {
             today,
             lists: lists.to_vec(),
             typing: Input::new(String::new(), Purpose::Add),
+            untouched: true,
             spare: String::new(),
             base: String::new(),
         };
@@ -965,6 +976,7 @@ impl Form {
     fn seed(&mut self) {
         let (text, today) = (self.line.clone(), self.today);
         self.spare = String::new();
+        self.untouched = true;
         let (typing, owns) = match self.focus {
             Field::Due => {
                 // Both come out, and the time is held: it only parses directly
@@ -1234,23 +1246,45 @@ impl Form {
             (Typed::Home, Field::Title) => self.input.home(),
             (Typed::End, Field::Title) => self.input.end(),
             (Typed::Char(c), field) if field.typed() => {
+                // A date and a time are one value each, and typing over a
+                // pre-filled one is what every such box does. Tags are a set
+                // you add to, so they are the row that keeps what it holds.
+                if self.untouched && matches!(field, Field::Due | Field::Time) {
+                    self.typing = Input::new(String::new(), self.input.purpose.clone());
+                }
+                self.untouched = false;
                 self.typing.insert(c);
                 self.sync();
             }
             (Typed::Back, field) if field.typed() => {
+                self.untouched = false;
                 self.typing.back();
                 self.sync();
             }
             (Typed::Delete, field) if field.typed() => {
+                self.untouched = false;
                 self.typing.delete();
                 self.sync();
             }
             // The same four keys the sentence field has. They move the caret and
-            // nothing else, so there is no line to write back.
-            (Typed::Left, field) if field.typed() => self.typing.left(),
-            (Typed::Right, field) if field.typed() => self.typing.right(),
-            (Typed::Home, field) if field.typed() => self.typing.home(),
-            (Typed::End, field) if field.typed() => self.typing.end(),
+            // nothing else, so there is no line to write back — but they are a
+            // decision to edit what is there rather than replace it.
+            (Typed::Left, field) if field.typed() => {
+                self.untouched = false;
+                self.typing.left();
+            }
+            (Typed::Right, field) if field.typed() => {
+                self.untouched = false;
+                self.typing.right();
+            }
+            (Typed::Home, field) if field.typed() => {
+                self.untouched = false;
+                self.typing.home();
+            }
+            (Typed::End, field) if field.typed() => {
+                self.untouched = false;
+                self.typing.end();
+            }
             // The three-part picker, on the one field it belongs to. `tab` is
             // next-field in here, so the arrows are the door — and the first
             // press only opens it. A key that edits the date on the way to
@@ -5703,6 +5737,51 @@ mod tests {
         assert_eq!(tags.text(), "buy milk #work #hom");
     }
 
+    /// A pre-filled box with a caret in it invites typing, and typing into this
+    /// one used to append: `thu` onto `2026-08-13` is not a day, and changing
+    /// the date by hand meant emptying it first. The first character replaces
+    /// what was seeded — docs/tui.md#the-form--a.
+    #[test]
+    fn the_first_character_types_over_a_pre_filled_date_or_time() {
+        let mut due = form("standup @2026-08-12", &[]);
+        tab(&mut due, 1);
+        assert_eq!(due.focus, Field::Due);
+        assert_eq!(due.typed_text(), "2026-08-12", "and it is there to be seen");
+        for c in "thu".chars() {
+            due.press(press(KeyCode::Char(c)));
+        }
+        assert_eq!(due.typed_text(), "thu");
+        assert_eq!(due.text(), "standup @thu");
+
+        // A key that deletes or moves first says they meant to edit what was
+        // there, and the next character goes where the caret is.
+        let mut edit = form("standup @2026-08-12", &[]);
+        tab(&mut edit, 1);
+        edit.press(press(KeyCode::Backspace));
+        edit.press(press(KeyCode::Char('3')));
+        assert_eq!(edit.typed_text(), "2026-08-13");
+        assert_eq!(edit.text(), "standup @2026-08-13");
+
+        // The time row is one value too.
+        let mut time = form("standup @2026-08-12 09:30", &[]);
+        tab(&mut time, 2);
+        assert_eq!(time.focus, Field::Time);
+        for c in "14:00".chars() {
+            time.press(press(KeyCode::Char(c)));
+        }
+        assert_eq!(time.text(), "standup @2026-08-12 14:00");
+
+        // Tags are a set you add to, so they are the one typed row that keeps
+        // what it was holding.
+        let mut tags = form("buy milk #home", &[]);
+        tab(&mut tags, 3);
+        assert_eq!(tags.focus, Field::Tags);
+        for c in " #work".chars() {
+            tags.press(press(KeyCode::Char(c)));
+        }
+        assert_eq!(tags.text(), "buy milk #home #work");
+    }
+
     /// The date and time rows write a token or they write nothing. `0930` is a
     /// time on its way to being one and `2026-08-12thu` is not a day at all,
     /// and both used to go into the line as words — which put the first in the
@@ -5728,16 +5807,18 @@ mod tests {
         time.press(press(KeyCode::Char(':')));
         assert_eq!(time.text(), "standup @2026-08-12 09:30");
 
-        // A date typed onto the end of the one already in the row is not a
-        // date, and reads the way an emptied row does: no date, and the time
-        // goes with it.
+        // The same on the date row, reached the way it still can be: a
+        // backspace says *edit this*, and what the edit leaves is not a day.
+        // It reads the way an emptied row does — no date, and the time goes
+        // with it.
         let mut due = form("standup @2026-08-12 09:30", &[]);
         tab(&mut due, 1);
         assert_eq!(due.focus, Field::Due);
+        due.press(press(KeyCode::Backspace));
         for c in "thu".chars() {
             due.press(press(KeyCode::Char(c)));
         }
-        assert_eq!(due.typed_text(), "2026-08-12thu");
+        assert_eq!(due.typed_text(), "2026-08-1thu");
         assert_eq!(due.text(), "standup");
 
         // Cleared and retyped, it resolves the way docs/format.md says.
