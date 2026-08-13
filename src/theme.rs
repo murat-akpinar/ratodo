@@ -283,7 +283,7 @@ pub fn parse(text: &str) -> Parsed {
             match line.split_once('=') {
                 Some((key, value)) => Some((i + 1, key.trim(), value.trim())),
                 None => {
-                    warnings.push(format!("line {}: expected `key = value`", i + 1));
+                    warnings.push(format!("theme.conf line {}: expected `key = value`", i + 1));
                     None
                 }
             }
@@ -294,17 +294,19 @@ pub fn parse(text: &str) -> Parsed {
     for (no, _, value) in entries.iter().filter(|(_, key, _)| *key == "theme") {
         match built_in(value) {
             Some(base) => theme = base,
-            None => warnings.push(format!("line {no}: no built-in theme called `{value}`")),
+            None => warnings.push(format!(
+                "theme.conf line {no}: no built-in theme called `{value}`"
+            )),
         }
     }
 
     for (no, key, value) in entries.iter().filter(|(_, key, _)| *key != "theme") {
         let Some(colour) = parse_colour(value) else {
-            warnings.push(format!("line {no}: `{value}` is not a colour"));
+            warnings.push(format!("theme.conf line {no}: `{value}` is not a colour"));
             continue;
         };
         if !theme.set(key, colour) {
-            warnings.push(format!("line {no}: no theme key called `{key}`"));
+            warnings.push(format!("theme.conf line {no}: no theme key called `{key}`"));
         }
     }
 
@@ -327,9 +329,9 @@ pub fn resolve(config: Option<&str>, flag: Option<&str>, no_colour: bool) -> Par
             // Wholesale, per the documented order: `--theme` sits below only
             // NO_COLOR, so it wins over the file's individual keys too.
             Some(theme) => parsed.theme = theme,
-            None => parsed
-                .warnings
-                .push(format!("no built-in theme called `{name}`")),
+            None => parsed.warnings.push(format!(
+                "--theme: no built-in theme called `{name}` - ratodo theme list"
+            )),
         }
     }
 
@@ -504,7 +506,7 @@ mod tests {
     fn a_warning_says_which_line() {
         let parsed = parse("# comment\n\naccent = puce\n");
         assert!(
-            parsed.warnings[0].starts_with("line 3:"),
+            parsed.warnings[0].starts_with("theme.conf line 3:"),
             "{:?}",
             parsed.warnings
         );
@@ -539,6 +541,13 @@ mod tests {
         assert_eq!(parsed.theme, MOCHA);
         assert_eq!(parsed.warnings.len(), 1);
         assert!(parsed.warnings[0].contains("solarized"));
+        // And it says the flag rather than the file: a `theme.conf:` heading on
+        // a `--theme` typo sends people to a file they may not even have.
+        assert!(
+            parsed.warnings[0].starts_with("--theme"),
+            "{}",
+            parsed.warnings[0]
+        );
     }
 
     /// `theme dump > theme.conf` has to produce a file that parses back to what

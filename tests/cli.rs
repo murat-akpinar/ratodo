@@ -1452,7 +1452,12 @@ fn a_broken_theme_file_warns_and_never_stops_anything() {
 
     let complaints = String::from_utf8_lossy(&out.stderr);
     assert_eq!(complaints.lines().count(), 4, "{complaints}");
-    assert!(complaints.contains("theme.conf:"), "{complaints}");
+    // Every line names the file it is about and the line in it, because the
+    // other thing that warns here is `--theme`, and a `theme.conf:` heading on
+    // that one sent people to a file they may not have had.
+    for line in complaints.lines() {
+        assert!(line.starts_with("theme.conf line "), "{complaints}");
+    }
 
     // stdout is still a usable theme file — the warnings went to the other stream.
     let dumped = String::from_utf8_lossy(&out.stdout);

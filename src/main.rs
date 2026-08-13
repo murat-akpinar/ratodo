@@ -342,8 +342,10 @@ fn active_theme(flag: Option<&str>) -> theme::Theme {
     let no_colour = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
     let parsed = theme::resolve(config.as_deref(), flag, no_colour);
 
+    // Each warning names its own source: `--theme solarized` reported under a
+    // `theme.conf:` heading sent people to a file they did not have.
     for warning in &parsed.warnings {
-        eprintln!("theme.conf: {warning}");
+        eprintln!("{warning}");
     }
     parsed.theme
 }
