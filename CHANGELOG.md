@@ -21,6 +21,10 @@ A cancelled task is out of the counts — docs/format.md — and this is a scree
 It sat two columns inside the text, so `asdasda` read as `asdasd|a`: a letter to the right of a cursor that had nothing to its right, and `→` looking broken when it had simply arrived. The sentence row is the marker, a space, `│` and a space, and the placement counted three of those four. The line search above it never matched anything and was right only through its fallback, so both are constants now.
 - *(ui)* Stop one long title taking every other row's tags ([2a0536c](https://github.com/murat-akpinar/ratodo/commit/2a0536cec6122a05447d25754e0b39173c4cb20f))
 The title column is charged to every row, so a column sized to the longest title in the list took the whole width: `#ops` went from a row with eighteen columns of title because a different row had eighty — and that long title was cut with an ellipsis anyway, so the width bought nothing. A 62-column pane showed those tags where a 100-column one did not.
+- *(agenda)* Take a cancelled task out of the dated groups ([25d90d5](https://github.com/murat-akpinar/ratodo/commit/25d90d58f3e4fa249f6f070e025496fd9579b81c))
+"It is off the list, so there is nothing left to be late for" — which the mark, the colour, the plain date where a late row says `12d ago`, `status`, the counts and the calendar all already said. `OVERDUE` was the last heading still calling it late, and it drew its own `· 2` over a tile reading `1`.
+- *(ui)* Mark a field that has scrolled, and keep a narrow radio row's choices ([4c3b9ed](https://github.com/murat-akpinar/ratodo/commit/4c3b9ed18e243261e930ae6f5b45e8d31aef5233))
+Two ways the screen said something that was not so.
 
 ### 🚜 Refactor
 
