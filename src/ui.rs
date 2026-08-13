@@ -1136,6 +1136,13 @@ impl Form {
             // An emptied date takes the time with it: a time with no date is
             // not a field the file can keep.
             Field::Due if typing.trim().is_empty() => base,
+            // A row writes a token or it writes nothing. `0930` is a time on
+            // its way to being one and `2026-08-12thu` is not a day at all, and
+            // a word the tokenizer does not claim reaching the line puts the
+            // first in the user's title and the second in their file. So the
+            // row keeps what is being typed and the line waits for it to mean
+            // something — the same tokenizer answers both, which is the whole
+            // design: docs/tui.md#the-form--a.
             Field::Due => {
                 let dated = set_parts(
                     &base,
@@ -1143,9 +1150,19 @@ impl Form {
                     &[Part::Date],
                     Some(&format!("@{}", typing.trim())),
                 );
-                after_date(&dated, today, &self.spare.clone())
+                match part_of(&dated, today, Part::Date) {
+                    Some(_) => after_date(&dated, today, &self.spare.clone()),
+                    // Not a date yet, and so it reads as an emptied row does.
+                    None => base,
+                }
             }
-            Field::Time => after_date(&base, today, typing.trim()),
+            Field::Time => {
+                let timed = after_date(&base, today, typing.trim());
+                match part_of(&timed, today, Part::Time) {
+                    Some(_) => timed,
+                    None => base,
+                }
+            }
             Field::Tags => set_tags(&base, today, &typing),
             _ => base,
         };
@@ -5688,6 +5705,53 @@ mod tests {
         tags.press(press(KeyCode::Left));
         tags.press(press(KeyCode::Delete));
         assert_eq!(tags.text(), "buy milk #work #hom");
+    }
+
+    /// The date and time rows write a token or they write nothing. `0930` is a
+    /// time on its way to being one and `2026-08-12thu` is not a day at all,
+    /// and both used to go into the line as words — which put the first in the
+    /// user's title and the second in their file.
+    #[test]
+    fn a_date_or_time_the_tokenizer_does_not_claim_never_reaches_the_line() {
+        let mut time = form("standup @2026-08-12", &[]);
+        tab(&mut time, 2);
+        assert_eq!(time.focus, Field::Time);
+        for c in "0930".chars() {
+            time.press(press(KeyCode::Char(c)));
+        }
+        assert_eq!(time.typed_text(), "0930", "the row shows what was typed");
+        assert_eq!(
+            time.text(),
+            "standup @2026-08-12",
+            "and the line stays clean"
+        );
+
+        // And the moment it is a time, it is in the line.
+        time.press(press(KeyCode::Left));
+        time.press(press(KeyCode::Left));
+        time.press(press(KeyCode::Char(':')));
+        assert_eq!(time.text(), "standup @2026-08-12 09:30");
+
+        // A date typed onto the end of the one already in the row is not a
+        // date, and reads the way an emptied row does: no date, and the time
+        // goes with it.
+        let mut due = form("standup @2026-08-12 09:30", &[]);
+        tab(&mut due, 1);
+        assert_eq!(due.focus, Field::Due);
+        for c in "thu".chars() {
+            due.press(press(KeyCode::Char(c)));
+        }
+        assert_eq!(due.typed_text(), "2026-08-12thu");
+        assert_eq!(due.text(), "standup");
+
+        // Cleared and retyped, it resolves the way docs/format.md says.
+        for _ in 0..13 {
+            due.press(press(KeyCode::Backspace));
+        }
+        for c in "thu".chars() {
+            due.press(press(KeyCode::Char(c)));
+        }
+        assert_eq!(due.text(), "standup @thu 09:30");
     }
 
     /// The format cannot hold a time without a date, so the row is not in the
