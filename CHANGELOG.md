@@ -1,4 +1,4 @@
-## [unreleased]
+## [0.8.1] - 2026-08-13
 
 ### 🚀 Features
 
@@ -45,6 +45,7 @@ Every stats test ran on a Monday, where the subtraction that finds the week's Mo
 - Point the PKGBUILD at v0.8.0 ([f589be3](https://github.com/murat-akpinar/ratodo/commit/f589be3ff6f8b00e5da06d239417241a698f4b8f))
 - *(ui)* Drop the unused ratatui layout-cache feature ([0cb1d4d](https://github.com/murat-akpinar/ratodo/commit/0cb1d4d51b35172d88dd6fc19847a82f3d3168af))
 Layouts are hand-computed Rects; Layout::split is never called, so the cache had nothing to hold. Takes critical-section out of the build.
+- *(release)* V0.8.1 ([0bb2b2a](https://github.com/murat-akpinar/ratodo/commit/0bb2b2a30d070b7440ec3497f3976784c8cf0392))
 ## [0.8.0] - 2026-08-12
 
 ### 🚀 Features
