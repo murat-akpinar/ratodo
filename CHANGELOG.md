@@ -1,3 +1,13 @@
+## [unreleased]
+
+### 📚 Documentation
+
+- *(cli)* Queue the shell fast path as the next step ([29cfd33](https://github.com/murat-akpinar/ratodo/commit/29cfd33c6b448afc1f0554b9d20c9b975cd4ef14))
+`add` and `list` already do two thirds of it; what is missing is a `--today` filter over the agenda groups and clap short flags for `-a` and `-l`. `-ls`/`-ll` are not invented: a single dash takes single letters.
+
+### ⚙️ Miscellaneous Tasks
+
+- Point the PKGBUILD at v0.8.1 ([409c1c5](https://github.com/murat-akpinar/ratodo/commit/409c1c5df4f6b0b1957ca638147f194daa21b33f))
 ## [0.8.1] - 2026-08-13
 
 ### 🚀 Features
