@@ -15,6 +15,53 @@ that is actually open is the short list directly under this line.
 
 ## What is left
 
+### Next — the fast path from the shell (asked for 2026-08-14)
+
+**This is the one being built next.** Two thirds of it is already shipped:
+`ratodo add 'quick task @today #work !high'` **is** the quick capture, and
+`ratodo list` **is** the whole list. What is actually missing is one filter and
+two keystrokes — a minor (`v0.9.0`) because a flag is a promise, not because it
+is a lot of code.
+
+- [ ] **`ratodo list --today` — overdue and today, nothing else.** The only new
+      behaviour in the whole idea. `agenda()` already answers the question: its
+      groups are `Overdue`, `Today`, `ThisWeek`, `Later` and the file's own
+      sections, so the flag is a `retain` over the groups in `list()`
+      (`src/main.rs:1319`) — **not** a new field on `agenda::Filter`, which
+      filters tasks and would need a second date calculation to do this one.
+      Composes with `--tag`, `--prio` and `--porcelain` for free, because it
+      narrows the groups after the filter has narrowed the tasks.
+      **`Overdue` stays in it**, and that is the decision worth writing down
+      rather than the code: late work is today's work, and a `--today` that
+      hides yesterday's miss is a lie on a morning check. Undated tasks are out
+      — they are the answer to a different question, and `list` with no flags is
+      still where they live
+- [ ] **`-a` and `-l`, out of clap and nothing else.** clap gives a subcommand a
+      `short_flag`: `#[command(short_flag = 'a')]` on `Add` and `'l'` on `List`
+      buys `ratodo -a 'call the bank @thu'` and `ratodo -l` for one attribute
+      each and no argv handling of our own.
+      **`-ls` and `-ll` as they were asked for do not get invented.** A single
+      `-` takes single-letter flags in every tool on the machine, so `-ls` is
+      `-l -s` to clap and to the reader; hand-rolling it means taking argv apart
+      before clap sees it, for two characters. Whether `-lt` collapses — the
+      subcommand's short flag plus a short `-t` on `--today` — is a five-minute
+      check against the built binary, and it is a *bonus*: `ratodo -l --today`
+      is the form the docs promise either way
+- [ ] **What a new flag drags behind it, which is most of the work.**
+      [docs/cli.md](docs/cli.md): the `list` flag table, the `add` section for
+      `-a`, and the **"Not in v1" line at the bottom that calls the three
+      existing flags the whole of v1's filtering** — it stops being true.
+      The three hand-written files in `completions/`, which `tests/cli.rs:1505`
+      checks against the binary's own `--help`, so a missed one goes red rather
+      than quiet. `README.md`, where the shell examples live. Then
+      `python3 scripts/check-docs.py`. Tests in `tests/cli.rs`: `--today` on a
+      fixture holding one task of every group, `--today --porcelain` printing
+      nothing and exiting `0` on a day with nothing due, and `-a` capturing
+      byte-for-byte what `add` captures. No `cargo mutants` run is owed —
+      `parse`, `write`, `model`, `capture` and `text` are untouched
+
+### Everything else still open
+
 **`v0.8.1` — what a sweep of the shipped form turned up (2026-08-13).** Four
 things, all built and tested, and the first is the one a user reported:
 
