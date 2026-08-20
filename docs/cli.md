@@ -365,7 +365,7 @@ The name cannot be taken back; an alias can. See [naming.md](naming.md).
 ## Not in v1
 
 `/` search, filtering from inside the TUI and `ratodo archive` are v2 — the flags
-on `list` are the whole of the filtering outside it, and `--today` (0.9.0) is the
+on `list` are the whole of the filtering outside it, and `--today` (0.8.2) is the
 last one planned: what else people ask for belongs to the search that is coming,
 not to a fourth flag. `notify-send` on overdue tasks, and
 packaging for AUR and Nix, are v4. See [roadmap.md](roadmap.md).

@@ -22,8 +22,9 @@ running it.** `-lt` does collapse: clap reads it as `-l -t`, so the bonus came
 for free and the docs promise it. Two thirds of it was already shipped:
 `ratodo add 'quick task @today #work !high'` **is** the quick capture, and
 `ratodo list` **is** the whole list. What is actually missing is one filter and
-two keystrokes — a minor (`v0.9.0`) because a flag is a promise, not because it
-is a lot of code.
+two keystrokes — released as `v0.8.2` on 2026-08-21. The todo had it down as a
+minor because a flag is a promise; the maintainer called it a patch, and the
+number is theirs to call.
 
 - [x] **`ratodo list --today` — overdue and today, nothing else.** The only new
       behaviour in the whole idea. `agenda()` already answers the question: its

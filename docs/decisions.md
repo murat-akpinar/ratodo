@@ -28,7 +28,7 @@ Three lists: what is settled, what was rejected, and what is still open.
   done the date arithmetic; a second calculation inside `list` is how two answers
   start to drift. **Overdue stays in it** — late work is today's work, and a
   `--today` that hides yesterday's miss is a lie on a morning check. See
-  [cli.md](cli.md#list---today). *(0.9.0, 2026-08-21.)*
+  [cli.md](cli.md#list---today). *(0.8.2, 2026-08-21.)*
 - ✅ **The tool is scriptable, not just interactive.** `ratodo status` for a bar,
   `list --porcelain` for `fzf` and `grep`. A tool this audience cannot pipe is a
   tool that stays outside their setup. See [cli.md](cli.md).
