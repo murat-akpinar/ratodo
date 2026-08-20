@@ -1,5 +1,10 @@
 ## [unreleased]
 
+### 🚀 Features
+
+- *(cli)* Add list --today and the -a/-l short flags ([3d22622](https://github.com/murat-akpinar/ratodo/commit/3d22622ba87fcd463e9399debe31f83189ccd601))
+`--today` retains the OVERDUE and TODAY groups the agenda already built, so it composes with --tag, --prio and --porcelain without a second date calculation. Overdue stays in it: late work is today's work. The summary now counts what was shown rather than what the filter left.
+
 ### 📚 Documentation
 
 - *(cli)* Queue the shell fast path as the next step ([29cfd33](https://github.com/murat-akpinar/ratodo/commit/29cfd33c6b448afc1f0554b9d20c9b975cd4ef14))
