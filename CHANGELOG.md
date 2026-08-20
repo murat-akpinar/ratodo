@@ -1,3 +1,13 @@
+## [unreleased]
+
+### 📚 Documentation
+
+- *(docs)* Queue what driving the screen found, drop two checks nobody here can run ([3644428](https://github.com/murat-akpinar/ratodo/commit/3644428f8333c017ba84809a19996cf4d7f996a8))
+Five items off an hour in a pty on a real list: a modal clearing only its own rect so the group boxes bleed into its border, the last box never closing when the list scrolls, the selection not following a new task, avg/day rounding to nothing on the month and the year, and one decision about what list --today does with today's finished work.
+
+### ⚙️ Miscellaneous Tasks
+
+- Point the PKGBUILD at v0.8.2 ([75f29fb](https://github.com/murat-akpinar/ratodo/commit/75f29fb2047d68ed0069e50f5c8666a194829a26))
 ## [0.8.2] - 2026-08-20
 
 ### 🚀 Features
