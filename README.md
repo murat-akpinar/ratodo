@@ -259,8 +259,9 @@ leaves the machine.
 | | |
 |---|---|
 | `ratodo` | open the TUI |
-| `ratodo add '<text>'` | capture a task and exit |
-| `ratodo list` | print the agenda |
+| `ratodo add '<text>'` | capture a task and exit — also `ratodo -a '<text>'` |
+| `ratodo list` | print the agenda — also `ratodo -l` |
+| `ratodo list --today` | overdue and due today, nothing else — also `ratodo -lt` |
 | `ratodo list --tag ops` | just the `#ops` ones — also `--prio high` |
 | `ratodo list --porcelain` | one tab-separated line per task, for `fzf` and `grep` |
 | `ratodo done '<text>'` | mark a task done |

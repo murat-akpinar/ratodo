@@ -24,6 +24,11 @@ Three lists: what is settled, what was rejected, and what is still open.
 - ✅ **v1 scope: capture, check off, and narrow down.** `/` search and
   `ratodo archive` go to v2; `list --tag` / `--prio` stayed in v1.
   *(Changed from "filter and search go to v2" — see below.)*
+- ✅ **`list --today` narrows the groups, not the tasks.** `agenda()` has already
+  done the date arithmetic; a second calculation inside `list` is how two answers
+  start to drift. **Overdue stays in it** — late work is today's work, and a
+  `--today` that hides yesterday's miss is a lie on a morning check. See
+  [cli.md](cli.md#list---today). *(0.9.0, 2026-08-21.)*
 - ✅ **The tool is scriptable, not just interactive.** `ratodo status` for a bar,
   `list --porcelain` for `fzf` and `grep`. A tool this audience cannot pipe is a
   tool that stays outside their setup. See [cli.md](cli.md).

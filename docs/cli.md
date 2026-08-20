@@ -7,8 +7,8 @@ Two entry paths, both in v1. The second one is the reason the product exists.
 | Command | What it does |
 |---|---|
 | `ratodo` | Opens the TUI on the agenda view |
-| `ratodo add '<text>'` | Parses the text, appends the task, prints one line, exits. **The TUI never opens** |
-| `ratodo list` | Prints the agenda to stdout and exits. Also the first thing that works during development |
+| `ratodo add '<text>'` | Parses the text, appends the task, prints one line, exits. **The TUI never opens**. Also `ratodo -a` |
+| `ratodo list` | Prints the agenda to stdout and exits. Also the first thing that works during development. Also `ratodo -l` |
 | `ratodo done '<text>'` | Marks the matching task as done without opening the TUI |
 | `ratodo status` | Prints the counts on one line, for a bar. See below |
 | `ratodo sync` | Regenerates `todo.ics` by hand. See [calendar.md](calendar.md) |
@@ -21,6 +21,7 @@ Two entry paths, both in v1. The second one is the reason the product exists.
 |---|---|
 | `--tag <name>` | Only tasks carrying `#name`. Repeatable; repeats mean OR. Case-insensitive, so `#Ops` answers to `--tag ops` |
 | `--prio <level>` | Only `high`, `med` or `low` — the exact level, not "and above". Anything else is rejected before the file is opened |
+| `--today` / `-t` | Only `OVERDUE` and `TODAY`. See below |
 | `--porcelain` | Machine-readable output. See below |
 
 Global flags:
@@ -135,6 +136,37 @@ not have to be retrofitted:
   prints the list instead. Testing that branch takes an actual pty, so the suite
   borrows one from `script(1)` and asserts the alternate screen is both entered
   and left.
+
+### `list --today`
+
+The morning question — *what do I have to do today* — as one flag. It narrows
+the **groups** the agenda already built, so it composes with `--tag`, `--prio`
+and `--porcelain` for free: those narrow the tasks first, this narrows what is
+left to the two groups that answer the question.
+
+**`OVERDUE` is in it.** Late work is today's work, and a `--today` that hides
+yesterday's miss is a lie on a morning check. Undated tasks are out — they are
+the answer to a different question, and plain `list` is still where they live.
+So is a cancelled task with a date on it: the agenda files those under the
+file's own heading, not under a day ([format.md](format.md#the-three-states)).
+
+```
+$ ratodo -lt
+OVERDUE
+  [!] renew the domain  2026-08-20
+
+TODAY
+  [ ] stand-up notes  2026-08-21
+
+2 open · 1 overdue
+```
+
+`-lt` is `-l -t`, which is the ordinary reading of a single dash and not a
+spelling of our own — `ratodo list --today` is the same command.
+
+On a day with nothing due, the human form says `no task matches that filter` on
+stderr and `--porcelain` prints nothing; both exit `0`, because an empty answer
+is still an answer.
 
 ### `list --porcelain`
 
@@ -258,6 +290,10 @@ added: pay the invoice  ·  due tomorrow (2026-08-11)  ·  #home
 Accepted shorthand: `@today @tomorrow @mon`…`@sun @3d @2w`. Full syntax in
 [format.md](format.md).
 
+`ratodo -a 'call the bank @thu'` is the same command with three keystrokes
+fewer — clap's `short_flag`, not argv handling of our own — and the quoting rule
+below applies to it exactly as it does to `add`.
+
 ### Quote with `'`, not `"`
 
 The single quotes above are not a style choice. Two of the three metadata
@@ -329,5 +365,7 @@ The name cannot be taken back; an alias can. See [naming.md](naming.md).
 ## Not in v1
 
 `/` search, filtering from inside the TUI and `ratodo archive` are v2 — the flags
-on `list` are the whole of v1's filtering. `notify-send` on overdue tasks, and
+on `list` are the whole of the filtering outside it, and `--today` (0.9.0) is the
+last one planned: what else people ask for belongs to the search that is coming,
+not to a fourth flag. `notify-send` on overdue tasks, and
 packaging for AUR and Nix, are v4. See [roadmap.md](roadmap.md).

@@ -17,13 +17,15 @@ that is actually open is the short list directly under this line.
 
 ### Next — the fast path from the shell (asked for 2026-08-14)
 
-**This is the one being built next.** Two thirds of it is already shipped:
+**Built 2026-08-21, unreleased — the version bump waits on the maintainer
+running it.** `-lt` does collapse: clap reads it as `-l -t`, so the bonus came
+for free and the docs promise it. Two thirds of it was already shipped:
 `ratodo add 'quick task @today #work !high'` **is** the quick capture, and
 `ratodo list` **is** the whole list. What is actually missing is one filter and
 two keystrokes — a minor (`v0.9.0`) because a flag is a promise, not because it
 is a lot of code.
 
-- [ ] **`ratodo list --today` — overdue and today, nothing else.** The only new
+- [x] **`ratodo list --today` — overdue and today, nothing else.** The only new
       behaviour in the whole idea. `agenda()` already answers the question: its
       groups are `Overdue`, `Today`, `ThisWeek`, `Later` and the file's own
       sections, so the flag is a `retain` over the groups in `list()`
@@ -36,7 +38,7 @@ is a lot of code.
       hides yesterday's miss is a lie on a morning check. Undated tasks are out
       — they are the answer to a different question, and `list` with no flags is
       still where they live
-- [ ] **`-a` and `-l`, out of clap and nothing else.** clap gives a subcommand a
+- [x] **`-a` and `-l`, out of clap and nothing else.** clap gives a subcommand a
       `short_flag`: `#[command(short_flag = 'a')]` on `Add` and `'l'` on `List`
       buys `ratodo -a 'call the bank @thu'` and `ratodo -l` for one attribute
       each and no argv handling of our own.
@@ -46,8 +48,9 @@ is a lot of code.
       before clap sees it, for two characters. Whether `-lt` collapses — the
       subcommand's short flag plus a short `-t` on `--today` — is a five-minute
       check against the built binary, and it is a *bonus*: `ratodo -l --today`
-      is the form the docs promise either way
-- [ ] **What a new flag drags behind it, which is most of the work.**
+      is the form the docs promise either way — and it does, checked against the
+      built binary
+- [x] **What a new flag drags behind it, which is most of the work.**
       [docs/cli.md](docs/cli.md): the `list` flag table, the `add` section for
       `-a`, and the **"Not in v1" line at the bottom that calls the three
       existing flags the whole of v1's filtering** — it stops being true.

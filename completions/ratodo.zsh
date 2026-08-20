@@ -18,6 +18,8 @@ _ratodo() {
     _arguments -C \
         '(-f --file)'{-f,--file}'[use a different list]:path:_files' \
         "--theme[run once with a built-in theme]:name:($themes)" \
+        '-a[capture a task and exit]' \
+        '-l[print the agenda]' \
         '--help[show help]' \
         '--version[show the version]' \
         '1: :->command' \
@@ -31,6 +33,7 @@ _ratodo() {
                     _arguments \
                         '*--tag[only tasks with this tag]:tag:' \
                         '--prio[only this priority]:level:(high med low)' \
+                        '(-t --today)'{-t,--today}'[only overdue and due today]' \
                         '--porcelain[tab-separated output for scripts]'
                     ;;
                 status) _arguments '--json[waybar format]' ;;

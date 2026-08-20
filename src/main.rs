@@ -32,6 +32,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Capture a task and exit
+    #[command(short_flag = 'a')]
     Add {
         /// Free text: "pay the invoice @tomorrow #home !high"
         #[arg(required = true, trailing_var_arg = true)]
@@ -44,6 +45,7 @@ enum Command {
         text: Vec<String>,
     },
     /// Print the list
+    #[command(short_flag = 'l')]
     List(ListArgs),
     /// Regenerate todo.ics by hand. Every write does it anyway
     Sync,
@@ -77,6 +79,10 @@ struct ListArgs {
     /// Only tasks at this priority: high, med or low
     #[arg(long, value_name = "LEVEL", value_parser = priority)]
     prio: Option<Priority>,
+
+    /// Only what is late and what is due today
+    #[arg(long, short)]
+    today: bool,
 
     /// Tab-separated output for scripts: no headings, no summary, no colour
     #[arg(long)]
@@ -1316,7 +1322,21 @@ fn list(paths: &[PathBuf], args: &ListArgs) -> Result<()> {
 
     let all = all_tasks(&open);
     let tasks: Vec<_> = all.iter().filter(|t| filter.matches(t)).cloned().collect();
-    let groups = agenda::agenda(&tasks, today);
+    let mut groups = agenda::agenda(&tasks, today);
+
+    // The flag narrows the groups, not the tasks: `agenda` has already done the
+    // date arithmetic, and a second one here is how two answers start to drift.
+    // Overdue stays — late work is today's work. docs/cli.md#list---today.
+    if args.today {
+        groups.retain(|g| matches!(g.kind, agenda::Kind::Overdue | agenda::Kind::Today));
+    }
+
+    // What the groups kept, which is what the summary has to count.
+    let shown: Vec<_> = groups
+        .iter()
+        .flat_map(|g| &g.tasks)
+        .map(|t| (*t).clone())
+        .collect();
 
     // Locked once. Every write can fail — the reader may be a `head` that has
     // already seen enough — and `main` turns that into a quiet exit.
@@ -1332,7 +1352,7 @@ fn list(paths: &[PathBuf], args: &ListArgs) -> Result<()> {
     }
 
     // stderr, not stdout: `ratodo list | wc -l` has to count tasks and nothing else.
-    if tasks.is_empty() {
+    if shown.is_empty() {
         if all.is_empty() {
             eprintln!("nothing here yet — try: ratodo add 'buy milk @tomorrow #home'");
             eprintln!("file: {}", capture_target(paths).display());
@@ -1356,7 +1376,7 @@ fn list(paths: &[PathBuf], args: &ListArgs) -> Result<()> {
     writeln!(
         out,
         "\n{}",
-        text::status_line(agenda::Counts::of(&tasks, today))
+        text::status_line(agenda::Counts::of(&shown, today))
     )?;
 
     Ok(())

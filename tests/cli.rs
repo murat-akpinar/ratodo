@@ -361,6 +361,132 @@ fn porcelain_honours_the_filters_too() {
     assert!(out.lines().all(|l| l.split('\t').count() == 5), "{out:?}");
 }
 
+/// A day either side of today, the way the binary would write it.
+fn day(offset: i64) -> String {
+    (chrono::Local::now().date_naive() + chrono::Duration::days(offset))
+        .format("%Y-%m-%d")
+        .to_string()
+}
+
+/// One task in every group, so what `--today` drops is as much of the assertion
+/// as what it keeps.
+fn every_group(dir: &TempDir) -> PathBuf {
+    let path = dir.file("todo.md");
+    fs::write(
+        &path,
+        format!(
+            "## Work\n- [ ] late @{}\n- [ ] now @{}\n- [ ] soon @{}\n- [ ] someday @{}\n- [ ] undated\n",
+            day(-1),
+            day(0),
+            day(3),
+            day(40),
+        ),
+    )
+    .unwrap();
+    path
+}
+
+#[test]
+fn today_keeps_overdue_and_today_and_drops_the_rest() {
+    let dir = TempDir::new("today");
+    let path = every_group(&dir);
+
+    let out = stdout_of(&path, &["list", "--today"]);
+    assert!(out.contains("late") && out.contains("now"), "{out}");
+    assert!(
+        !out.contains("soon") && !out.contains("someday") && !out.contains("undated"),
+        "{out}"
+    );
+    assert!(out.contains("OVERDUE") && out.contains("TODAY"), "{out}");
+    assert!(
+        !out.contains("THIS WEEK") && !out.contains("LATER"),
+        "{out}"
+    );
+
+    // The summary counts what was shown, not what the file holds.
+    assert!(out.contains("2 open · 1 overdue"), "{out}");
+
+    // Short flags, and the two of them clustered: docs/cli.md promises `-lt`.
+    assert_eq!(stdout_of(&path, &["-l", "-t"]), out);
+    assert_eq!(stdout_of(&path, &["-lt"]), out);
+}
+
+/// Composition, both ways round: the filter narrows the tasks, `--today` then
+/// narrows the groups those tasks landed in.
+#[test]
+fn today_composes_with_the_other_filters() {
+    let dir = TempDir::new("today-filter");
+    let path = dir.file("todo.md");
+    fs::write(
+        &path,
+        format!(
+            "## Work\n- [ ] deploy @{} #ops\n- [ ] invoice @{} #admin\n- [ ] later @{} #ops\n",
+            day(0),
+            day(0),
+            day(40),
+        ),
+    )
+    .unwrap();
+
+    let out = stdout_of(&path, &["list", "--today", "--tag", "ops"]);
+    assert!(out.contains("deploy"), "{out}");
+    assert!(!out.contains("invoice") && !out.contains("later"), "{out}");
+
+    let porcelain = stdout_of(&path, &["list", "--today", "--porcelain", "--tag", "ops"]);
+    assert_eq!(porcelain, format!("open\t{}\tdeploy\tops\t\n", day(0)));
+}
+
+/// A day with nothing due is an answer, not a failure — and to a machine it is
+/// an empty one, on both streams.
+#[test]
+fn today_on_a_quiet_day_is_silent_and_succeeds() {
+    let dir = TempDir::new("today-quiet");
+    let path = dir.file("todo.md");
+    fs::write(
+        &path,
+        format!("## Work\n- [ ] undated\n- [ ] someday @{}\n", day(40)),
+    )
+    .unwrap();
+
+    let file = path.to_str().unwrap();
+
+    let machine = run(&["--file", file, "list", "--today", "--porcelain"]);
+    assert!(machine.status.success());
+    assert!(machine.stdout.is_empty(), "{:?}", machine.stdout);
+    assert!(
+        machine.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&machine.stderr)
+    );
+
+    let human = run(&["--file", file, "list", "--today"]);
+    assert!(human.status.success());
+    assert!(human.stdout.is_empty(), "{:?}", human.stdout);
+    assert!(
+        String::from_utf8_lossy(&human.stderr).contains("no task matches"),
+        "{}",
+        String::from_utf8_lossy(&human.stderr)
+    );
+}
+
+/// `-a` is clap's `short_flag` and nothing else — so it has to capture the same
+/// bytes, not merely a similar-looking task.
+#[test]
+fn the_short_add_captures_exactly_what_add_captures() {
+    let dir = TempDir::new("short-add");
+    let long = dir.file("long.md");
+    let short = dir.file("short.md");
+
+    let spelled = stdout_of(&long, &["add", "call the bank @2099-01-02 #home !high"]);
+    let flagged = stdout_of(&short, &["-a", "call the bank @2099-01-02 #home !high"]);
+
+    assert_eq!(spelled, flagged);
+    assert_eq!(
+        fs::read_to_string(&long).unwrap(),
+        fs::read_to_string(&short).unwrap()
+    );
+}
+
 /// `ratodo list | head -3` is an ordinary thing to type. Rust's `println!`
 /// panics when the reader goes away, so without a deliberate answer the user
 /// gets a backtrace and exit 101 for doing nothing wrong.
@@ -1515,7 +1641,9 @@ fn every_subcommand_and_flag_reaches_all_three_shells() {
         .skip_while(|l| !l.starts_with("Commands:"))
         .skip(1)
         .take_while(|l| l.starts_with("  ") && !l.trim().is_empty())
+        // `add, -a` — clap prints a subcommand's short flag beside its name.
         .filter_map(|l| l.split_whitespace().next())
+        .map(|name| name.trim_end_matches(','))
         .filter(|name| *name != "help")
         .map(str::to_string)
         .collect();
