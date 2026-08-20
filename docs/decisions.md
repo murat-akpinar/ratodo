@@ -475,6 +475,8 @@ no. Reopening one requires new information.
 | Two view modes (agenda / file) | Two modes = state management + key conflicts + two drawing paths |
 | Strikethrough for completed tasks | Inconsistent terminal support; unreadable for half of users |
 | An encrypted list | No. The file stays plain text — that is the entire logic of the product |
+| Verifying the `.ics` in Thunderbird — **off the build list 2026-08-21** | It needs Thunderbird on this machine. `todoman` reading all five tasks and `khal` ignoring them are already two data points and the finding they were for: the file is a real VTODO, and some clients drop VTODO on the floor. [calendar.md](calendar.md) and the README say "not verified by us" instead of guessing, which is the honest version and costs nobody anything |
+| Building `flake.nix` here — **off the build list 2026-08-21** | There is no `nix` on the machine this was written on and no container runtime to borrow one from. The flake reads the version out of `Cargo.toml` and pins with `cargoLock.lockFile` so it cannot rot silently; the README says it is unbuilt. First person with `nix` closes it, and until then it is not work anybody here can do |
 | Automatic git commits | Tempting, but touching the user's git is dangerous even opt-in. Maybe an explicit `--commit` flag much later |
 
 ## Reversed

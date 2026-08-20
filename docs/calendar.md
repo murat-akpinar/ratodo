@@ -109,5 +109,8 @@ had listed as ✅ on nothing more than "it is file-based", shows none of them. T
 control that makes that a finding rather than a guess is a hand-written VEVENT
 dropped into the same directory with the same config — khal drew that one.
 
-Still to do — Thunderbird, whose Tasks view is a different code path from the
-month grid and is where these would land.
+Thunderbird would be the third point — its Tasks view is a different code path
+from the month grid and is where these would land — and it is **not planned**
+(2026-08-21): it needs the client on the machine, and two points already carry
+the finding this section exists for. The table's ⚠️ is the answer, not a
+placeholder for one — [decisions.md](decisions.md#rejected).

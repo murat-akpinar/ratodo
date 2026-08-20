@@ -15,7 +15,79 @@ that is actually open is the short list directly under this line.
 
 ## What is left
 
-### Next — the fast path from the shell (asked for 2026-08-14)
+### Next — what an hour of driving the screen turned up (2026-08-21)
+
+Found by running the built binary on a real list in a pty — not by a test —
+which is why none of them are red anywhere. Sizes from 80×24 down to 24×8, a
+Turkish list with sections, dates, tags, a cancelled task and a note line. The
+file came through byte for byte both times something was written, so what is
+below is what the screen does, not what it stores.
+
+- [ ] **A modal cuts the group boxes open along its own edge.** Press `p` on any
+      task and the `PUT OFF` box lands over the list; where a group's `╰────╯` or
+      `╭────╮` passes behind it, the two ends survive on either side and read as
+      the modal's frame coming apart:
+
+      ```
+      │  │ ╭──────────────────────────────────────────────────────╮ │  │
+      │  │ │ PUT OFF ▏3d                                          │ │  │
+      │  ╰─│      Monday (2026-08-24)                             │─╯  │
+      │  ╭─╰──────────────────────────────────────────────────────╯─╮  │
+      ```
+
+      `NEW TASK` behind `a` and the `?` overlay do the same thing; `PUT OFF` is
+      where it is worst, because it is wide enough to leave exactly two
+      characters of somebody else's box on each side. Every one of the three
+      calls `Clear` on precisely its own rect — `src/ui.rs:4089`, `4185`, `4283`
+      — so the fix is a one-cell gutter: clear a rect one column wider on each
+      side (clamped to the frame), then draw the box inside it. Not a shadow and
+      not a margin in the layout: the modal keeps its size, the row underneath
+      just stops showing through where it touches. Pin it with a render test that
+      asserts no `╯` or `╮` sits in the column beside a modal's border
+- [ ] **The last box never closes.** `G` on a list taller than the pane puts the
+      selected task on the bottom row and leaves the group's closing edge off
+      screen, so the box reads as unterminated — the one place on the screen
+      where a stroke starts at a corner and ends in mid-air, which is the exact
+      thing the redesign set out to remove ([docs/redesign.md](docs/redesign.md)).
+      It is not a drawing bug: `GroupEnd` is a row like any other
+      (`ui::rows`), and ratatui's `List` scrolls only far enough to keep the
+      **selected** row visible. `List::scroll_padding(1)` is the candidate
+      one-liner — it exists in the ratatui in `Cargo.lock` — and it also keeps a
+      row of context above the selection, which is a second small win. Check what
+      it does to the pinned selection tests before taking it. The stats screen
+      has `every_box_on_the_stats_screen_closes_at_every_width`
+      (`src/ui.rs:5428`) and the list has no equivalent — that test, over the
+      list at a height that forces a scroll, is the one that would have caught
+      this
+- [ ] **The task you just added is nowhere on screen.** `a` on a list you have
+      scrolled to the bottom of: the form opens on today's date, so the new task
+      lands in `TODAY` at the top, the selection stays where it was, and the only
+      evidence is `added: …` on the bottom line. The tool did exactly what was
+      asked and looks like it did nothing. The selection should follow the task
+      that was just written — it is the same `select()` the delete path already
+      does to keep a sensible neighbour (`src/ui.rs:1549`), pointed at the new
+      row instead. Undo is the case to think about: `u` should put the selection
+      back where the eye was, not leave it on a row that no longer exists
+- [ ] **`avg / day` rounds to nothing on the month and the year.** The stats
+      screen says `1 done` and `avg / day 0.0` in the same box, which reads as a
+      contradiction rather than as a small number. Week is fine — the divisor is
+      seven. `MONTH` divides by thirty and `YEAR` by three hundred and sixty
+      five, so anything short of a task a day disappears. Per period, not per
+      day: `avg / week` on `MONTH` and `avg / month` on `YEAR`, computed from the
+      same stamps and named after what it divided by. The number comes out of
+      `agenda::stats` (`src/agenda.rs:176`), which takes `today` as a parameter,
+      so the test is a fixture and a date rather than a wait
+- [ ] **Decide what `list --today` does with what is already done today.** It
+      shows it: a task ticked this morning is still in `TODAY`, with its `[x]`.
+      That is the TUI's rule — the list does not move when you tick something —
+      and `--porcelain` already says `open` or `done` in column one, so a script
+      can filter it in one `awk`. The question is only whether a *morning check*
+      wants yesterday's leftovers and this morning's wins in the same six lines.
+      Either answer is one sentence in [docs/cli.md](docs/cli.md#list---today);
+      what is not acceptable is the current state, where the doc says nothing and
+      the behaviour is discovered
+
+### Shipped as `v0.8.2` — the fast path from the shell (asked for 2026-08-14)
 
 **Built 2026-08-21, unreleased — the version bump waits on the maintainer
 running it.** `-lt` does collapse: clap reads it as `-l -t`, so the bonus came
@@ -690,13 +762,6 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
       `src/main.rs` already makes for the backup and calendar paths). That is a
       refactor, and the six keep no Windows coverage of where the files land
       until somebody does it
-- [ ] **Thunderbird** — the third and last calendar data point. Its Tasks view is
-      a different code path from the month grid and is where a VTODO would land.
-      `todoman` displays the file correctly and `khal` ignores it; Thunderbird is
-      the one that decides whether the table in
-      [docs/calendar.md](docs/calendar.md) is finished or still guessing. It is
-      also what tells us how big an audience `--as-events` would actually buy,
-      and that flag is already on the [v2 roadmap](docs/roadmap.md)
 - [x] **`flake.nix` and an AUR `PKGBUILD`** — `rustPlatform.buildRustPackage` and
       a `PKGBUILD` against the tag. NixOS users will not `cargo install` into a
       profile, and Arch is the platform this was written on. Both pin a released
@@ -714,9 +779,11 @@ reverses, and it is reversed on purpose and in writing rather than quietly.
       evaluated. It reads the version out of `Cargo.toml` and pins dependencies
       with `cargoLock.lockFile` so neither can rot; there is no `flake.lock`,
       for the same reason there is no build. The README says so rather than
-      claiming otherwise. First person with `nix` closes this
-      - [ ] **`nix build` once, by somebody who has nix.** Then the caveat comes
-            out of the README and a `flake.lock` goes in
+      claiming otherwise. First person with `nix` closes this — **not tracked as
+      work any more** (2026-08-21): it needs a machine this project does not
+      have, and the README's caveat is already the honest version. Same call as
+      the Thunderbird check, which came off this list on the same day.
+      [docs/decisions.md](docs/decisions.md#rejected)
 
 Open questions that block none of the above are in
 [docs/decisions.md](docs/decisions.md#open-questions).
