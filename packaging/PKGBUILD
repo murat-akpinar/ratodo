@@ -1,7 +1,7 @@
 # Maintainer: Murat AKPINAR <akpinarmurat@protonmail.com>
 
 pkgname=ratodo
-pkgver=0.8.1
+pkgver=0.8.2
 pkgrel=1
 pkgdesc='A todo TUI, built with ratatui — one Markdown file, no cloud, no account'
 arch=('x86_64' 'aarch64')
@@ -10,7 +10,7 @@ license=('GPL-3.0-only')
 depends=('gcc-libs' 'glibc')
 makedepends=('cargo')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('0846c02931bacb9ef3845a2b59e430ce32ae0e3c256b177b0b71a8f7951dac74')
+sha256sums=('46fd8e238ad889581d4fb37d2d48a8164edc5845d04dedb04d96eb619b94d518')
 
 prepare() {
 	cd "$pkgname-$pkgver"
